@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
 import sys
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.engine import make_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -14,8 +16,15 @@ from app.core.database import Base, get_db
 from app.main import app
 
 TEST_DB_NAME = "health_trainer_test"
-TEST_ADMIN_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@db:5432/postgres"
-TEST_DATABASE_URL = f"postgresql+asyncpg://postgres:postgres@db:5432/{TEST_DB_NAME}"
+TEST_ADMIN_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_ADMIN_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
+)
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/health_trainer_test",
+)
+TEST_DB_NAME = make_url(TEST_DATABASE_URL).database or TEST_DB_NAME
 
 
 async def _create_test_database() -> None:
