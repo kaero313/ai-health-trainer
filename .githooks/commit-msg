@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# commit-msg hook: Conventional Commits 형식 검증
+# 형식: <type>(<scope>): <description>
+# 예시: feat(auth): JWT 로그인 API 구현
+#
+# 허용 type: feat, fix, docs, style, refactor, test, chore, perf, ci, build
+#
+
+commit_msg_file=$1
+commit_msg=$(cat "$commit_msg_file")
+
+# Conventional Commits 패턴
+pattern="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build)(\(.+\))?: .{1,100}$"
+
+# 첫 번째 줄만 검사
+first_line=$(echo "$commit_msg" | head -1)
+
+if ! echo "$first_line" | grep -qE "$pattern"; then
+  echo ""
+  echo "❌ 커밋 메시지가 Conventional Commits 형식이 아닙니다!"
+  echo ""
+  echo "올바른 형식: <type>(<scope>): <설명>"
+  echo ""
+  echo "허용 type:"
+  echo "  feat     — 새로운 기능"
+  echo "  fix      — 버그 수정"
+  echo "  docs     — 문서 변경"
+  echo "  style    — 코드 포맷팅 (기능 변경 없음)"
+  echo "  refactor — 리팩토링 (기능 변경 없음)"
+  echo "  test     — 테스트 추가/수정"
+  echo "  chore    — 빌드/설정 변경"
+  echo "  perf     — 성능 개선"
+  echo "  ci       — CI/CD 설정"
+  echo "  build    — 빌드 시스템/외부 의존성"
+  echo ""
+  echo "예시:"
+  echo "  feat(auth): JWT 로그인 API 구현"
+  echo "  fix(diet): 칼로리 계산 오류 수정"
+  echo "  chore: Docker 환경 구성"
+  echo "  test(auth): 회원가입 테스트 추가"
+  echo ""
+  echo "현재 메시지: $first_line"
+  echo ""
+  exit 1
+fi

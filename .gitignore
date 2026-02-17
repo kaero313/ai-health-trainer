@@ -1,0 +1,99 @@
+# ============================================
+# AI Health Trainer - .gitignore
+# ============================================
+
+# ── 환경변수 (절대 커밋 금지!) ──
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Python 가상환경
+venv/
+.venv/
+env/
+ENV/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# mypy
+.mypy_cache/
+
+# ── Flutter / Dart ──
+# Flutter 빌드 아티팩트
+frontend/.dart_tool/
+frontend/.packages
+frontend/.pub-cache/
+frontend/.pub/
+frontend/build/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+
+# iOS/Android 빌드
+frontend/ios/Pods/
+frontend/ios/.symlinks/
+frontend/android/.gradle/
+frontend/android/app/debug/
+frontend/android/app/release/
+frontend/android/app/profile/
+frontend/android/local.properties
+frontend/android/key.properties
+*.jks
+*.keystore
+
+# ── IDE ──
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Docker ──
+# Docker 볼륨 데이터 (로컬 DB 데이터)
+postgres_data/
+redis_data/
+data/
+
+# ── 업로드 파일 ──
+uploads/
+backend/uploads/
+
+# ── 로그 ──
+*.log
+logs/
+
+# ── OS ──
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# ── 기타 ──
+*.bak
+*.tmp
+*.temp
+node_modules/
