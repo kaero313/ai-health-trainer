@@ -1,5 +1,4 @@
-﻿version: "3.8"
-
+﻿
 services:
   db:
     image: pgvector/pgvector:pg17
