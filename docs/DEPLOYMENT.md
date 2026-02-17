@@ -14,7 +14,7 @@ version: '3.8'
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg17
     container_name: health_trainer_db
     environment:
       POSTGRES_USER: postgres
@@ -154,7 +154,7 @@ version: '3.8'
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg17
     restart: always
     environment:
       POSTGRES_USER: ${DB_USER}
@@ -330,7 +330,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test

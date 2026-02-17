@@ -9,7 +9,7 @@
 
 | 항목 | 선택 | 비고 |
 |------|------|------|
-| RDBMS | PostgreSQL 16+ | Docker 공식 이미지 사용 |
+| RDBMS | PostgreSQL 17 | Docker 공식 이미지 사용 |
 | Vector Extension | pgvector | RAG 임베딩 저장/검색 |
 | ORM | SQLAlchemy 2.0 | async 지원 (asyncpg) |
 | Migration | Alembic | 버전 관리형 마이그레이션 |

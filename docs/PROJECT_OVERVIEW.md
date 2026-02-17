@@ -13,7 +13,7 @@ Google Play Store 배포를 목표로 하는 **포트폴리오** 프로젝트.
 |------|------|-----------|
 | Frontend | Flutter (Dart) | 최신 stable |
 | Backend | Python 3.12+ / FastAPI | 비동기, 자동 Swagger |
-| Database | PostgreSQL 16 + pgvector | 메인 DB + 벡터 검색 |
+| Database | PostgreSQL 17 + pgvector | 메인 DB + 벡터 검색 |
 | Cache | Redis | 세션/캐시 |
 | AI/LLM | **Google Gemini API** (Gemini 2.5 Flash/Pro) | 멀티모달 + 텍스트, 무료 티어 활용 |
 | Auth | JWT (자체 구현) | python-jose + passlib |
