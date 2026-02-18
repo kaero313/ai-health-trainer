@@ -3,25 +3,7 @@ from datetime import date, timedelta
 import pytest
 
 
-async def _register_and_get_token(client, email: str) -> tuple[str, int]:
-    response = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": email,
-            "password": "SecurePass123!",
-            "password_confirm": "SecurePass123!",
-        },
-    )
-    assert response.status_code == 201
-    payload = response.json()["data"]
-    return payload["access_token"], payload["user"]["id"]
-
-
-def _auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
-
-
-async def _setup_profile(client, token: str) -> dict[str, object]:
+async def _setup_profile(client, token: str, auth_headers) -> dict[str, object]:
     response = await client.put(
         "/api/v1/profile",
         json={
@@ -34,7 +16,7 @@ async def _setup_profile(client, token: str) -> dict[str, object]:
             "allergies": [],
             "food_preferences": [],
         },
-        headers=_auth_headers(token),
+        headers=auth_headers(token),
     )
     assert response.status_code == 200
     return response.json()["data"]
@@ -47,6 +29,7 @@ async def _create_exercise(
     name: str,
     muscle_group: str,
     sets_data: list[dict[str, object]],
+    auth_headers,
 ) -> dict[str, object]:
     response = await client.post(
         "/api/v1/exercise/logs",
@@ -56,7 +39,7 @@ async def _create_exercise(
             "muscle_group": muscle_group,
             "sets": sets_data,
         },
-        headers=_auth_headers(token),
+        headers=auth_headers(token),
     )
     assert response.status_code == 201
     return response.json()["data"]
@@ -68,6 +51,7 @@ async def _create_diet(
     date_str: str,
     meal_type: str,
     items_data: list[dict[str, object]],
+    auth_headers,
 ) -> dict[str, object]:
     response = await client.post(
         "/api/v1/diet/logs",
@@ -76,22 +60,22 @@ async def _create_diet(
             "meal_type": meal_type,
             "items": items_data,
         },
-        headers=_auth_headers(token),
+        headers=auth_headers(token),
     )
     assert response.status_code == 201
     return response.json()["data"]
 
 
 @pytest.mark.asyncio
-async def test_today_dashboard_empty(client):
-    token, _ = await _register_and_get_token(client, "dash-empty@example.com")
-    await _setup_profile(client, token)
+async def test_today_dashboard_empty(client, register_and_get_token, auth_headers):
+    token, _ = await register_and_get_token(client, "dash-empty@example.com")
+    await _setup_profile(client, token, auth_headers)
     today_str = date.today().isoformat()
 
     response = await client.get(
         "/api/v1/dashboard/today",
         params={"date": today_str},
-        headers=_auth_headers(token),
+        headers=auth_headers(token),
     )
 
     assert response.status_code == 200
@@ -108,9 +92,9 @@ async def test_today_dashboard_empty(client):
 
 
 @pytest.mark.asyncio
-async def test_today_dashboard_with_data(client):
-    token, _ = await _register_and_get_token(client, "dash-data@example.com")
-    await _setup_profile(client, token)
+async def test_today_dashboard_with_data(client, register_and_get_token, auth_headers):
+    token, _ = await register_and_get_token(client, "dash-data@example.com")
+    await _setup_profile(client, token, auth_headers)
     today_str = date.today().isoformat()
 
     await _create_exercise(
@@ -124,18 +108,19 @@ async def test_today_dashboard_with_data(client):
             {"set_number": 2, "reps": 8, "weight_kg": 62.5, "is_completed": True},
             {"set_number": 3, "reps": 6, "weight_kg": 65.0, "is_completed": True},
         ],
+        auth_headers,
     )
 
     lunch_items = [
         {"food_name": "Chicken Salad", "calories": 350.0, "protein_g": 40.0, "carbs_g": 15.0, "fat_g": 12.0},
         {"food_name": "Brown Rice", "calories": 220.0, "protein_g": 5.0, "carbs_g": 45.0, "fat_g": 2.0},
     ]
-    await _create_diet(client, token, today_str, "lunch", lunch_items)
+    await _create_diet(client, token, today_str, "lunch", lunch_items, auth_headers)
 
     response = await client.get(
         "/api/v1/dashboard/today",
         params={"date": today_str},
-        headers=_auth_headers(token),
+        headers=auth_headers(token),
     )
 
     assert response.status_code == 200
@@ -148,9 +133,9 @@ async def test_today_dashboard_with_data(client):
 
 
 @pytest.mark.asyncio
-async def test_today_dashboard_progress_percent(client):
-    token, _ = await _register_and_get_token(client, "dash-progress@example.com")
-    profile_data = await _setup_profile(client, token)
+async def test_today_dashboard_progress_percent(client, register_and_get_token, auth_headers):
+    token, _ = await register_and_get_token(client, "dash-progress@example.com")
+    profile_data = await _setup_profile(client, token, auth_headers)
     today_str = date.today().isoformat()
 
     consumed_values = {
@@ -173,12 +158,13 @@ async def test_today_dashboard_progress_percent(client):
                 "fat_g": consumed_values["fat_g"],
             }
         ],
+        auth_headers,
     )
 
     response = await client.get(
         "/api/v1/dashboard/today",
         params={"date": today_str},
-        headers=_auth_headers(token),
+        headers=auth_headers(token),
     )
 
     assert response.status_code == 200
@@ -198,9 +184,9 @@ async def test_today_dashboard_progress_percent(client):
 
 
 @pytest.mark.asyncio
-async def test_weekly_dashboard(client):
-    token, _ = await _register_and_get_token(client, "dash-weekly@example.com")
-    await _setup_profile(client, token)
+async def test_weekly_dashboard(client, register_and_get_token, auth_headers):
+    token, _ = await register_and_get_token(client, "dash-weekly@example.com")
+    await _setup_profile(client, token, auth_headers)
 
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
@@ -215,6 +201,7 @@ async def test_weekly_dashboard(client):
             "Squat",
             "legs",
             [{"set_number": 1, "reps": 8, "weight_kg": 100.0, "is_completed": True}],
+            auth_headers,
         )
         await _create_diet(
             client,
@@ -222,12 +209,13 @@ async def test_weekly_dashboard(client):
             day_str,
             "lunch",
             [{"food_name": "Meal", "calories": 500.0, "protein_g": 40.0, "carbs_g": 50.0, "fat_g": 10.0}],
+            auth_headers,
         )
 
     response = await client.get(
         "/api/v1/dashboard/weekly",
         params={"week_start": week_start.isoformat()},
-        headers=_auth_headers(token),
+        headers=auth_headers(token),
     )
 
     assert response.status_code == 200
@@ -244,9 +232,9 @@ async def test_weekly_dashboard(client):
 
 
 @pytest.mark.asyncio
-async def test_streak_calculation(client):
-    token, _ = await _register_and_get_token(client, "dash-streak@example.com")
-    await _setup_profile(client, token)
+async def test_streak_calculation(client, register_and_get_token, auth_headers):
+    token, _ = await register_and_get_token(client, "dash-streak@example.com")
+    await _setup_profile(client, token, auth_headers)
 
     today = date.today()
     for day_offset in range(3):
@@ -258,12 +246,13 @@ async def test_streak_calculation(client):
             "Pull Up",
             "back",
             [{"set_number": 1, "reps": 10, "weight_kg": None, "is_completed": True}],
+            auth_headers,
         )
 
     response = await client.get(
         "/api/v1/dashboard/today",
         params={"date": today.isoformat()},
-        headers=_auth_headers(token),
+        headers=auth_headers(token),
     )
 
     assert response.status_code == 200

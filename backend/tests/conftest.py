@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
 import sys
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.engine import make_url
@@ -93,3 +94,29 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as async_client:
         yield async_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_headers() -> Callable[[str], dict[str, str]]:
+    def _build_auth_headers(token: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}"}
+
+    return _build_auth_headers
+
+
+@pytest.fixture
+def register_and_get_token() -> Callable[[AsyncClient, str], Awaitable[tuple[str, int]]]:
+    async def _register(client: AsyncClient, email: str) -> tuple[str, int]:
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": email,
+                "password": "SecurePass123!",
+                "password_confirm": "SecurePass123!",
+            },
+        )
+        assert response.status_code == 201
+        payload = response.json()["data"]
+        return payload["access_token"], payload["user"]["id"]
+
+    return _register

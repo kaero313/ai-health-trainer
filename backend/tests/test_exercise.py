@@ -3,27 +3,9 @@ from datetime import date
 import pytest
 
 
-async def _register_and_get_token(client, email: str) -> tuple[str, int]:
-    response = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": email,
-            "password": "SecurePass123!",
-            "password_confirm": "SecurePass123!",
-        },
-    )
-    assert response.status_code == 201
-    payload = response.json()["data"]
-    return payload["access_token"], payload["user"]["id"]
-
-
-def _auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
-
-
 @pytest.mark.asyncio
-async def test_create_exercise_log_success(client):
-    access_token, _ = await _register_and_get_token(client, "ex-create@example.com")
+async def test_create_exercise_log_success(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "ex-create@example.com")
 
     response = await client.post(
         "/api/v1/exercise/logs",
@@ -39,7 +21,7 @@ async def test_create_exercise_log_success(client):
                 {"set_number": 3, "reps": 6, "weight_kg": 65.0, "is_completed": True},
             ],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert response.status_code == 201
@@ -68,8 +50,8 @@ async def test_create_exercise_log_without_auth_returns_401(client):
 
 
 @pytest.mark.asyncio
-async def test_get_exercise_logs_by_date(client):
-    access_token, _ = await _register_and_get_token(client, "ex-get@example.com")
+async def test_get_exercise_logs_by_date(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "ex-get@example.com")
 
     payloads = [
         {
@@ -89,14 +71,14 @@ async def test_get_exercise_logs_by_date(client):
         create_response = await client.post(
             "/api/v1/exercise/logs",
             json=payload,
-            headers=_auth_headers(access_token),
+            headers=auth_headers(access_token),
         )
         assert create_response.status_code == 201
 
     response = await client.get(
         "/api/v1/exercise/logs",
         params={"date": "2026-02-17"},
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert response.status_code == 200
@@ -106,13 +88,13 @@ async def test_get_exercise_logs_by_date(client):
 
 
 @pytest.mark.asyncio
-async def test_get_exercise_logs_empty_date(client):
-    access_token, _ = await _register_and_get_token(client, "ex-empty@example.com")
+async def test_get_exercise_logs_empty_date(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "ex-empty@example.com")
 
     response = await client.get(
         "/api/v1/exercise/logs",
         params={"date": "2026-02-20"},
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert response.status_code == 200
@@ -122,8 +104,8 @@ async def test_get_exercise_logs_empty_date(client):
 
 
 @pytest.mark.asyncio
-async def test_update_exercise_log_success(client):
-    access_token, _ = await _register_and_get_token(client, "ex-update@example.com")
+async def test_update_exercise_log_success(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "ex-update@example.com")
     create_response = await client.post(
         "/api/v1/exercise/logs",
         json={
@@ -135,7 +117,7 @@ async def test_update_exercise_log_success(client):
                 {"set_number": 2, "reps": 8, "weight_kg": 32.5, "is_completed": True},
             ],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert create_response.status_code == 201
     log_id = create_response.json()["data"]["id"]
@@ -149,7 +131,7 @@ async def test_update_exercise_log_success(client):
                 {"set_number": 2, "reps": 10, "weight_kg": 30.0, "is_completed": True},
             ],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert update_response.status_code == 200
@@ -161,9 +143,9 @@ async def test_update_exercise_log_success(client):
 
 
 @pytest.mark.asyncio
-async def test_update_other_users_log_returns_403(client):
-    owner_token, _ = await _register_and_get_token(client, "ex-owner@example.com")
-    other_token, _ = await _register_and_get_token(client, "ex-other@example.com")
+async def test_update_other_users_log_returns_403(client, register_and_get_token, auth_headers):
+    owner_token, _ = await register_and_get_token(client, "ex-owner@example.com")
+    other_token, _ = await register_and_get_token(client, "ex-other@example.com")
 
     create_response = await client.post(
         "/api/v1/exercise/logs",
@@ -173,7 +155,7 @@ async def test_update_other_users_log_returns_403(client):
             "muscle_group": "back",
             "sets": [{"set_number": 1, "reps": 5, "weight_kg": 120.0, "is_completed": True}],
         },
-        headers=_auth_headers(owner_token),
+        headers=auth_headers(owner_token),
     )
     assert create_response.status_code == 201
     log_id = create_response.json()["data"]["id"]
@@ -181,7 +163,7 @@ async def test_update_other_users_log_returns_403(client):
     update_response = await client.put(
         f"/api/v1/exercise/logs/{log_id}",
         json={"exercise_name": "Hacked"},
-        headers=_auth_headers(other_token),
+        headers=auth_headers(other_token),
     )
 
     assert update_response.status_code == 403
@@ -191,8 +173,8 @@ async def test_update_other_users_log_returns_403(client):
 
 
 @pytest.mark.asyncio
-async def test_delete_exercise_log_success(client):
-    access_token, _ = await _register_and_get_token(client, "ex-delete@example.com")
+async def test_delete_exercise_log_success(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "ex-delete@example.com")
     create_response = await client.post(
         "/api/v1/exercise/logs",
         json={
@@ -201,21 +183,21 @@ async def test_delete_exercise_log_success(client):
             "muscle_group": "back",
             "sets": [{"set_number": 1, "reps": 10, "weight_kg": None, "is_completed": True}],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert create_response.status_code == 201
     log_id = create_response.json()["data"]["id"]
 
     delete_response = await client.delete(
         f"/api/v1/exercise/logs/{log_id}",
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert delete_response.status_code == 200
 
     list_response = await client.get(
         "/api/v1/exercise/logs",
         params={"date": "2026-02-17"},
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert list_response.status_code == 200
     exercises = list_response.json()["data"]["exercises"]
@@ -223,8 +205,8 @@ async def test_delete_exercise_log_success(client):
 
 
 @pytest.mark.asyncio
-async def test_get_muscle_history(client):
-    access_token, _ = await _register_and_get_token(client, "ex-history@example.com")
+async def test_get_muscle_history(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "ex-history@example.com")
 
     payloads = [
         {
@@ -244,13 +226,13 @@ async def test_get_muscle_history(client):
         create_response = await client.post(
             "/api/v1/exercise/logs",
             json=payload,
-            headers=_auth_headers(access_token),
+            headers=auth_headers(access_token),
         )
         assert create_response.status_code == 201
 
     history_response = await client.get(
         "/api/v1/exercise/history/chest",
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert history_response.status_code == 200
