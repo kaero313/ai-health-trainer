@@ -14,13 +14,13 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("/today", response_model=TodayDashboardResponse)
 async def get_today_dashboard(
-    date: date | None = Query(None),
+    target_date: date | None = Query(None, alias="date"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TodayDashboardResponse:
-    target_date = date or date_today()
+    resolved_target_date = target_date or date_today()
     service = DashboardService(db)
-    data = await service.get_today(current_user.id, target_date)
+    data = await service.get_today(current_user.id, resolved_target_date)
     return TodayDashboardResponse(data=data)
 
 
