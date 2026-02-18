@@ -1,27 +1,9 @@
 import pytest
 
 
-async def _register_and_get_token(client, email: str) -> tuple[str, int]:
-    response = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": email,
-            "password": "SecurePass123!",
-            "password_confirm": "SecurePass123!",
-        },
-    )
-    assert response.status_code == 201
-    payload = response.json()["data"]
-    return payload["access_token"], payload["user"]["id"]
-
-
-def _auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
-
-
 @pytest.mark.asyncio
-async def test_create_diet_log_success(client):
-    access_token, _ = await _register_and_get_token(client, "diet-create@example.com")
+async def test_create_diet_log_success(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "diet-create@example.com")
 
     response = await client.post(
         "/api/v1/diet/logs",
@@ -47,7 +29,7 @@ async def test_create_diet_log_success(client):
                 },
             ],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert response.status_code == 201
@@ -75,8 +57,8 @@ async def test_create_diet_log_without_auth_returns_401(client):
 
 
 @pytest.mark.asyncio
-async def test_get_diet_logs_by_date_with_daily_total(client):
-    access_token, _ = await _register_and_get_token(client, "diet-get-total@example.com")
+async def test_get_diet_logs_by_date_with_daily_total(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "diet-get-total@example.com")
 
     breakfast_payload = {
         "log_date": "2026-02-17",
@@ -115,13 +97,13 @@ async def test_get_diet_logs_by_date_with_daily_total(client):
         ],
     }
 
-    await client.post("/api/v1/diet/logs", json=breakfast_payload, headers=_auth_headers(access_token))
-    await client.post("/api/v1/diet/logs", json=lunch_payload, headers=_auth_headers(access_token))
+    await client.post("/api/v1/diet/logs", json=breakfast_payload, headers=auth_headers(access_token))
+    await client.post("/api/v1/diet/logs", json=lunch_payload, headers=auth_headers(access_token))
 
     response = await client.get(
         "/api/v1/diet/logs",
         params={"date": "2026-02-17"},
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert response.status_code == 200
@@ -136,8 +118,8 @@ async def test_get_diet_logs_by_date_with_daily_total(client):
 
 
 @pytest.mark.asyncio
-async def test_get_diet_logs_with_target_remaining(client):
-    access_token, _ = await _register_and_get_token(client, "diet-target@example.com")
+async def test_get_diet_logs_with_target_remaining(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "diet-target@example.com")
 
     profile_response = await client.put(
         "/api/v1/profile",
@@ -151,7 +133,7 @@ async def test_get_diet_logs_with_target_remaining(client):
             "allergies": [],
             "food_preferences": [],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert profile_response.status_code == 200
     targets = profile_response.json()["data"]
@@ -171,13 +153,13 @@ async def test_get_diet_logs_with_target_remaining(client):
                 }
             ],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     response = await client.get(
         "/api/v1/diet/logs",
         params={"date": "2026-02-17"},
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert response.status_code == 200
@@ -191,8 +173,8 @@ async def test_get_diet_logs_with_target_remaining(client):
 
 
 @pytest.mark.asyncio
-async def test_get_diet_logs_without_profile_target_remaining_null(client):
-    access_token, _ = await _register_and_get_token(client, "diet-no-profile@example.com")
+async def test_get_diet_logs_without_profile_target_remaining_null(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "diet-no-profile@example.com")
 
     await client.post(
         "/api/v1/diet/logs",
@@ -201,13 +183,13 @@ async def test_get_diet_logs_without_profile_target_remaining_null(client):
             "meal_type": "breakfast",
             "items": [{"food_name": "Egg", "calories": 150.0}],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     response = await client.get(
         "/api/v1/diet/logs",
         params={"date": "2026-02-17"},
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert response.status_code == 200
@@ -217,8 +199,8 @@ async def test_get_diet_logs_without_profile_target_remaining_null(client):
 
 
 @pytest.mark.asyncio
-async def test_update_diet_log_success(client):
-    access_token, _ = await _register_and_get_token(client, "diet-update@example.com")
+async def test_update_diet_log_success(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "diet-update@example.com")
     create_response = await client.post(
         "/api/v1/diet/logs",
         json={
@@ -229,7 +211,7 @@ async def test_update_diet_log_success(client):
                 {"food_name": "Food B", "calories": 200.0, "protein_g": 20.0, "carbs_g": 20.0, "fat_g": 2.0},
             ],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert create_response.status_code == 201
     log_id = create_response.json()["data"]["id"]
@@ -247,7 +229,7 @@ async def test_update_diet_log_success(client):
                 }
             ]
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert update_response.status_code == 200
@@ -258,9 +240,9 @@ async def test_update_diet_log_success(client):
 
 
 @pytest.mark.asyncio
-async def test_update_other_users_log_returns_403(client):
-    owner_token, _ = await _register_and_get_token(client, "diet-owner@example.com")
-    other_token, _ = await _register_and_get_token(client, "diet-other@example.com")
+async def test_update_other_users_log_returns_403(client, register_and_get_token, auth_headers):
+    owner_token, _ = await register_and_get_token(client, "diet-owner@example.com")
+    other_token, _ = await register_and_get_token(client, "diet-other@example.com")
 
     create_response = await client.post(
         "/api/v1/diet/logs",
@@ -269,7 +251,7 @@ async def test_update_other_users_log_returns_403(client):
             "meal_type": "lunch",
             "items": [{"food_name": "Owner Food", "calories": 100.0}],
         },
-        headers=_auth_headers(owner_token),
+        headers=auth_headers(owner_token),
     )
     assert create_response.status_code == 201
     log_id = create_response.json()["data"]["id"]
@@ -277,7 +259,7 @@ async def test_update_other_users_log_returns_403(client):
     update_response = await client.put(
         f"/api/v1/diet/logs/{log_id}",
         json={"meal_type": "dinner"},
-        headers=_auth_headers(other_token),
+        headers=auth_headers(other_token),
     )
 
     assert update_response.status_code == 403
@@ -287,8 +269,8 @@ async def test_update_other_users_log_returns_403(client):
 
 
 @pytest.mark.asyncio
-async def test_delete_diet_log_success(client):
-    access_token, _ = await _register_and_get_token(client, "diet-delete@example.com")
+async def test_delete_diet_log_success(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "diet-delete@example.com")
     create_response = await client.post(
         "/api/v1/diet/logs",
         json={
@@ -296,14 +278,14 @@ async def test_delete_diet_log_success(client):
             "meal_type": "snack",
             "items": [{"food_name": "Protein Bar", "calories": 210.0}],
         },
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert create_response.status_code == 201
     log_id = create_response.json()["data"]["id"]
 
     delete_response = await client.delete(
         f"/api/v1/diet/logs/{log_id}",
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert delete_response.status_code == 200
