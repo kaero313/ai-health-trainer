@@ -442,7 +442,7 @@ Authorization: Bearer <access_token>
 **비즈니스 로직:**
 - 사용자 프로필 + 오늘/최근 식단 기록 → 프롬프트 구성
 - RAG 검색 → 관련 영양 지식 추가
-- GPT-4o로 추천 생성
+- Gemini 2.5 Flash로 추천 생성
 - 결과를 `ai_recommendations` 테이블에 저장
 
 ---
@@ -597,7 +597,61 @@ Authorization: Bearer <access_token>
 
 ---
 
-## 6. 대시보드 API (`/api/v1/dashboard`)
+## 6. AI 채팅 API (`/api/v1/ai`)
+
+### POST `/ai/chat` — AI 코칭 채팅
+
+**인증:** 필요
+
+**요청:**
+```json
+{
+  "message": "오늘 저녁 뭘 먹으면 좋을까요?",
+  "context_type": "diet"
+}
+```
+
+**필드 설명:**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `message` | string | ✅ | 사용자 질문 (1~1000자) |
+| `context_type` | string | ❌ | `diet` / `exercise` / `general` (기본: `general`) |
+
+**성공 응답 (200):**
+```json
+{
+  "status": "success",
+  "data": {
+    "answer": "오늘 저녁은 고구마 200g과 닭가슴살 150g을 추천합니다. 현재 탄수화물이 부족하므로...",
+    "context_used": {
+      "profile_loaded": true,
+      "today_diet_records": 2,
+      "today_exercise_records": 0
+    },
+    "sources": ["벌크업 영양 가이드"]
+  }
+}
+```
+
+**AI 에러 코드:**
+| HTTP Status | 에러 코드 | 설명 |
+|-------------|----------|------|
+| 400 | `AI_BLOCKED` | AI가 해당 요청을 처리할 수 없음 (안전 필터) |
+| 429 | `DAILY_LIMIT_EXCEEDED` | 일일 AI 사용 한도 초과 |
+| 502 | `AI_PARSE_ERROR` | AI 응답 파싱 실패 |
+| 503 | `AI_TIMEOUT` | AI 서비스 응답 없음 |
+| 503 | `AI_RATE_LIMITED` | AI 서비스 일시 제한 (Google API) |
+| 503 | `AI_SERVICE_ERROR` | AI 서비스 내부 오류 |
+
+**비즈니스 로직:**
+- `context_type`에 따라 프로필 + 식단/운동 기록을 자동 수집
+- RAG 검색으로 관련 영양/운동 지식 참조
+- Gemini 2.5 Flash로 개인화된 답변 생성
+- 결과를 `ai_recommendations` 테이블에 저장 (type: `coaching`)
+
+---
+
+## 7. 대시보드 API (`/api/v1/dashboard`)
 
 ### GET `/dashboard/today` — 오늘의 종합 현황
 
@@ -692,16 +746,17 @@ Authorization: Bearer <access_token>
 
 ---
 
-## 7. Codex 구현 가이드
+## 8. Codex 구현 가이드
 
 ### 파일 구조
 ```
 backend/app/api/v1/
 ├── __init__.py
+├── ai_chat.py       # AI 채팅 엔드포인트
 ├── auth.py          # 인증 관련 엔드포인트
 ├── profile.py       # 프로필 엔드포인트
-├── diet.py          # 식단 엔드포인트
-├── exercise.py      # 운동 엔드포인트
+├── diet.py          # 식단 + 사진분석 + 추천 엔드포인트
+├── exercise.py      # 운동 + 추천 엔드포인트
 ├── dashboard.py     # 대시보드 엔드포인트
 └── router.py        # APIRouter 통합
 ```

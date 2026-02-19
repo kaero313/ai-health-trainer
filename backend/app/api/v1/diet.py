@@ -157,6 +157,15 @@ async def analyze_food_image(
     except AIServiceError as exc:
         _raise_ai_error(exc)
 
+    foods = result.get("foods", [])
+    if "total" not in result:
+        result["total"] = {
+            "calories": sum(f.get("calories", 0) for f in foods),
+            "protein_g": sum(f.get("protein_g", 0) for f in foods),
+            "carbs_g": sum(f.get("carbs_g", 0) for f in foods),
+            "fat_g": sum(f.get("fat_g", 0) for f in foods),
+        }
+
     return FoodAnalysisResponse(status="success", data=result)
 
 
