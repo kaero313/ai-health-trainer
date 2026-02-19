@@ -20,7 +20,7 @@ class RagDocument(Base):
     source: Mapped[str | None] = mapped_column(String(500), nullable=True)
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[list[float]] = mapped_column(Vector(768), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(3072), nullable=False)
     metadata_: Mapped[dict[str, object]] = mapped_column(
         "metadata",
         JSONB,

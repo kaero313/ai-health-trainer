@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     AI_DEFAULT_MODEL: str = "gemini-2.5-flash"
     AI_ADVANCED_MODEL: str = "gemini-2.5-pro"
-    AI_EMBEDDING_MODEL: str = "text-embedding-004"
+    AI_EMBEDDING_MODEL: str = "gemini-embedding-001"
     AI_MAX_OUTPUT_TOKENS: int = 1000
     AI_TEMPERATURE: float = 0.7
     AI_DAILY_REQUEST_LIMIT: int = 30
