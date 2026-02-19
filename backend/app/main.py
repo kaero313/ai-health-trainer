@@ -1,10 +1,14 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.database import engine
 
 settings = get_settings()
 if hasattr(status, "HTTP_422_UNPROCESSABLE_CONTENT"):
@@ -12,9 +16,18 @@ if hasattr(status, "HTTP_422_UNPROCESSABLE_CONTENT"):
 else:
     HTTP_422_STATUS = 422
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    yield
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
