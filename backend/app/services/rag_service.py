@@ -22,7 +22,7 @@ class RAGService:
 
         result = await asyncio.to_thread(
             genai.embed_content,
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",
             content=normalized,
         )
         embedding = result["embedding"]
