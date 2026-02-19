@@ -55,29 +55,13 @@ def _calculate_expected_targets(payload: dict[str, object]) -> dict[str, int | f
     }
 
 
-async def _register_user_and_get_token(client, email: str) -> tuple[str, int]:
-    response = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": email,
-            "password": "SecurePass123!",
-            "password_confirm": "SecurePass123!",
-        },
-    )
-    assert response.status_code == 201
-    payload = response.json()["data"]
-    return payload["access_token"], payload["user"]["id"]
-
-
-def _auth_headers(access_token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {access_token}"}
 
 
 @pytest.mark.asyncio
-async def test_get_profile_not_found_returns_not_found(client):
-    access_token, _ = await _register_user_and_get_token(client, "profile-none@example.com")
+async def test_get_profile_not_found_returns_not_found(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "profile-none@example.com")
 
-    response = await client.get("/api/v1/profile", headers=_auth_headers(access_token))
+    response = await client.get("/api/v1/profile", headers=auth_headers(access_token))
 
     assert response.status_code == 404
     payload = response.json()
@@ -86,8 +70,8 @@ async def test_get_profile_not_found_returns_not_found(client):
 
 
 @pytest.mark.asyncio
-async def test_put_profile_creates_profile_and_calculates_targets(client):
-    access_token, user_id = await _register_user_and_get_token(client, "profile-create@example.com")
+async def test_put_profile_creates_profile_and_calculates_targets(client, register_and_get_token, auth_headers):
+    access_token, user_id = await register_and_get_token(client, "profile-create@example.com")
     request_payload = {
         "height_cm": 175.0,
         "weight_kg": 70.0,
@@ -102,7 +86,7 @@ async def test_put_profile_creates_profile_and_calculates_targets(client):
     response = await client.put(
         "/api/v1/profile",
         json=request_payload,
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
 
     assert response.status_code == 200
@@ -128,8 +112,8 @@ async def test_put_profile_creates_profile_and_calculates_targets(client):
 
 
 @pytest.mark.asyncio
-async def test_get_profile_returns_saved_profile(client):
-    access_token, user_id = await _register_user_and_get_token(client, "profile-get@example.com")
+async def test_get_profile_returns_saved_profile(client, register_and_get_token, auth_headers):
+    access_token, user_id = await register_and_get_token(client, "profile-get@example.com")
     request_payload = {
         "height_cm": 165.5,
         "weight_kg": 62.5,
@@ -144,11 +128,11 @@ async def test_get_profile_returns_saved_profile(client):
     put_response = await client.put(
         "/api/v1/profile",
         json=request_payload,
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert put_response.status_code == 200
 
-    get_response = await client.get("/api/v1/profile", headers=_auth_headers(access_token))
+    get_response = await client.get("/api/v1/profile", headers=auth_headers(access_token))
 
     assert get_response.status_code == 200
     payload = get_response.json()
@@ -163,8 +147,8 @@ async def test_get_profile_returns_saved_profile(client):
 
 
 @pytest.mark.asyncio
-async def test_put_profile_updates_existing_profile_and_recalculates_targets(client):
-    access_token, _ = await _register_user_and_get_token(client, "profile-update@example.com")
+async def test_put_profile_updates_existing_profile_and_recalculates_targets(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "profile-update@example.com")
     first_payload = {
         "height_cm": 180.0,
         "weight_kg": 80.0,
@@ -189,14 +173,14 @@ async def test_put_profile_updates_existing_profile_and_recalculates_targets(cli
     first_response = await client.put(
         "/api/v1/profile",
         json=first_payload,
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert first_response.status_code == 200
 
     second_response = await client.put(
         "/api/v1/profile",
         json=second_payload,
-        headers=_auth_headers(access_token),
+        headers=auth_headers(access_token),
     )
     assert second_response.status_code == 200
 
