@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.diet import MealTypeEnum
 from app.models.user import User
-from app.schemas.ai import FoodAnalysisResponse
+from app.schemas.ai import DietRecommendationResponse, FoodAnalysisResponse
 from app.schemas.diet import (
     DietDeleteResponse,
     DietLogCreate,
@@ -18,6 +18,8 @@ from app.schemas.diet import (
 )
 from app.services.ai_service import AIService, AIServiceError
 from app.services.diet_service import DietService, DietServiceError
+from app.services.rag_service import RAGService
+from app.services.recommendation_service import RecommendationService, RecommendationServiceError
 
 router = APIRouter(prefix="/diet", tags=["diet"])
 
@@ -33,6 +35,16 @@ def _raise_http_error(service_error: DietServiceError) -> None:
 
 
 def _raise_ai_error(service_error: AIServiceError) -> None:
+    raise HTTPException(
+        status_code=service_error.status_code,
+        detail={
+            "code": service_error.code,
+            "message": service_error.message,
+        },
+    )
+
+
+def _raise_recommendation_error(service_error: RecommendationServiceError) -> None:
     raise HTTPException(
         status_code=service_error.status_code,
         detail={
@@ -146,3 +158,33 @@ async def analyze_food_image(
         _raise_ai_error(exc)
 
     return FoodAnalysisResponse(status="success", data=result)
+
+
+@router.get("/recommend", response_model=DietRecommendationResponse)
+async def recommend_diet(
+    target_date: date | None = Query(None, alias="date"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DietRecommendationResponse:
+    settings = get_settings()
+    ai_service = AIService(settings)
+    if await ai_service.check_rate_limit(db, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "DAILY_LIMIT_EXCEEDED",
+                "message": "일일 AI 사용 한도에 도달했습니다",
+            },
+        )
+
+    rag_service = RAGService(db, settings)
+    rec_service = RecommendationService(db, ai_service, rag_service)
+
+    try:
+        result = await rec_service.recommend_diet(current_user.id, target_date or date.today())
+    except RecommendationServiceError as exc:
+        _raise_recommendation_error(exc)
+    except AIServiceError as exc:
+        _raise_ai_error(exc)
+
+    return DietRecommendationResponse(status="success", data=result)
