@@ -70,6 +70,7 @@ async def manage_test_database() -> AsyncGenerator[None, None]:
 async def db_session(manage_test_database: None) -> AsyncGenerator[AsyncSession, None]:
     test_engine = create_async_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     async with test_engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
