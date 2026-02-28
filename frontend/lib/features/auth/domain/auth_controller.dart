@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/secure_storage_service.dart';
 import '../data/auth_repository.dart';
+import 'auth_state_provider.dart';
 
 class AuthController extends AsyncNotifier<void> {
   @override
@@ -21,6 +22,7 @@ class AuthController extends AsyncNotifier<void> {
             access: tokens['access_token'] as String,
             refresh: tokens['refresh_token'] as String,
           );
+      ref.invalidate(authStateProvider);
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
@@ -45,6 +47,7 @@ class AuthController extends AsyncNotifier<void> {
             access: tokens['access_token'] as String,
             refresh: tokens['refresh_token'] as String,
           );
+      ref.invalidate(authStateProvider);
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
