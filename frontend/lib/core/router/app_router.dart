@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/register_screen.dart';
 import '../../shared/widgets/placeholder_screen.dart';
 import 'main_shell.dart';
 
@@ -18,11 +20,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/login',
-        builder: (c, s) => const PlaceholderScreen(title: 'Login'),
+        builder: (c, s) => const LoginScreen(),
       ),
       GoRoute(
         path: '/register',
-        builder: (c, s) => const PlaceholderScreen(title: 'Register'),
+        builder: (c, s) => const RegisterScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => MainShell(
