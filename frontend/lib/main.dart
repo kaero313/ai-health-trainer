@@ -1,6 +1,7 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
@@ -12,9 +13,9 @@ class MyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return MaterialApp(
+    return MaterialApp.router(
       theme: AppTheme.darkTheme,
-      home: const Scaffold(body: Center(child: Text('\uCD08\uAE30\uD654 \uC644\uB8CC'))),
+      routerConfig: ref.watch(routerProvider),
     );
   }
 }
