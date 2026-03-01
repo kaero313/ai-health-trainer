@@ -74,6 +74,8 @@ Thumbs.db
 postgres_data/
 redis_data/
 data/
+!frontend/lib/features/profile/data/
+!frontend/lib/features/profile/data/*.dart
 
 # ── 업로드 파일 ──
 uploads/
