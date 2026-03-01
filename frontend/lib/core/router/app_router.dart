@@ -7,6 +7,7 @@ import '../../features/auth/presentation/onboarding_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
+import '../../features/diet/presentation/diet_screen.dart';
 import '../../features/profile/presentation/profile_edit_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../shared/widgets/placeholder_screen.dart';
@@ -47,44 +48,25 @@ final routerProvider = Provider<GoRouter>((ref) {
       );
     },
     routes: [
-      GoRoute(
-        path: '/splash',
-        builder: (c, s) => const SplashScreen(),
-      ),
-      GoRoute(
-        path: '/onboarding',
-        builder: (c, s) => const OnboardingScreen(),
-      ),
-      GoRoute(
-        path: '/login',
-        builder: (c, s) => const LoginScreen(),
-      ),
-      GoRoute(
-        path: '/register',
-        builder: (c, s) => const RegisterScreen(),
-      ),
+      GoRoute(path: '/splash', builder: (c, s) => const SplashScreen()),
+      GoRoute(path: '/onboarding', builder: (c, s) => const OnboardingScreen()),
+      GoRoute(path: '/login', builder: (c, s) => const LoginScreen()),
+      GoRoute(path: '/register', builder: (c, s) => const RegisterScreen()),
       ShellRoute(
-        builder: (context, state, child) => MainShell(
-          currentLocation: state.uri.path,
-          child: child,
-        ),
+        builder:
+            (context, state, child) =>
+                MainShell(currentLocation: state.uri.path, child: child),
         routes: [
           GoRoute(
             path: '/dashboard',
             builder: (c, s) => const DashboardScreen(),
           ),
-          GoRoute(
-            path: '/diet',
-            builder: (c, s) => const PlaceholderScreen(title: 'Diet'),
-          ),
+          GoRoute(path: '/diet', builder: (c, s) => const DietScreen()),
           GoRoute(
             path: '/exercise',
             builder: (c, s) => const PlaceholderScreen(title: 'Exercise'),
           ),
-          GoRoute(
-            path: '/profile',
-            builder: (c, s) => const ProfileScreen(),
-          ),
+          GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
         ],
       ),
       GoRoute(
@@ -109,8 +91,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/exercise/history/:group',
-        builder: (c, s) =>
-            PlaceholderScreen(title: 'History ${s.pathParameters["group"]}'),
+        builder:
+            (c, s) => PlaceholderScreen(
+              title: 'History ${s.pathParameters["group"]}',
+            ),
       ),
       GoRoute(
         path: '/profile/edit',
