@@ -197,7 +197,7 @@ class _MealSection extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
-                onPressed: () => context.push('/diet/add?meal_type=$mealType'),
+                onPressed: () => _openDietAddScreen(context, mealType),
                 child: Text(
                   '+ 추가하기',
                   style: AppTypography.body2.copyWith(color: AppColors.primary),
@@ -227,7 +227,7 @@ class _EmptyMealSection extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         TextButton(
-          onPressed: () => context.push('/diet/add?meal_type=$mealType'),
+          onPressed: () => _openDietAddScreen(context, mealType),
           child: Text(
             '[+ 기록하기]',
             style: AppTypography.body2.copyWith(color: AppColors.primary),
@@ -582,6 +582,18 @@ class _DietErrorView extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _openDietAddScreen(BuildContext context, String mealType) async {
+  final bool? created = await context.push<bool>(
+    '/diet/add?meal_type=$mealType',
+  );
+  if (!context.mounted || created != true) {
+    return;
+  }
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(const SnackBar(content: Text('식단이 추가되었습니다')));
 }
 
 String _mealLabel(String mealType) {

@@ -18,6 +18,35 @@ class DietRepository {
 
   DietRepository({required this.dio});
 
+  Future<Map<String, dynamic>> createDietLog(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final Response<dynamic> response = await dio.post<dynamic>(
+        '/diet/logs',
+        data: payload,
+      );
+      final dynamic rawResponse = response.data;
+      if (rawResponse is! Map<String, dynamic>) {
+        throw const DietRepositoryException('서버 응답 형식이 올바르지 않습니다.');
+      }
+      if (rawResponse['status'] != 'success') {
+        throw const DietRepositoryException('식단 저장에 실패했습니다.');
+      }
+
+      final dynamic rawData = rawResponse['data'];
+      if (rawData is! Map<String, dynamic>) {
+        throw const DietRepositoryException('식단 저장 응답 데이터가 비어 있습니다.');
+      }
+      return rawData;
+    } on DioException catch (e) {
+      throw DietRepositoryException(
+        _extractDioErrorMessage(e),
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> getDietLogs(String date) async {
     try {
       final Response<dynamic> response = await dio.get<dynamic>(
