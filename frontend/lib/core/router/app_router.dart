@@ -6,6 +6,8 @@ import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/onboarding_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
+import '../../features/profile/presentation/profile_edit_screen.dart';
+import '../../features/profile/presentation/profile_screen.dart';
 import '../../shared/widgets/placeholder_screen.dart';
 import 'main_shell.dart';
 import 'router_notifier.dart';
@@ -80,7 +82,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/profile',
-            builder: (c, s) => const PlaceholderScreen(title: 'Profile'),
+            builder: (c, s) => const ProfileScreen(),
           ),
         ],
       ),
@@ -111,7 +113,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/profile/edit',
-        builder: (c, s) => const PlaceholderScreen(title: 'Profile Edit'),
+        builder: (c, s) => const ProfileEditScreen(),
       ),
     ],
   );
