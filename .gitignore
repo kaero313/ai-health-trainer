@@ -76,6 +76,8 @@ redis_data/
 data/
 !frontend/lib/features/profile/data/
 !frontend/lib/features/profile/data/*.dart
+!frontend/lib/features/dashboard/data/
+!frontend/lib/features/dashboard/data/*.dart
 
 # ── 업로드 파일 ──
 uploads/

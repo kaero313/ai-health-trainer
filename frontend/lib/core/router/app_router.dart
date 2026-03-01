@@ -6,6 +6,7 @@ import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/onboarding_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
+import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/profile/presentation/profile_edit_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../shared/widgets/placeholder_screen.dart';
@@ -70,7 +71,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: '/dashboard',
-            builder: (c, s) => const PlaceholderScreen(title: 'Dashboard'),
+            builder: (c, s) => const DashboardScreen(),
           ),
           GoRoute(
             path: '/diet',
