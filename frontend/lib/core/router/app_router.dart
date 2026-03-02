@@ -9,6 +9,7 @@ import '../../features/auth/presentation/splash_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/diet/presentation/diet_add_screen.dart';
 import '../../features/diet/presentation/diet_analyze_screen.dart';
+import '../../features/diet/presentation/diet_recommend_screen.dart';
 import '../../features/diet/presentation/diet_screen.dart';
 import '../../features/exercise/presentation/exercise_add_screen.dart';
 import '../../features/exercise/presentation/exercise_screen.dart';
@@ -82,7 +83,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/diet/recommend',
-        builder: (c, s) => const PlaceholderScreen(title: 'Diet Recommend'),
+        builder: (c, s) => const DietRecommendScreen(),
       ),
       GoRoute(
         path: '/exercise/add',
