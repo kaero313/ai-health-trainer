@@ -6,6 +6,7 @@ import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/onboarding_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
+import '../../features/chat/presentation/chat_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/diet/presentation/diet_add_screen.dart';
 import '../../features/diet/presentation/diet_analyze_screen.dart';
@@ -58,6 +59,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/onboarding', builder: (c, s) => const OnboardingScreen()),
       GoRoute(path: '/login', builder: (c, s) => const LoginScreen()),
       GoRoute(path: '/register', builder: (c, s) => const RegisterScreen()),
+      GoRoute(path: '/ai/chat', builder: (c, s) => const ChatScreen()),
       ShellRoute(
         builder:
             (context, state, child) =>
