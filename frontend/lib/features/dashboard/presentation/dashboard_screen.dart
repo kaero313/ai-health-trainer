@@ -69,7 +69,7 @@ class DashboardScreen extends ConsumerWidget {
 
           if (hasUnhandledError) {
             return _DashboardErrorView(
-              message: _extractErrorMessage(firstError!),
+              message: _extractErrorMessage(firstError),
               onRetry: () => refreshDashboard(ref),
             );
           }
@@ -93,9 +93,9 @@ class DashboardScreen extends ConsumerWidget {
                   const SizedBox(height: AppSpacing.md),
                   _TodayExerciseCard(data: today),
                   const SizedBox(height: AppSpacing.md),
-                  _AiCoachingCard(today: today),
-                  const SizedBox(height: AppSpacing.md),
                   _WeeklySummaryCard(today: today, weekly: weekly),
+                  const SizedBox(height: AppSpacing.md),
+                  const _AiCoachingCard(),
                   const SizedBox(height: AppSpacing.xl),
                 ],
               ),
@@ -183,6 +183,7 @@ class _TodayNutritionCard extends StatelessWidget {
               current: _toDouble(consumed['protein_g']),
               target: _toDouble(target['protein_g']),
               color: AppColors.protein,
+              delay: Duration.zero,
             ),
             const SizedBox(height: AppSpacing.sm),
             NutrientBar(
@@ -190,6 +191,7 @@ class _TodayNutritionCard extends StatelessWidget {
               current: _toDouble(consumed['carbs_g']),
               target: _toDouble(target['carbs_g']),
               color: AppColors.carbs,
+              delay: const Duration(milliseconds: 50),
             ),
             const SizedBox(height: AppSpacing.sm),
             NutrientBar(
@@ -197,6 +199,7 @@ class _TodayNutritionCard extends StatelessWidget {
               current: _toDouble(consumed['fat_g']),
               target: _toDouble(target['fat_g']),
               color: AppColors.fat,
+              delay: const Duration(milliseconds: 100),
             ),
           ],
         ),
@@ -217,7 +220,9 @@ class _TodayExerciseCard extends StatelessWidget {
     final List<dynamic> rawGroups =
         exercise['muscle_groups_trained'] as List<dynamic>? ?? <dynamic>[];
     final List<String> groups =
-        rawGroups.map((dynamic group) => _muscleGroupLabel(group.toString())).toList();
+        rawGroups
+            .map((dynamic group) => _muscleGroupLabel(group.toString()))
+            .toList();
 
     final int exercisesCount = _toRoundedInt(exercise['exercises_count']);
     final int totalSets = _toRoundedInt(exercise['total_sets']);
@@ -239,7 +244,9 @@ class _TodayExerciseCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             Text(
               '$exercisesCount개 운동 · $totalSets세트',
-              style: AppTypography.body2.copyWith(color: AppColors.textSecondary),
+              style: AppTypography.body2.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: AppSpacing.sm),
             Container(
@@ -248,54 +255,18 @@ class _TodayExerciseCard extends StatelessWidget {
                 vertical: AppSpacing.xs,
               ),
               decoration: BoxDecoration(
-                color: completed ? AppColors.primarySoft : AppColors.surfaceLight,
+                color:
+                    completed ? AppColors.primarySoft : AppColors.surfaceLight,
                 borderRadius: BorderRadius.circular(AppRadius.full),
               ),
               child: Text(
                 completed ? '✅ 완료' : '⏳ 미완료',
                 style: AppTypography.caption.copyWith(
-                  color: completed ? AppColors.primary : AppColors.textSecondary,
+                  color:
+                      completed ? AppColors.primary : AppColors.textSecondary,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AiCoachingCard extends StatelessWidget {
-  final Map<String, dynamic> today;
-
-  const _AiCoachingCard({required this.today});
-
-  @override
-  Widget build(BuildContext context) {
-    final Map<String, dynamic> nutrition =
-        today['nutrition'] as Map<String, dynamic>? ?? <String, dynamic>{};
-    final Map<String, dynamic> progressPercent =
-        nutrition['progress_percent'] as Map<String, dynamic>? ??
-        <String, dynamic>{};
-    final double proteinProgress = _toDouble(progressPercent['protein_g']);
-
-    final String message = proteinProgress >= 90
-        ? '단백질 목표를 거의 달성했습니다. 저녁에는 탄수화물 중심 식사를 추천합니다.'
-        : '오늘 단백질 섭취가 부족합니다. 단백질 식품을 한 끼 추가해보세요.';
-
-    return DecoratedBox(
-      decoration: glassCardDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('AI 코칭', style: AppTypography.h3),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              '🤖 $message',
-              style: AppTypography.body2,
             ),
           ],
         ),
@@ -308,10 +279,7 @@ class _WeeklySummaryCard extends StatelessWidget {
   final Map<String, dynamic> today;
   final Map<String, dynamic> weekly;
 
-  const _WeeklySummaryCard({
-    required this.today,
-    required this.weekly,
-  });
+  const _WeeklySummaryCard({required this.today, required this.weekly});
 
   @override
   Widget build(BuildContext context) {
@@ -344,10 +312,7 @@ class _WeeklySummaryCard extends StatelessWidget {
               children: List<Widget>.generate(7, (int index) {
                 return Column(
                   children: [
-                    Text(
-                      _weekdayLabel(index),
-                      style: AppTypography.caption,
-                    ),
+                    Text(_weekdayLabel(index), style: AppTypography.caption),
                     const SizedBox(height: AppSpacing.xs),
                     Container(
                       width: 14,
@@ -402,6 +367,53 @@ class _WeeklySummaryCard extends StatelessWidget {
   }
 }
 
+class _AiCoachingCard extends StatelessWidget {
+  const _AiCoachingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: glassCardDecoration,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('🤖'),
+                const SizedBox(width: AppSpacing.xs),
+                Text('AI 코칭', style: AppTypography.h3),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              '식단, 운동에 대한 맞춤 코칭을 받아보세요',
+              style: AppTypography.body2.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => context.push('/ai/chat'),
+                child: Text(
+                  '채팅 시작',
+                  style: AppTypography.body2.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ProfileRequiredView extends StatelessWidget {
   final VoidCallback onSetup;
 
@@ -415,7 +427,11 @@ class _ProfileRequiredView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.person_outline, color: AppColors.textSecondary, size: 56),
+            const Icon(
+              Icons.person_outline,
+              color: AppColors.textSecondary,
+              size: 56,
+            ),
             const SizedBox(height: AppSpacing.md),
             Text(
               '프로필을 먼저 설정해주세요',
@@ -487,10 +503,7 @@ class _DashboardErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
 
-  const _DashboardErrorView({
-    required this.message,
-    required this.onRetry,
-  });
+  const _DashboardErrorView({required this.message, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
