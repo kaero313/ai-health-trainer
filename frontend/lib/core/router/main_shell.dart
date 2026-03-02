@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
 
 class MainShell extends StatelessWidget {
   final Widget child;
@@ -33,15 +34,94 @@ class MainShell extends StatelessWidget {
     switch (index) {
       case 0:
         context.go('/dashboard');
+        return;
       case 1:
         context.go('/diet');
+        return;
       case 2:
         context.go('/exercise');
+        return;
       case 3:
         context.go('/profile');
+        return;
       default:
         context.go('/dashboard');
+        return;
     }
+  }
+
+  void _showQuickActionSheet(BuildContext outerContext) {
+    showModalBottomSheet<void>(
+      context: outerContext,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+      ),
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _QuickActionTile(
+                icon: Icons.restaurant,
+                title: '🍽 식단 추가',
+                onTap:
+                    () => _closeSheetThenPush(
+                      sheetContext: sheetContext,
+                      outerContext: outerContext,
+                      route: '/diet/add',
+                    ),
+              ),
+              _QuickActionTile(
+                icon: Icons.photo_camera,
+                title: '📷 사진 분석',
+                onTap:
+                    () => _closeSheetThenPush(
+                      sheetContext: sheetContext,
+                      outerContext: outerContext,
+                      route: '/diet/analyze',
+                    ),
+              ),
+              _QuickActionTile(
+                icon: Icons.fitness_center,
+                title: '💪 운동 추가',
+                onTap:
+                    () => _closeSheetThenPush(
+                      sheetContext: sheetContext,
+                      outerContext: outerContext,
+                      route: '/exercise/add',
+                    ),
+              ),
+              _QuickActionTile(
+                icon: Icons.smart_toy,
+                title: '🤖 AI 코칭',
+                onTap:
+                    () => _closeSheetThenPush(
+                      sheetContext: sheetContext,
+                      outerContext: outerContext,
+                      route: '/ai/chat',
+                    ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _closeSheetThenPush({
+    required BuildContext sheetContext,
+    required BuildContext outerContext,
+    required String route,
+  }) {
+    Navigator.of(sheetContext).pop();
+    Future<void>.microtask(() {
+      if (!outerContext.mounted) {
+        return;
+      }
+      outerContext.push(route);
+    });
   }
 
   @override
@@ -52,18 +132,16 @@ class MainShell extends StatelessWidget {
       body: child,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: FloatingActionButton(
+        shape: const CircleBorder(),
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.background,
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('빠른 기록 기능은 다음 단계에서 구현됩니다')),
-          );
-        },
+        onPressed: () => _showQuickActionSheet(context),
         child: const Icon(Icons.add),
       ),
       bottomNavigationBar: BottomAppBar(
         color: AppColors.surface,
         shape: const CircularNotchedRectangle(),
+        notchMargin: 6,
         child: SizedBox(
           height: 68,
           child: Row(
@@ -97,6 +175,34 @@ class MainShell extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _QuickActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  const _QuickActionTile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: AppColors.primary),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      onTap: onTap,
     );
   }
 }
