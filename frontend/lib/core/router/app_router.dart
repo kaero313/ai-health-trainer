@@ -9,6 +9,8 @@ import '../../features/auth/presentation/splash_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/diet/presentation/diet_add_screen.dart';
 import '../../features/diet/presentation/diet_screen.dart';
+import '../../features/exercise/presentation/exercise_add_screen.dart';
+import '../../features/exercise/presentation/exercise_screen.dart';
 import '../../features/profile/presentation/profile_edit_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../shared/widgets/placeholder_screen.dart';
@@ -63,10 +65,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (c, s) => const DashboardScreen(),
           ),
           GoRoute(path: '/diet', builder: (c, s) => const DietScreen()),
-          GoRoute(
-            path: '/exercise',
-            builder: (c, s) => const PlaceholderScreen(title: 'Exercise'),
-          ),
+          GoRoute(path: '/exercise', builder: (c, s) => const ExerciseScreen()),
           GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
         ],
       ),
@@ -86,7 +85,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/exercise/add',
-        builder: (c, s) => const PlaceholderScreen(title: 'Exercise Add'),
+        builder: (c, s) => const ExerciseAddScreen(),
       ),
       GoRoute(
         path: '/exercise/recommend',

@@ -80,6 +80,8 @@ data/
 !frontend/lib/features/dashboard/data/*.dart
 !frontend/lib/features/diet/data/
 !frontend/lib/features/diet/data/*.dart
+!frontend/lib/features/exercise/data/
+!frontend/lib/features/exercise/data/*.dart
 
 # ── 업로드 파일 ──
 uploads/
