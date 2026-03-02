@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -59,7 +60,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/onboarding', builder: (c, s) => const OnboardingScreen()),
       GoRoute(path: '/login', builder: (c, s) => const LoginScreen()),
       GoRoute(path: '/register', builder: (c, s) => const RegisterScreen()),
-      GoRoute(path: '/ai/chat', builder: (c, s) => const ChatScreen()),
+      GoRoute(
+        path: '/ai/chat',
+        pageBuilder:
+            (c, s) => _buildTransitionPage(state: s, child: const ChatScreen()),
+      ),
       ShellRoute(
         builder:
             (context, state, child) =>
@@ -76,45 +81,71 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/diet/analyze',
-        builder: (c, s) => const DietAnalyzeScreen(),
+        pageBuilder:
+            (c, s) => _buildTransitionPage(
+              state: s,
+              child: const DietAnalyzeScreen(),
+            ),
       ),
       GoRoute(
         path: '/diet/add',
-        builder:
-            (c, state) =>
-                DietAddScreen(mealType: state.uri.queryParameters['meal_type']),
+        pageBuilder:
+            (c, state) => _buildTransitionPage(
+              state: state,
+              child: DietAddScreen(
+                mealType: state.uri.queryParameters['meal_type'],
+              ),
+            ),
       ),
       GoRoute(
         path: '/diet/recommend',
-        builder: (c, s) => const DietRecommendScreen(),
+        pageBuilder:
+            (c, s) => _buildTransitionPage(
+              state: s,
+              child: const DietRecommendScreen(),
+            ),
       ),
       GoRoute(
         path: '/exercise/add',
-        builder: (c, s) {
+        pageBuilder: (c, s) {
           final Map<String, dynamic>? extraMap = _readExtraMap(s.extra);
-          return ExerciseAddScreen(
-            exerciseName: _readString(extraMap, 'exercise_name'),
-            muscleGroup: _readString(extraMap, 'muscle_group'),
-            sets: _readInt(extraMap, 'sets'),
-            reps: _readInt(extraMap, 'reps'),
-            weightKg: _readDouble(extraMap, 'weight_kg'),
+          return _buildTransitionPage(
+            state: s,
+            child: ExerciseAddScreen(
+              exerciseName: _readString(extraMap, 'exercise_name'),
+              muscleGroup: _readString(extraMap, 'muscle_group'),
+              sets: _readInt(extraMap, 'sets'),
+              reps: _readInt(extraMap, 'reps'),
+              weightKg: _readDouble(extraMap, 'weight_kg'),
+            ),
           );
         },
       ),
       GoRoute(
         path: '/exercise/recommend',
-        builder: (c, s) => const ExerciseRecommendScreen(),
+        pageBuilder:
+            (c, s) => _buildTransitionPage(
+              state: s,
+              child: const ExerciseRecommendScreen(),
+            ),
       ),
       GoRoute(
         path: '/exercise/history/:group',
-        builder:
-            (c, s) => PlaceholderScreen(
-              title: 'History ${s.pathParameters["group"]}',
+        pageBuilder:
+            (c, s) => _buildTransitionPage(
+              state: s,
+              child: PlaceholderScreen(
+                title: 'History ${s.pathParameters["group"]}',
+              ),
             ),
       ),
       GoRoute(
         path: '/profile/edit',
-        builder: (c, s) => const ProfileEditScreen(),
+        pageBuilder:
+            (c, s) => _buildTransitionPage(
+              state: s,
+              child: const ProfileEditScreen(),
+            ),
       ),
     ],
   );
@@ -182,4 +213,39 @@ double? _readDouble(Map<String, dynamic>? map, String key) {
     return double.tryParse(value.trim());
   }
   return null;
+}
+
+CustomTransitionPage<void> _buildTransitionPage({
+  required GoRouterState state,
+  required Widget child,
+}) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 300),
+    transitionsBuilder: (
+      BuildContext context,
+      Animation<double> animation,
+      Animation<double> secondaryAnimation,
+      Widget child,
+    ) {
+      final CurvedAnimation curvedAnimation = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      );
+      final Animation<Offset> slideAnimation = Tween<Offset>(
+        begin: const Offset(0, 0.1),
+        end: Offset.zero,
+      ).animate(curvedAnimation);
+      final Animation<double> fadeAnimation = Tween<double>(
+        begin: 0,
+        end: 1,
+      ).animate(curvedAnimation);
+
+      return FadeTransition(
+        opacity: fadeAnimation,
+        child: SlideTransition(position: slideAnimation, child: child),
+      );
+    },
+  );
 }
