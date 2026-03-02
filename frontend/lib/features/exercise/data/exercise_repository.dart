@@ -33,6 +33,41 @@ class ExerciseRepository {
     }
   }
 
+  Future<Map<String, dynamic>> getRecommendation({String? muscleGroup}) async {
+    try {
+      final Map<String, dynamic> queryParameters = <String, dynamic>{};
+      if (muscleGroup != null && muscleGroup.trim().isNotEmpty) {
+        queryParameters['muscle_group'] = muscleGroup.trim();
+      }
+
+      final Response<dynamic> response = await dio.get<dynamic>(
+        '/exercise/recommend',
+        queryParameters: queryParameters.isEmpty ? null : queryParameters,
+      );
+
+      final dynamic rawResponse = response.data;
+      if (rawResponse is! Map<String, dynamic>) {
+        throw const ExerciseRepositoryException('?쒕쾭 ?묐떟 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎.');
+      }
+      if (rawResponse['status'] != 'success') {
+        throw const ExerciseRepositoryException('AI ?대룞 異붿쿇 議고쉶???ㅽ뙣?덉뒿?덈떎.');
+      }
+
+      final dynamic rawData = rawResponse['data'];
+      if (rawData is! Map<String, dynamic>) {
+        throw const ExerciseRepositoryException(
+          'AI ?대룞 異붿쿇 ?곗씠?곌? 鍮꾩뼱 ?덉뒿?덈떎.',
+        );
+      }
+      return rawData;
+    } on DioException catch (e) {
+      throw ExerciseRepositoryException(
+        _extractDioErrorMessage(e),
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> createExerciseLog(
     Map<String, dynamic> payload,
   ) async {

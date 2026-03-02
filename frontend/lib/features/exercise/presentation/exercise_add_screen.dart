@@ -33,7 +33,21 @@ const List<String> kExerciseMuscleGroupOrder = <String>[
 ];
 
 class ExerciseAddScreen extends ConsumerStatefulWidget {
-  const ExerciseAddScreen({super.key});
+  final String? exerciseName;
+  final String? muscleGroup;
+  final int? sets;
+  final int? reps;
+  final double? weightKg;
+
+  // ignore: prefer_const_constructors_in_immutables
+  ExerciseAddScreen({
+    super.key,
+    this.exerciseName,
+    this.muscleGroup,
+    this.sets,
+    this.reps,
+    this.weightKg,
+  });
 
   @override
   ConsumerState<ExerciseAddScreen> createState() => _ExerciseAddScreenState();
@@ -64,6 +78,7 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
   void initState() {
     super.initState();
     _selectedDate = ref.read(exerciseDateProvider);
+    _applyPrefill();
   }
 
   @override
@@ -421,6 +436,34 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
       ),
     );
   }
+
+  void _applyPrefill() {
+    final String? exerciseName = widget.exerciseName;
+    if (exerciseName != null && exerciseName.trim().isNotEmpty) {
+      _nameController.text = exerciseName.trim();
+    }
+
+    final String? muscleGroup = widget.muscleGroup;
+    if (muscleGroup != null &&
+        kExerciseMuscleGroupOrder.contains(muscleGroup.trim())) {
+      _selectedMuscleGroup = muscleGroup.trim();
+    }
+
+    final int? sets = widget.sets;
+    if (sets != null && sets > 0) {
+      _setsController.text = sets.toString();
+    }
+
+    final int? reps = widget.reps;
+    if (reps != null && reps > 0) {
+      _repsController.text = reps.toString();
+    }
+
+    final double? weightKg = widget.weightKg;
+    if (weightKg != null && weightKg >= 0) {
+      _weightController.text = _formatWeight(weightKg);
+    }
+  }
 }
 
 class _NumberInputField extends StatelessWidget {
@@ -509,4 +552,11 @@ String _extractErrorMessage(Object error) {
     return error.message;
   }
   return error.toString();
+}
+
+String _formatWeight(double value) {
+  if (value == value.roundToDouble()) {
+    return value.toInt().toString();
+  }
+  return value.toStringAsFixed(1);
 }
