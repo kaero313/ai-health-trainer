@@ -18,6 +18,40 @@ class DietRepository {
 
   DietRepository({required this.dio});
 
+  Future<Map<String, dynamic>> analyzeImage(String imagePath) async {
+    try {
+      final String fileName = imagePath.split(RegExp(r'[\\/]')).last;
+      final FormData formData = FormData.fromMap(<String, dynamic>{
+        'image': await MultipartFile.fromFile(imagePath, filename: fileName),
+      });
+
+      final Response<dynamic> response = await dio.post<dynamic>(
+        '/diet/analyze-image',
+        data: formData,
+      );
+
+      final dynamic rawResponse = response.data;
+      if (rawResponse is! Map<String, dynamic>) {
+        throw const DietRepositoryException('서버 응답 형식이 올바르지 않습니다.');
+      }
+      if (rawResponse['status'] != 'success') {
+        throw const DietRepositoryException('이미지 분석에 실패했습니다.');
+      }
+
+      final dynamic rawData = rawResponse['data'];
+      if (rawData is! Map<String, dynamic>) {
+        throw const DietRepositoryException('이미지 분석 응답 데이터가 비어 있습니다.');
+      }
+
+      return rawData;
+    } on DioException catch (e) {
+      throw DietRepositoryException(
+        _extractDioErrorMessage(e),
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> createDietLog(
     Map<String, dynamic> payload,
   ) async {
