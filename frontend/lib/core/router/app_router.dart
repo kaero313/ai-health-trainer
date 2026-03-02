@@ -12,6 +12,7 @@ import '../../features/diet/presentation/diet_analyze_screen.dart';
 import '../../features/diet/presentation/diet_recommend_screen.dart';
 import '../../features/diet/presentation/diet_screen.dart';
 import '../../features/exercise/presentation/exercise_add_screen.dart';
+import '../../features/exercise/presentation/exercise_recommend_screen.dart';
 import '../../features/exercise/presentation/exercise_screen.dart';
 import '../../features/profile/presentation/profile_edit_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
@@ -87,11 +88,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/exercise/add',
-        builder: (c, s) => const ExerciseAddScreen(),
+        builder: (c, s) {
+          final Map<String, dynamic>? extraMap = _readExtraMap(s.extra);
+          return ExerciseAddScreen(
+            exerciseName: _readString(extraMap, 'exercise_name'),
+            muscleGroup: _readString(extraMap, 'muscle_group'),
+            sets: _readInt(extraMap, 'sets'),
+            reps: _readInt(extraMap, 'reps'),
+            weightKg: _readDouble(extraMap, 'weight_kg'),
+          );
+        },
       ),
       GoRoute(
         path: '/exercise/recommend',
-        builder: (c, s) => const PlaceholderScreen(title: 'Exercise Recommend'),
+        builder: (c, s) => const ExerciseRecommendScreen(),
       ),
       GoRoute(
         path: '/exercise/history/:group',
@@ -109,3 +119,65 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.onDispose(router.dispose);
   return router;
 });
+
+Map<String, dynamic>? _readExtraMap(Object? extra) {
+  if (extra is Map<String, dynamic>) {
+    return extra;
+  }
+  if (extra is Map) {
+    return extra.map(
+      (dynamic key, dynamic value) =>
+          MapEntry<String, dynamic>(key.toString(), value),
+    );
+  }
+  return null;
+}
+
+String? _readString(Map<String, dynamic>? map, String key) {
+  if (map == null) {
+    return null;
+  }
+  final dynamic value = map[key];
+  if (value == null) {
+    return null;
+  }
+  final String text = value.toString().trim();
+  if (text.isEmpty) {
+    return null;
+  }
+  return text;
+}
+
+int? _readInt(Map<String, dynamic>? map, String key) {
+  if (map == null) {
+    return null;
+  }
+  final dynamic value = map[key];
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  if (value is String) {
+    return int.tryParse(value.trim());
+  }
+  return null;
+}
+
+double? _readDouble(Map<String, dynamic>? map, String key) {
+  if (map == null) {
+    return null;
+  }
+  final dynamic value = map[key];
+  if (value is double) {
+    return value;
+  }
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value.trim());
+  }
+  return null;
+}
