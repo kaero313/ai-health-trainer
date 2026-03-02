@@ -96,6 +96,39 @@ class DietRepository {
     }
   }
 
+  Future<Map<String, dynamic>> getRecommendation({String? date}) async {
+    try {
+      final Map<String, dynamic> queryParameters = <String, dynamic>{};
+      if (date != null && date.trim().isNotEmpty) {
+        queryParameters['date'] = date.trim();
+      }
+
+      final Response<dynamic> response = await dio.get<dynamic>(
+        '/diet/recommend',
+        queryParameters: queryParameters.isEmpty ? null : queryParameters,
+      );
+
+      final dynamic rawResponse = response.data;
+      if (rawResponse is! Map<String, dynamic>) {
+        throw const DietRepositoryException('?쒕쾭 ?묐떟 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎.');
+      }
+      if (rawResponse['status'] != 'success') {
+        throw const DietRepositoryException('AI ?앸떒 異붿쿇 議고쉶???ㅽ뙣?덉뒿?덈떎.');
+      }
+
+      final dynamic rawData = rawResponse['data'];
+      if (rawData is! Map<String, dynamic>) {
+        throw const DietRepositoryException('AI ?앸떒 異붿쿇 ?곗씠?곌? 鍮꾩뼱 ?덉뒿?덈떎.');
+      }
+      return rawData;
+    } on DioException catch (e) {
+      throw DietRepositoryException(
+        _extractDioErrorMessage(e),
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
   Future<void> deleteDietLog(int logId) async {
     try {
       final Response<dynamic> response = await dio.delete<dynamic>(
