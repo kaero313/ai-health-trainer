@@ -96,7 +96,7 @@ class DashboardScreen extends ConsumerWidget {
                   _WeeklySummaryCard(today: today, weekly: weekly),
                   const SizedBox(height: AppSpacing.md),
                   const _AiCoachingCard(),
-                  const SizedBox(height: AppSpacing.xl),
+                  const SizedBox(height: AppSpacing.lg),
                 ],
               ),
             ),
@@ -380,12 +380,8 @@ class _AiCoachingCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const CircleAvatar(
-              radius: 24,
               backgroundColor: AppColors.primarySoft,
-              child: Text(
-                '🤖',
-                style: TextStyle(fontSize: 20),
-              ),
+              child: Text('🤖'),
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
@@ -403,12 +399,6 @@ class _AiCoachingCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   TextButton(
                     onPressed: () => context.push('/ai/chat'),
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(0, 0),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      alignment: Alignment.centerLeft,
-                    ),
                     child: Text(
                       '채팅 시작',
                       style: AppTypography.body2.copyWith(
