@@ -87,7 +87,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _extractErrorMessage(error!),
+                  _extractErrorMessage(error),
                   style: AppTypography.body2.copyWith(color: AppColors.error),
                   textAlign: TextAlign.center,
                 ),
@@ -301,7 +301,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                 .map(
                   (MapEntry<String, String> item) => DropdownMenuItem<String>(
                     value: item.key,
-                    child: Text('${label}: ${item.value}'),
+                    child: Text('$label: ${item.value}'),
                   ),
                 )
                 .toList(),

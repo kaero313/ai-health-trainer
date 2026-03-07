@@ -376,35 +376,48 @@ class _AiCoachingCard extends StatelessWidget {
       decoration: glassCardDecoration,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Text('🤖'),
-                const SizedBox(width: AppSpacing.xs),
-                Text('AI 코칭', style: AppTypography.h3),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              '식단, 운동에 대한 맞춤 코칭을 받아보세요',
-              style: AppTypography.body2.copyWith(
-                color: AppColors.textSecondary,
+            const CircleAvatar(
+              radius: 24,
+              backgroundColor: AppColors.primarySoft,
+              child: Text(
+                '🤖',
+                style: TextStyle(fontSize: 20),
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => context.push('/ai/chat'),
-                child: Text(
-                  '채팅 시작',
-                  style: AppTypography.body2.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('AI 코칭', style: AppTypography.h3),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '식단, 운동에 대한 맞춤 코칭을 받아보세요',
+                    style: AppTypography.body2.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextButton(
+                    onPressed: () => context.push('/ai/chat'),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 0),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      alignment: Alignment.centerLeft,
+                    ),
+                    child: Text(
+                      '채팅 시작',
+                      style: AppTypography.body2.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
