@@ -18,7 +18,6 @@ import '../../features/exercise/presentation/exercise_recommend_screen.dart';
 import '../../features/exercise/presentation/exercise_screen.dart';
 import '../../features/profile/presentation/profile_edit_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
-import '../../shared/widgets/placeholder_screen.dart';
 import 'main_shell.dart';
 import 'router_notifier.dart';
 
@@ -127,16 +126,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             (c, s) => _buildTransitionPage(
               state: s,
               child: const ExerciseRecommendScreen(),
-            ),
-      ),
-      GoRoute(
-        path: '/exercise/history/:group',
-        pageBuilder:
-            (c, s) => _buildTransitionPage(
-              state: s,
-              child: PlaceholderScreen(
-                title: 'History ${s.pathParameters["group"]}',
-              ),
             ),
       ),
       GoRoute(
