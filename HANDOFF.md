@@ -2,8 +2,8 @@
 
 > **이 문서의 목적:** 설계자 역할(Opus 4.6 → Gemini 3.1 Pro 등)이 교체되어도 프로젝트의 모든 컨텍스트를 100% 이해하고 이어서 작업할 수 있게 하는 인수인계 문서.
 > 
-> **마지막 업데이트:** 2026-02-23  
-> **작성자:** Claude Opus 4.6 (Phase 1~3 설계자)
+> **마지막 업데이트:** 2026-03-07  
+> **작성자:** Claude Opus 4.6 (Phase 1~3) → Gemini 3.1 Pro (Phase 4 설계자)
 
 ---
 
@@ -16,7 +16,7 @@
 | Phase 1 | 인프라 + 인증 + 프로필 | ✅ 완료 | 13개 PASS |
 | Phase 2 | 식단/운동 CRUD + 대시보드 | ✅ 완료 | 20개 PASS |
 | Phase 3 | AI 서비스 + RAG + 추천 + 채팅 | ✅ 완료 | 21개 PASS |
-| Phase 4 | Flutter 프론트엔드 | ❌ 미착수 | — |
+| Phase 4 | Flutter 프론트엔드 | 🏃 진행 중 | 4-4B 완료, 4-4C 남음 |
 | Phase 5 | 배포 (CI/CD, 클라우드) | ❌ 미착수 | — |
 
 **총 테스트: 54개 전체 통과 (exit code: 0)**
@@ -27,7 +27,7 @@
 
 | 역할 | 담당 | 업무 |
 |------|------|------|
-| **설계자** | Opus 4.6 → Gemini 3.1 Pro | 설계, 검증, 프롬프트 작성, 코드 리뷰 |
+| **설계자** | Gemini 3.1 Pro (Antigravity) | 설계, 검증, 프롬프트 작성, 코드 리뷰 |
 | **구현자** | Codex | 설계 문서/프롬프트 기반 코드 생성 |
 | **사용자** | 프로젝트 오너 | 방향 결정, 승인 |
 
@@ -90,15 +90,18 @@
 | 식단/운동 추천 | AI 추천 결과 표시 |
 
 ### Phase 4 TODO
-1. Flutter 프로젝트 초기화 (`frontend/`)
-2. 공통 모듈 구현 (API 클라이언트, 테마, 라우팅, Riverpod 설정)
-3. 인증 플로우 (로그인/회원가입 화면 + JWT 관리)
-4. 프로필 설정 화면
-5. 대시보드 (홈 화면)
-6. 식단 기록 + AI 사진 분석
-7. 운동 기록
-8. AI 채팅 화면
-9. AI 추천 화면
+1. ✅ Flutter 프로젝트 초기화 (`frontend/`)
+2. ✅ 공통 모듈 구현 (API 클라이언트, 테마, 라우팅, Riverpod 설정)
+3. ✅ 인증 플로우 (로그인/회원가입 화면 + JWT 관리)
+4. ✅ 프로필 설정/편집 화면
+5. ✅ 대시보드 (CalorieRing 카운트업 + NutrientBar 애니메이션)
+6. ✅ 식단 기록 (CRUD + 스와이프 삭제 + 수동 추가)
+7. ✅ 운동 기록 (CRUD + 세트 확장 + 수동 추가)
+8. ✅ AI 사진 분석 (image_picker + multipart 업로드)
+9. ✅ AI 식단/운동 추천 (추천 카드 + RAG 출처 + 일괄 저장)
+10. ✅ AI 코칭 채팅 (context_type 칩 + 타이핑 인디케이터)
+11. ✅ FAB 바텀시트 (4개 빠른 액션) + 화면 전환 애니메이션
+12. 🏃 flutter analyze 0건 + 대시보드 AI 코칭 카드 (4-4C)
 
 ---
 
@@ -182,19 +185,19 @@ docker compose exec \
 
 | 항목 | 상태 | 우선순위 |
 |------|------|----------|
-| Flutter 프론트엔드 | ❌ Phase 4 | 다음 작업 |
-| CI/CD (GitHub Actions) | ❌ Phase 5 | 배포 시 |
-| 운영 환경 분리 (.env.production 등) | ❌ Phase 5 | 배포 시 |
-| 프로덕션 Dockerfile (멀티스테이지) | ❌ Phase 5 | 배포 시 |
-| Nginx 리버스 프록시 | ❌ Phase 5 | 배포 시 |
+| Phase 4-4C (lint 수정 + AI 카드) | 🏃 프롬프트 준비 완료 | **최우선** |
+| flutter analyze 0건 달성 | 🏃 현재 2건 남음 | 4-4C에 포함 |
+| 대시보드 AI 코칭 카드 | ❌ 미추가 | 4-4C에 포함 |
+| CI/CD 및 운영 환경 분리 | ❌ Phase 5 | 배포 시 |
+| Nginx 리버스 프록시 / 멀티스테이지 Dockerfile | ❌ Phase 5 | 배포 시 |
 | DEVELOPMENT_GUIDE.md | ❌ 미작성 | 낮음 |
-| FLUTTER_UI_DESIGN.md | ❌ Phase 4에서 작성 | 다음 작업 |
-
 ---
 
 ## 10. 설계자 교체 시 첫 번째 할 일
 
 1. **이 문서(HANDOFF.md)** 전체 읽기
 2. **AGENTS.md** 읽기 (Codex 가이드 + 기술 스택 상세)
-3. **PROJECT_OVERVIEW.md** 읽기 (전체 설계 맥락)
-4. Phase 4 implementation_plan 작성 → 사용자 승인 → Codex 프롬프트 작성
+3. **FLUTTER_UI_DESIGN.md** 읽기 (UI 설계 맥락)
+4. **현재 상황**: Phase 4-4B까지 완료. 남은 작업은 **4-4C(lint 2건 수정 + AI 코칭 카드)** 1개뿐.
+5. **다음 행동**: 4-4C 프롬프트를 Codex에 전달 → 검증 → Phase 4 완료 → Phase 5(배포) 시작.
+6. **프롬프트 위치**: 모든 Phase 4 프롬프트는 `antigravity/brain/` 아티팩트 디렉토리에 저장됨.
