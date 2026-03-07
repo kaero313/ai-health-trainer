@@ -47,16 +47,16 @@ class ExerciseRepository {
 
       final dynamic rawResponse = response.data;
       if (rawResponse is! Map<String, dynamic>) {
-        throw const ExerciseRepositoryException('?쒕쾭 ?묐떟 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎.');
+        throw const ExerciseRepositoryException('서버 응답 형식이 올바르지 않습니다.');
       }
       if (rawResponse['status'] != 'success') {
-        throw const ExerciseRepositoryException('AI ?대룞 異붿쿇 議고쉶???ㅽ뙣?덉뒿?덈떎.');
+        throw const ExerciseRepositoryException('AI 운동 추천 조회에 실패했습니다.');
       }
 
       final dynamic rawData = rawResponse['data'];
       if (rawData is! Map<String, dynamic>) {
         throw const ExerciseRepositoryException(
-          'AI ?대룞 異붿쿇 ?곗씠?곌? 鍮꾩뼱 ?덉뒿?덈떎.',
+          'AI 운동 추천 데이터가 비어 있습니다.',
         );
       }
       return rawData;
