@@ -1,4 +1,4 @@
-# AI Health Trainer — Codex Agent 가이드
+﻿# AI Health Trainer — Codex Agent 가이드
 
 > **이 문서의 목적:** Codex가 새 세션에서도 프로젝트를 완벽히 이해하고 일관된 코드를 생성할 수 있도록 하는 종합 참조 문서.
 
@@ -115,7 +115,7 @@ ai-health-trainer/
 │       ├── test_recommendation.py
 │       └── test_ai_chat.py
 │
-├── frontend/                    # Flutter (Phase 4 예정)
+├── frontend/                    # Flutter (Phase 4 — 4-4B 완료)
 │
 └── docs/
     ├── PROJECT_OVERVIEW.md      # 프로젝트 전체 설계
@@ -370,7 +370,7 @@ MAX_IMAGE_SIZE_MB=10
 | **합계** | **전체** | **54개 PASS** |
 
 ### 다음 Phase
-- **Phase 4**: Flutter 프론트엔드 (모바일 우선)
+- **Phase 4**: Flutter 프론트엔드 — **4-4B까지 완료, 4-4C(lint+AI카드) 남음**
 - **Phase 5**: 배포 (CI/CD, 클라우드)
 
 ---
