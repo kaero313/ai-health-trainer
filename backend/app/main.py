@@ -93,8 +93,3 @@ async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse
         code=_error_code_from_status(exc.status_code),
         message=str(exc.detail) if exc.detail else "Request failed",
     )
-
-
-@app.get("/health", tags=["health"])
-async def health_check() -> dict[str, str]:
-    return {"status": "ok"}
