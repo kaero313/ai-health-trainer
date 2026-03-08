@@ -24,8 +24,8 @@ async def _is_redis_connected() -> bool:
         await redis_client.aclose()
 
 
-@router.get("")
-async def health_check(db: AsyncSession = Depends(get_db)) -> dict[str, str] | JSONResponse:
+@router.get("", response_model=None)
+async def health_check(db: AsyncSession = Depends(get_db)):
     try:
         await db.execute(text("SELECT 1"))
     except Exception:
