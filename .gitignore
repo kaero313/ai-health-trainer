@@ -4,13 +4,16 @@
 
 # ── 환경변수 (절대 커밋 금지!) ──
 .env
+.env.prod
 .env.local
 .env.production
 .env.staging
 *.env
+backend/.env
 
 # ── Python ──
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
 *.so
@@ -41,6 +44,7 @@ coverage.xml
 # ── Flutter / Dart ──
 # Flutter 빌드 아티팩트
 frontend/.dart_tool/
+.dart_tool/
 frontend/.packages
 frontend/.pub-cache/
 frontend/.pub/
@@ -74,6 +78,7 @@ Thumbs.db
 postgres_data/
 redis_data/
 data/
+certbot/
 !frontend/lib/features/profile/data/
 !frontend/lib/features/profile/data/*.dart
 !frontend/lib/features/dashboard/data/
