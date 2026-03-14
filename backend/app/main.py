@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import logging
+import time
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -10,6 +12,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import engine
 
+logger = logging.getLogger("api")
 settings = get_settings()
 if hasattr(status, "HTTP_422_UNPROCESSABLE_CONTENT"):
     HTTP_422_STATUS = status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -37,6 +40,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration = round(time.time() - start, 3)
+    logger.info(
+        f"{request.method} {request.url.path} -> {response.status_code} ({duration}s)"
+    )
+    return response
+
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
