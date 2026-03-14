@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_interceptor.dart';
@@ -11,7 +12,7 @@ final dioProvider = Provider<Dio>((ref) {
   final Dio dio = Dio(
     BaseOptions(
       baseUrl: kBaseUrl,
-      connectTimeout: const Duration(seconds: 10),
+      connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 30),
     ),
   );
@@ -22,6 +23,16 @@ final dioProvider = Provider<Dio>((ref) {
       dio: dio,
     ),
   );
+
+  if (kDebugMode) {
+    dio.interceptors.add(
+      LogInterceptor(
+        requestBody: true,
+        responseBody: true,
+        logPrint: (obj) => debugPrint(obj.toString()),
+      ),
+    );
+  }
 
   return dio;
 });
