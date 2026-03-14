@@ -86,6 +86,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return error.message;
     }
     final String raw = error.toString();
+    if (raw.contains('ConnectTimeout') || raw.contains('connection')) {
+      return '서버에 연결할 수 없습니다. 백엔드 서버가 실행 중인지 확인해주세요.';
+    }
     if (raw.startsWith('Exception: ')) {
       return raw.replaceFirst('Exception: ', '');
     }
@@ -154,7 +157,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         _submitError = null;
                       });
                     },
-                    decoration: _inputDecoration(hintText: 'user@email.com'),
+                    decoration: _inputDecoration(hintText: 'admin@admin.com'),
                   ),
                   if (_emailError != null) ...[
                     const SizedBox(height: AppSpacing.xs),
