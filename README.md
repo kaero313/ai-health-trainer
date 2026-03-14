@@ -21,6 +21,10 @@ docker compose exec backend alembic upgrade head
 
 백엔드 API는 기본적으로 `http://localhost:8000`, 문서는 `http://localhost:8000/docs`에서 확인할 수 있습니다.
 
+### 개발 환경 팁
+
+Flutter Web에서 테스트할 때 CORS 에러가 발생하면, `backend/.env`의 `BACKEND_CORS_ORIGINS`를 `*`로 변경하세요.
+
 ## 프로덕션 배포
 
 ```bash
