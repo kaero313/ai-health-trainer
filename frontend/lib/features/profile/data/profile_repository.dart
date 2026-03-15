@@ -45,6 +45,19 @@ class ProfileRepository {
     }
   }
 
+  Future<bool> checkProfile() async {
+    try {
+      final Response<dynamic> response = await dio.get<dynamic>('/profile/check');
+      final dynamic data = response.data;
+      if (data is Map<String, dynamic>) {
+        return data['has_profile'] == true;
+      }
+      return false;
+    } on DioException {
+      return false;
+    }
+  }
+
   Map<String, dynamic> _parseProfileResponse(dynamic rawResponse) {
     if (rawResponse is! Map<String, dynamic>) {
       throw const ProfileRepositoryException('서버 응답 형식이 올바르지 않습니다.');
