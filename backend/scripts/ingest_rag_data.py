@@ -46,7 +46,13 @@ def _infer_category(file_name: str) -> str:
     if normalized.startswith("nutrition_"):
         return "nutrition"
     if normalized.startswith("exercise_"):
-        return "exercise"
+        return "exercise_science"
+    if normalized.startswith("supplement_"):
+        return "supplement"
+    if normalized.startswith("diet_plan_"):
+        return "diet_plan"
+    if normalized.startswith("muscle_"):
+        return "muscle_growth"
     return "nutrition"
 
 
