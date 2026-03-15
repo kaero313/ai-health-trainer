@@ -76,3 +76,18 @@ cd frontend
 flutter pub get
 flutter analyze
 ```
+
+### RAG 데이터 인제스트
+
+AI 추천 기능을 사용하려면 RAG 지식 데이터를 DB에 주입해야 합니다.
+
+```bash
+# 기존 RAG 데이터 초기화 (카테고리 변경 시 필요)
+docker compose exec backend python scripts/reset_rag_data.py
+
+# 전체 RAG 데이터 인제스트
+docker compose exec backend python scripts/ingest_rag_data.py --dir rag_data/
+
+# 단일 파일 인제스트 (카테고리 지정 필수)
+docker compose exec backend python scripts/ingest_rag_data.py --file rag_data/nutrition_basics.md --category nutrition
+```
