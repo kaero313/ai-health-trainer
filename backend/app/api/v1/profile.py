@@ -20,6 +20,19 @@ def _raise_http_error(service_error: ProfileServiceError) -> None:
     )
 
 
+@router.get("/check")
+async def check_profile(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = ProfileService(db)
+    try:
+        await service.get_profile(current_user.id)
+        return {"has_profile": True}
+    except ProfileServiceError:
+        return {"has_profile": False}
+
+
 @router.get("", response_model=ProfileResponse)
 async def get_profile(
     current_user: User = Depends(get_current_user),
