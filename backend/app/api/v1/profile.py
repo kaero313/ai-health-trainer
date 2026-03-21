@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -31,6 +33,37 @@ async def check_profile(
         return {"has_profile": True}
     except ProfileServiceError:
         return {"has_profile": False}
+
+
+@router.post("/weight")
+async def upsert_weight(
+    weight_kg: float = Query(..., ge=30.0, le=300.0),
+    log_date: date | None = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = ProfileService(db)
+    try:
+        data = await service.upsert_weight_log(
+            current_user.id,
+            weight_kg=weight_kg,
+            log_date=log_date or date.today(),
+        )
+    except ProfileServiceError as exc:
+        _raise_http_error(exc)
+
+    return {"status": "success", "data": data}
+
+
+@router.get("/weight-history")
+async def get_weight_history(
+    months: int = Query(3, ge=1),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = ProfileService(db)
+    data = await service.get_weight_history(current_user.id, months=months)
+    return {"status": "success", "data": data}
 
 
 @router.get("", response_model=ProfileResponse)
