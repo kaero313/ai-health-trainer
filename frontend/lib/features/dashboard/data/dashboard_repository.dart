@@ -42,6 +42,44 @@ class DashboardRepository {
     }
   }
 
+  Future<Map<String, dynamic>> getMonthly({int? year, int? month}) async {
+    try {
+      final Map<String, dynamic> queryParameters = <String, dynamic>{};
+      if (year != null) {
+        queryParameters['year'] = year;
+      }
+      if (month != null) {
+        queryParameters['month'] = month;
+      }
+
+      final Response<dynamic> response = await dio.get<dynamic>(
+        '/dashboard/monthly',
+        queryParameters: queryParameters.isEmpty ? null : queryParameters,
+      );
+      return _parseDashboardResponse(response.data);
+    } on DioException catch (e) {
+      throw DashboardRepositoryException(
+        _extractDioErrorMessage(e),
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getWeightHistory({int months = 3}) async {
+    try {
+      final Response<dynamic> response = await dio.get<dynamic>(
+        '/profile/weight-history',
+        queryParameters: <String, dynamic>{'months': months},
+      );
+      return _parseDashboardListResponse(response.data);
+    } on DioException catch (e) {
+      throw DashboardRepositoryException(
+        _extractDioErrorMessage(e),
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
   Map<String, dynamic> _parseDashboardResponse(dynamic rawResponse) {
     if (rawResponse is! Map<String, dynamic>) {
       throw const DashboardRepositoryException('서버 응답 형식이 올바르지 않습니다.');
@@ -57,6 +95,36 @@ class DashboardRepository {
     }
 
     return rawData;
+  }
+
+  List<Map<String, dynamic>> _parseDashboardListResponse(dynamic rawResponse) {
+    if (rawResponse is! Map<String, dynamic>) {
+      throw const DashboardRepositoryException('서버 응답 형식이 올바르지 않습니다.');
+    }
+
+    if (rawResponse['status'] != 'success') {
+      throw const DashboardRepositoryException('대시보드 요청이 실패했습니다.');
+    }
+
+    final dynamic rawData = rawResponse['data'];
+    if (rawData is! List<dynamic>) {
+      throw const DashboardRepositoryException('대시보드 데이터가 비어 있습니다.');
+    }
+
+    return rawData.map((dynamic item) {
+      if (item is! Map<dynamic, dynamic>) {
+        throw const DashboardRepositoryException(
+          '대시보드 데이터가 비어 있습니다.',
+        );
+      }
+
+      return item.map<String, dynamic>(
+        (dynamic key, dynamic value) => MapEntry<String, dynamic>(
+          key.toString(),
+          value,
+        ),
+      );
+    }).toList();
   }
 
   String _extractDioErrorMessage(DioException e) {
