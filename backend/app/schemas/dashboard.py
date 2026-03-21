@@ -70,6 +70,32 @@ class WeeklyDashboardData(BaseModel):
     daily_breakdown: list[DailyBreakdown]
 
 
+class MonthlyNutritionDay(BaseModel):
+    date: date
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+
+
+class MonthlyExerciseDay(BaseModel):
+    date: date
+    exercised: bool
+    total_sets: int
+
+
+class MonthlyDashboardData(BaseModel):
+    year: int
+    month: int
+    total_days: int
+    nutrition_days: list[MonthlyNutritionDay]
+    exercise_days: list[MonthlyExerciseDay]
+    avg_calories: float
+    avg_protein_g: float
+    avg_carbs_g: float
+    avg_fat_g: float
+
+
 class TodayDashboardResponse(BaseModel):
     status: Literal["success"] = "success"
     data: TodayDashboardData
@@ -79,4 +105,10 @@ class TodayDashboardResponse(BaseModel):
 class WeeklyDashboardResponse(BaseModel):
     status: Literal["success"] = "success"
     data: WeeklyDashboardData
+    message: str | None = None
+
+
+class MonthlyDashboardResponse(BaseModel):
+    status: Literal["success"] = "success"
+    data: MonthlyDashboardData
     message: str | None = None
