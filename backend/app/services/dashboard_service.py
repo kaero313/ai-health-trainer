@@ -1,3 +1,4 @@
+from calendar import monthrange
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -6,10 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.diet import DietLog, DietLogItem
-from app.models.exercise import ExerciseLog
+from app.models.exercise import ExerciseLog, ExerciseSet
 from app.models.user import UserProfile
 from app.schemas.dashboard import (
     DailyBreakdown,
+    MonthlyDashboardData,
+    MonthlyExerciseDay,
+    MonthlyNutritionDay,
     NutritionProgress,
     NutritionValues,
     Streak,
@@ -216,6 +220,118 @@ class DashboardService:
             daily_breakdown=daily_breakdown,
         )
 
+    async def get_monthly(self, user_id: int, year: int, month: int) -> MonthlyDashboardData:
+        month_start = date(year, month, 1)
+        total_days = monthrange(year, month)[1]
+        month_end = date(year, month, total_days)
+
+        monthly_nutrition_result = await self.db.execute(
+            select(
+                DietLog.log_date,
+                func.coalesce(func.sum(DietLogItem.calories), 0),
+                func.coalesce(func.sum(DietLogItem.protein_g), 0),
+                func.coalesce(func.sum(DietLogItem.carbs_g), 0),
+                func.coalesce(func.sum(DietLogItem.fat_g), 0),
+            )
+            .select_from(DietLog)
+            .join(DietLogItem, DietLogItem.diet_log_id == DietLog.id)
+            .where(DietLog.user_id == user_id, DietLog.log_date >= month_start, DietLog.log_date <= month_end)
+            .group_by(DietLog.log_date)
+            .order_by(DietLog.log_date)
+        )
+        monthly_nutrition_rows = monthly_nutrition_result.all()
+
+        nutrition_by_date: dict[date, tuple[float, float, float, float]] = {}
+        total_calories = Decimal("0")
+        total_protein = Decimal("0")
+        total_carbs = Decimal("0")
+        total_fat = Decimal("0")
+
+        for row in monthly_nutrition_rows:
+            log_date = row[0]
+            calories = self._ensure_decimal(row[1])
+            protein = self._ensure_decimal(row[2])
+            carbs = self._ensure_decimal(row[3])
+            fat = self._ensure_decimal(row[4])
+
+            nutrition_by_date[log_date] = (
+                self._decimal_to_float(calories),
+                self._decimal_to_float(protein),
+                self._decimal_to_float(carbs),
+                self._decimal_to_float(fat),
+            )
+            total_calories += calories
+            total_protein += protein
+            total_carbs += carbs
+            total_fat += fat
+
+        monthly_exercise_result = await self.db.execute(
+            select(
+                ExerciseLog.exercise_date,
+                func.count(ExerciseSet.id),
+            )
+            .select_from(ExerciseLog)
+            .outerjoin(ExerciseSet, ExerciseSet.exercise_log_id == ExerciseLog.id)
+            .where(
+                ExerciseLog.user_id == user_id,
+                ExerciseLog.exercise_date >= month_start,
+                ExerciseLog.exercise_date <= month_end,
+            )
+            .group_by(ExerciseLog.exercise_date)
+            .order_by(ExerciseLog.exercise_date)
+        )
+        exercise_by_date = {row[0]: int(row[1]) for row in monthly_exercise_result.all()}
+
+        nutrition_days: list[MonthlyNutritionDay] = []
+        exercise_days: list[MonthlyExerciseDay] = []
+
+        for day_offset in range(total_days):
+            current_date = month_start + timedelta(days=day_offset)
+            nutrition_values = nutrition_by_date.get(current_date, (0.0, 0.0, 0.0, 0.0))
+            total_sets = exercise_by_date.get(current_date, 0)
+
+            nutrition_days.append(
+                MonthlyNutritionDay(
+                    date=current_date,
+                    calories=nutrition_values[0],
+                    protein_g=nutrition_values[1],
+                    carbs_g=nutrition_values[2],
+                    fat_g=nutrition_values[3],
+                )
+            )
+            exercise_days.append(
+                MonthlyExerciseDay(
+                    date=current_date,
+                    exercised=current_date in exercise_by_date,
+                    total_sets=total_sets,
+                )
+            )
+
+        recorded_nutrition_days = len(monthly_nutrition_rows)
+        if recorded_nutrition_days > 0:
+            divisor = Decimal(str(recorded_nutrition_days))
+            avg_calories = self._decimal_to_float(total_calories / divisor)
+            avg_protein = self._decimal_to_float(total_protein / divisor)
+            avg_carbs = self._decimal_to_float(total_carbs / divisor)
+            avg_fat = self._decimal_to_float(total_fat / divisor)
+        else:
+            avg_calories = 0.0
+            avg_protein = 0.0
+            avg_carbs = 0.0
+            avg_fat = 0.0
+
+        return MonthlyDashboardData(
+            year=year,
+            month=month,
+            total_days=total_days,
+            nutrition_days=nutrition_days,
+            exercise_days=exercise_days,
+            avg_calories=avg_calories,
+            avg_protein_g=avg_protein,
+            avg_carbs_g=avg_carbs,
+            avg_fat_g=avg_fat,
+        )
+
     @staticmethod
     def _progress(consumed: float, target: float) -> float:
         if target == 0:
@@ -235,6 +351,12 @@ class DashboardService:
 
     @staticmethod
     def _to_decimal(value: float) -> Decimal:
+        return Decimal(str(value))
+
+    @staticmethod
+    def _ensure_decimal(value: Decimal | int | float) -> Decimal:
+        if isinstance(value, Decimal):
+            return value
         return Decimal(str(value))
 
     @staticmethod
