@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from app.models.diet import DietLog
     from app.models.exercise import ExerciseLog
     from app.models.token import RefreshToken
+    from app.models.weight_log import WeightLog
 
 
 class GenderEnum(str, enum.Enum):
@@ -63,6 +64,7 @@ class User(Base):
     )
     exercise_logs: Mapped[list[ExerciseLog]] = relationship("ExerciseLog", back_populates="user")
     diet_logs: Mapped[list[DietLog]] = relationship("DietLog", back_populates="user")
+    weight_logs: Mapped[list[WeightLog]] = relationship("WeightLog", back_populates="user")
     ai_recommendations: Mapped[list[AIRecommendation]] = relationship("AIRecommendation", back_populates="user")
     refresh_tokens: Mapped[list[RefreshToken]] = relationship("RefreshToken", back_populates="user")
 

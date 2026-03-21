@@ -1,6 +1,11 @@
+from calendar import monthrange
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 import pytest
+from sqlalchemy import func, select
+
+from app.models.weight_log import WeightLog
 
 ACTIVITY_MULTIPLIER = {
     "sedentary": Decimal("1.2"),
@@ -55,6 +60,12 @@ def _calculate_expected_targets(payload: dict[str, object]) -> dict[str, int | f
     }
 
 
+def _shift_months(value: date, delta: int) -> date:
+    month_index = value.year * 12 + (value.month - 1) + delta
+    year, month_zero_based = divmod(month_index, 12)
+    month = month_zero_based + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return date(year, month, day)
 
 
 @pytest.mark.asyncio
@@ -196,3 +207,124 @@ async def test_put_profile_updates_existing_profile_and_recalculates_targets(cli
     assert data["target_protein_g"] == expected["target_protein_g"]
     assert data["target_carbs_g"] == expected["target_carbs_g"]
     assert data["target_fat_g"] == expected["target_fat_g"]
+
+
+@pytest.mark.asyncio
+async def test_post_weight_upserts_log_and_recalculates_profile(client, register_and_get_token, auth_headers, db_session):
+    access_token, _ = await register_and_get_token(client, "profile-weight@example.com")
+    profile_payload = {
+        "height_cm": 175.0,
+        "weight_kg": 70.0,
+        "age": 28,
+        "gender": "male",
+        "goal": "maintain",
+        "activity_level": "moderate",
+        "allergies": [],
+        "food_preferences": ["rice", "chicken"],
+    }
+    log_date = "2026-03-10"
+
+    put_response = await client.put(
+        "/api/v1/profile",
+        json=profile_payload,
+        headers=auth_headers(access_token),
+    )
+    assert put_response.status_code == 200
+
+    first_weight_response = await client.post(
+        f"/api/v1/profile/weight?weight_kg=72.5&log_date={log_date}",
+        headers=auth_headers(access_token),
+    )
+    assert first_weight_response.status_code == 200
+    assert first_weight_response.json() == {
+        "status": "success",
+        "data": {
+            "log_date": log_date,
+            "weight_kg": 72.5,
+        },
+    }
+
+    second_weight_response = await client.post(
+        f"/api/v1/profile/weight?weight_kg=73.0&log_date={log_date}",
+        headers=auth_headers(access_token),
+    )
+    assert second_weight_response.status_code == 200
+    assert second_weight_response.json() == {
+        "status": "success",
+        "data": {
+            "log_date": log_date,
+            "weight_kg": 73.0,
+        },
+    }
+
+    count_result = await db_session.execute(select(func.count()).select_from(WeightLog))
+    assert count_result.scalar_one() == 1
+
+    profile_response = await client.get("/api/v1/profile", headers=auth_headers(access_token))
+    assert profile_response.status_code == 200
+
+    updated_profile = profile_response.json()["data"]
+    expected_targets = _calculate_expected_targets({**profile_payload, "weight_kg": 73.0})
+    assert updated_profile["weight_kg"] == 73.0
+    assert updated_profile["tdee_kcal"] == expected_targets["tdee_kcal"]
+    assert updated_profile["target_calories"] == expected_targets["target_calories"]
+    assert updated_profile["target_protein_g"] == expected_targets["target_protein_g"]
+    assert updated_profile["target_carbs_g"] == expected_targets["target_carbs_g"]
+    assert updated_profile["target_fat_g"] == expected_targets["target_fat_g"]
+
+
+@pytest.mark.asyncio
+async def test_get_weight_history_returns_recent_months_in_date_order(client, register_and_get_token, auth_headers):
+    access_token, _ = await register_and_get_token(client, "profile-weight-history@example.com")
+    profile_payload = {
+        "height_cm": 168.0,
+        "weight_kg": 60.0,
+        "age": 31,
+        "gender": "female",
+        "goal": "diet",
+        "activity_level": "light",
+        "allergies": [],
+        "food_preferences": ["salad"],
+    }
+    today = date.today()
+    oldest_included = date(_shift_months(today, -2).year, _shift_months(today, -2).month, 1)
+    excluded_date = oldest_included - timedelta(days=1)
+    middle_date = oldest_included + timedelta(days=4)
+
+    put_response = await client.put(
+        "/api/v1/profile",
+        json=profile_payload,
+        headers=auth_headers(access_token),
+    )
+    assert put_response.status_code == 200
+
+    for weight_kg, log_date in (
+        (59.0, excluded_date),
+        (58.5, middle_date),
+        (58.0, today),
+    ):
+        response = await client.post(
+            f"/api/v1/profile/weight?weight_kg={weight_kg}&log_date={log_date.isoformat()}",
+            headers=auth_headers(access_token),
+        )
+        assert response.status_code == 200
+
+    history_response = await client.get(
+        "/api/v1/profile/weight-history?months=3",
+        headers=auth_headers(access_token),
+    )
+
+    assert history_response.status_code == 200
+    assert history_response.json() == {
+        "status": "success",
+        "data": [
+            {
+                "log_date": middle_date.isoformat(),
+                "weight_kg": 58.5,
+            },
+            {
+                "log_date": today.isoformat(),
+                "weight_kg": 58.0,
+            },
+        ],
+    }
