@@ -7,6 +7,7 @@ import '../../../core/theme/app_decorations.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../data/profile_repository.dart';
+import '../domain/profile_check_provider.dart';
 import '../domain/profile_controller.dart';
 
 class ProfileEditScreen extends ConsumerStatefulWidget {
@@ -31,6 +32,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   List<String> _foodPreferences = <String>[];
 
   bool _initializedFromData = false;
+  bool _isInitialSetupMode = false;
   bool _isSubmitting = false;
 
   String? _heightError;
@@ -64,12 +66,20 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     }
     if (!_initializedFromData && isNotFound) {
       _initializedFromData = true;
+      _isInitialSetupMode = true;
     }
+
+    final bool isInitialSetupMode = _isInitialSetupMode;
+    final String screenTitle = isInitialSetupMode ? '프로필 설정' : '프로필 수정';
+    final Widget? screenLeading = isInitialSetupMode ? const SizedBox.shrink() : null;
 
     if (isInitialLoading) {
       return Scaffold(
         backgroundColor: AppColors.background,
-        appBar: AppBar(title: const Text('프로필 수정')),
+        appBar: AppBar(
+          title: Text(screenTitle),
+          leading: screenLeading,
+        ),
         body: const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
@@ -79,7 +89,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     if (hasUnhandledError) {
       return Scaffold(
         backgroundColor: AppColors.background,
-        appBar: AppBar(title: const Text('프로필 수정')),
+        appBar: AppBar(
+          title: Text(screenTitle),
+          leading: screenLeading,
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.lg),
@@ -108,12 +121,19 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('프로필 수정')),
+      appBar: AppBar(
+        title: Text(screenTitle),
+        leading: screenLeading,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (isInitialSetupMode) ...[
+              _buildInitialSetupNotice(),
+              const SizedBox(height: AppSpacing.lg),
+            ],
             _buildNumericField(
               controller: _heightController,
               hintText: '키 (cm)',
@@ -236,6 +256,33 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                       ),
                     ),
                   ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInitialSetupNotice() {
+    return DecoratedBox(
+      decoration: cardDecoration,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.person_outline,
+              color: AppColors.textSecondary,
+              size: 24,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                '프로필을 먼저 설정해주세요.',
+                style: AppTypography.body2.copyWith(
+                  color: AppColors.textSecondary,
                 ),
               ),
             ),
@@ -435,6 +482,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         .map((dynamic e) => e.toString())
         .toList();
 
+    _isInitialSetupMode = false;
     _initializedFromData = true;
   }
 
@@ -519,14 +567,20 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     });
 
     try {
+      final bool wasInitialSetupMode = _isInitialSetupMode;
       await ref.read(profileControllerProvider.notifier).updateProfile(payload);
+      ref.invalidate(profileCheckProvider);
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('프로필이 저장되었습니다.')),
       );
-      context.pop();
+      if (wasInitialSetupMode) {
+        context.go('/dashboard');
+      } else {
+        context.pop();
+      }
     } catch (e) {
       setState(() {
         _submitError = _extractErrorMessage(e);
