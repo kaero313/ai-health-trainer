@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.schemas.dashboard import TodayDashboardResponse, WeeklyDashboardResponse
+from app.schemas.dashboard import MonthlyDashboardResponse, TodayDashboardResponse, WeeklyDashboardResponse
 from app.services.dashboard_service import DashboardService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -34,6 +34,22 @@ async def get_weekly_dashboard(
     service = DashboardService(db)
     data = await service.get_weekly(current_user.id, resolved_week_start)
     return WeeklyDashboardResponse(data=data)
+
+
+@router.get("/monthly", response_model=MonthlyDashboardResponse)
+async def get_monthly_dashboard(
+    year: int | None = Query(None, ge=1),
+    month: int | None = Query(None, ge=1, le=12),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MonthlyDashboardResponse:
+    today = date_today()
+    resolved_year = year or today.year
+    resolved_month = month or today.month
+
+    service = DashboardService(db)
+    data = await service.get_monthly(current_user.id, resolved_year, resolved_month)
+    return MonthlyDashboardResponse(data=data)
 
 
 def date_today() -> date:
