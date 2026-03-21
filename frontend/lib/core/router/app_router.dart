@@ -16,6 +16,7 @@ import '../../features/diet/presentation/diet_screen.dart';
 import '../../features/exercise/presentation/exercise_add_screen.dart';
 import '../../features/exercise/presentation/exercise_recommend_screen.dart';
 import '../../features/exercise/presentation/exercise_screen.dart';
+import '../../features/profile/domain/profile_check_provider.dart';
 import '../../features/profile/presentation/profile_edit_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import 'main_shell.dart';
@@ -35,6 +36,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         '/splash',
         '/onboarding',
       }.contains(path);
+      final bool isProfileEditRoute = path == '/profile/edit';
 
       return authAsync.when(
         loading: () => null,
@@ -42,12 +44,34 @@ final routerProvider = Provider<GoRouter>((ref) {
         data: (AppAuthState authState) {
           final bool isAuthenticated = authState == AppAuthState.authenticated;
 
+          // 미인증 -> 로그인 페이지로
           if (!isAuthenticated && !isAuthRoute) {
             return '/login';
           }
 
+          // 인증됨 + auth 라우트(splash 제외) -> 대시보드로
           if (isAuthenticated && isAuthRoute && path != '/splash') {
-            return path == '/dashboard' ? null : '/dashboard';
+            return '/dashboard';
+          }
+
+          // 인증됨 + 프로필 편집 중 -> 리다이렉트 안 함
+          if (isAuthenticated && isProfileEditRoute) {
+            return null;
+          }
+
+          // 인증됨 + 프로필 체크
+          if (isAuthenticated && !isAuthRoute) {
+            final AsyncValue<bool> profileAsync = ref.read(profileCheckProvider);
+            return profileAsync.when(
+              loading: () => null,
+              error: (_, __) => null,
+              data: (bool hasProfile) {
+                if (!hasProfile) {
+                  return '/profile/edit';
+                }
+                return null;
+              },
+            );
           }
 
           return null;
