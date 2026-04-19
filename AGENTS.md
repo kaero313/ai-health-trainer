@@ -398,3 +398,61 @@ MAX_IMAGE_SIZE_MB=10
 8. **한국어 사용** — 사용자 대면 메시지는 한국어, 코드/변수명은 영어
 9. **pgvector Vector 차원은 3072** — `gemini-embedding-001` 모델 기준
 10. **Safety 설정** — `BLOCK_ONLY_HIGH` (모든 카테고리)
+
+---
+
+## 11. Codex 멀티 에이전트 운영 규칙
+
+이 저장소에서 멀티 에이전트는 **앱 기능이 아니라 Codex 개발 워크플로우**를 의미한다.
+
+### 기본 구조
+
+| 역할 | 권장 agent type | 책임 |
+|------|------------------|------|
+| **메인 Codex** | 기본 세션 | 요청 해석, critical path 처리, 하위 에이전트 위임, 결과 통합, 최종 승인 |
+| **탐색 에이전트** | `explorer` | 관련 파일/제약/리스크 파악, 구현 방향 제안 |
+| **구현 에이전트** | `worker` | 명시된 write scope 안에서만 코드 수정 |
+| **리뷰 에이전트** | `reviewer` | findings-first 코드 리뷰, 회귀 리스크/누락 테스트 점검 |
+
+### 운영 원칙
+
+1. **메인 Codex가 항상 먼저 라우팅한다.** 작은 작업은 단일 에이전트로 끝내고, 병렬화 가치가 있을 때만 하위 에이전트를 띄운다.
+2. **critical path는 메인 Codex가 직접 처리한다.** 메인 작업을 막는 급한 분석/수정은 위임하지 않는다.
+3. **병렬 가능한 부수 작업만 위임한다.** 예: 코드 탐색, 독립 구현, 리뷰, 회귀 확인.
+4. **같은 파일이나 같은 모듈 소유권을 두 `worker`에 동시에 주지 않는다.**
+5. **프로젝트 제한값은 `agents.max_threads = 4`, `agents.max_depth = 1`**로 두고, 일반 작업에서는 2~3개 병렬을 권장한다.
+6. **기존 변경사항은 존중한다.** dirty worktree가 있어도 다른 사람이 만든 변경을 되돌리지 않는다.
+7. **`wait_agent`는 필요한 순간에만 호출한다.** 대기 중에는 메인 Codex가 비중복 작업을 계속 수행한다.
+
+### 역할별 사용 기준
+
+- `explorer`: “어디를 바꿔야 하는지”, “현재 로직이 어떻게 연결되는지”처럼 읽기 중심 질문에 사용한다.
+- `worker`: 수정 범위를 명확히 지정할 수 있을 때만 사용한다. 반드시 파일/디렉터리 ownership을 함께 준다.
+- `reviewer` 리뷰 에이전트: 비사소한 변경 뒤 회귀 가능성, 누락 테스트, 설계 일관성을 확인할 때 사용한다.
+
+### write scope 규칙
+
+- backend와 frontend는 서로 다른 `worker`에 병렬 할당할 수 있다.
+- 같은 도메인이라도 파일 겹침 가능성이 있으면 한 `worker`만 수정한다.
+- `worker`에게는 반드시 “지정된 파일 외 변경 금지”, “다른 사람이 만든 수정 revert 금지”를 명시한다.
+
+### 표준 출력 계약
+
+- `explorer` 결과: 관련 파일, 현재 동작, 제약/리스크, 추천 구현 경로
+- `worker` 결과: 변경 파일, 구현 요약, 실행한 검증, 남은 리스크
+- 리뷰 에이전트 결과: findings first, 심각도 순, 파일/라인 근거, 누락 테스트와 잔여 리스크
+
+### 실제 운영 파일
+
+- 프로젝트 subagent 설정: `.codex/config.toml`
+- 역할 정의: `.codex/agents/explorer.toml`, `.codex/agents/worker.toml`, `.codex/agents/reviewer.toml`
+- HITL Gate 1 템플릿: `.agent/workflows/task-spec-template.md`
+- HITL Gate 2 체크리스트: `.agent/workflows/review-gate-checklist.md`
+- `/plugins`용 `aiht-*` manifest는 제거하고, 현재는 `.codex/agents/*.toml`만 `/subagents` 기준으로 유지한다.
+- Ralph loop 자동화는 **후속 단계**로 두고, 현재는 사람이 Gate 1/2를 직접 승인한다.
+
+### 권장 패턴
+
+- **작은 수정**: 메인 Codex 단독, 필요 시 `explorer` 1개만 추가
+- **단일 도메인 기능/버그**: `explorer` 1 + `worker` 1 + 리뷰 에이전트 1
+- **백엔드/프론트 병렬 작업**: backend `worker` 1 + frontend `worker` 1 + 리뷰 에이전트 1
