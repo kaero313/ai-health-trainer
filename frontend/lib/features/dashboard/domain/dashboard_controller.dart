@@ -27,8 +27,19 @@ final monthlyDashboardProvider =
     });
 
 final weightHistoryProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((Ref ref) {
-      return ref.read(dashboardRepositoryProvider).getWeightHistory();
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((
+      Ref ref,
+      String monthKey,
+    ) {
+      final ({int year, int month}) resolvedMonth = _parseMonthKey(monthKey);
+      final int months = _resolveWeightHistoryMonths(
+        DateTime.now(),
+        resolvedMonth.year,
+        resolvedMonth.month,
+      );
+      return ref.read(dashboardRepositoryProvider).getWeightHistory(
+        months: months,
+      );
     });
 
 void refreshDashboard(WidgetRef ref) {
@@ -49,4 +60,14 @@ void refreshDashboard(WidgetRef ref) {
   }
 
   return (year: year, month: month);
+}
+
+int _resolveWeightHistoryMonths(DateTime currentDate, int year, int month) {
+  final int currentMonthIndex = currentDate.year * 12 + currentDate.month;
+  final int targetMonthIndex = year * 12 + month;
+  if (targetMonthIndex >= currentMonthIndex) {
+    return 1;
+  }
+
+  return currentMonthIndex - targetMonthIndex + 1;
 }
