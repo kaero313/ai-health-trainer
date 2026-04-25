@@ -443,7 +443,7 @@ class _MonthlyReportCtaCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                   child: const Icon(
-                    Icons.insights_rounded,
+                    Icons.bar_chart_rounded,
                     color: AppColors.primary,
                   ),
                 ),
@@ -455,7 +455,7 @@ class _MonthlyReportCtaCard extends StatelessWidget {
                       Text('월간 리포트', style: AppTypography.h3),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        '영양소 추세와 체중 변화를 차트로 확인해보세요.',
+                        '영양소 트렌드와 체중 변화를 확인하세요',
                         style: AppTypography.body2.copyWith(
                           color: AppColors.textSecondary,
                         ),
