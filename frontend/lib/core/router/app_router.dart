@@ -94,24 +94,19 @@ final routerProvider = Provider<GoRouter>((ref) {
             (context, state, child) =>
                 MainShell(currentLocation: state.uri.path, child: child),
         routes: [
-          GoRoute(
-            path: '/dashboard',
-            builder: (c, s) => const DashboardScreen(),
-            routes: [
-              GoRoute(
-                path: 'monthly',
-                pageBuilder:
-                    (c, s) => _buildTransitionPage(
-                      state: s,
-                      child: const MonthlyReportScreen(),
-                    ),
-              ),
-            ],
-          ),
+          GoRoute(path: '/dashboard', builder: (c, s) => const DashboardScreen()),
           GoRoute(path: '/diet', builder: (c, s) => const DietScreen()),
           GoRoute(path: '/exercise', builder: (c, s) => const ExerciseScreen()),
           GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
         ],
+      ),
+      GoRoute(
+        path: '/dashboard/monthly',
+        pageBuilder:
+            (c, s) => _buildTransitionPage(
+              state: s,
+              child: const MonthlyReportScreen(),
+            ),
       ),
       GoRoute(
         path: '/diet/analyze',
