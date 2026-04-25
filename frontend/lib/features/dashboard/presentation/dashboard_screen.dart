@@ -417,6 +417,64 @@ class _AiCoachingCard extends StatelessWidget {
   }
 }
 
+class _MonthlyReportCtaCard extends StatelessWidget {
+  const _MonthlyReportCtaCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: cardDecoration,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          onTap: () => context.push('/dashboard/monthly'),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              children: [
+                Container(
+                  width: AppSpacing.xxl,
+                  height: AppSpacing.xxl,
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: const Icon(
+                    Icons.insights_rounded,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('월간 리포트', style: AppTypography.h3),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        '영양소 추세와 체중 변화를 차트로 확인해보세요.',
+                        style: AppTypography.body2.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                const Icon(
+                  Icons.chevron_right,
+                  color: AppColors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ProfileRequiredView extends StatelessWidget {
   final VoidCallback onSetup;
 
