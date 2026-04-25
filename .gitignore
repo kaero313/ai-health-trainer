@@ -111,3 +111,7 @@ Desktop.ini
 *.temp
 node_modules/
 codex_prompts/
+
+# Local browser verification artifacts
+.playwright-mcp/
+ai-health-trainer-*.png

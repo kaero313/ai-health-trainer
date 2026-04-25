@@ -1,8 +1,9 @@
 # AI Health Trainer - Flutter UI/UX 화면 설계서
 
-> **이 문서의 목적:** Codex가 Flutter 화면을 구현할 때 참조하는 UI/UX 설계 명세서.  
-> **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)  
+> **이 문서의 목적:** Codex가 Flutter 화면을 구현할 때 참조하는 UI/UX 설계 명세서.
+> **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)
 > **디자인 참조:** Hevy, Fitbod, MacroFactor, Nike Training Club의 최신 UI/UX 트렌드 반영
+> **현재 기준:** 최신 프로젝트 상태와 다음 의사결정은 `docs/OWNER_GUIDE.md`를 우선한다.
 
 ---
 
@@ -18,29 +19,29 @@ class AppColors {
   static const background       = Color(0xFF0D1B2A);  // 딥 네이비 (메인 배경)
   static const surface          = Color(0xFF1B2838);  // 카드/서피스 배경
   static const surfaceLight     = Color(0xFF243447);  // 입력 필드/활성 카드 배경
-  
+
   // ── 브랜드 액센트 ──
   static const primary          = Color(0xFF00E676);  // 바이브런트 그린 (주 액센트)
   static const primaryDark      = Color(0xFF00C853);  // 눌림 상태
   static const primarySoft      = Color(0x3300E676);  // 20% 투명도 (배지, 배경)
-  
+
   // ── 보조 색상 ──
   static const calories         = Color(0xFFFF6B6B);  // 칼로리 (레드 코랄)
   static const protein          = Color(0xFF4ECDC4);  // 단백질 (틸 민트)
   static const carbs            = Color(0xFFFFD93D);  // 탄수화물 (골든 옐로)
   static const fat              = Color(0xFFFF8A65);  // 지방 (소프트 오렌지)
-  
+
   // ── 텍스트 ──
   static const textPrimary      = Color(0xFFF0F0F0);  // 제목/본문
   static const textSecondary    = Color(0xFF8899AA);  // 보조 텍스트
   static const textDisabled     = Color(0xFF556677);  // 비활성
-  
+
   // ── 상태 ──
   static const success          = Color(0xFF00E676);
   static const warning          = Color(0xFFFFD93D);
   static const error            = Color(0xFFFF5252);
   static const info             = Color(0xFF448AFF);
-  
+
   // ── 기타 ──
   static const divider          = Color(0xFF2A3A4A);  // 구분선
   static const shimmer          = Color(0xFF2A3A4A);  // 로딩 시머
@@ -58,15 +59,15 @@ class AppTypography {
   static const h1 = TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.5);
   static const h2 = TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.3);
   static const h3 = TextStyle(fontSize: 18, fontWeight: FontWeight.w600);
-  
+
   // ── 본문 ──
   static const body1  = TextStyle(fontSize: 16, fontWeight: FontWeight.w400, height: 1.5);
   static const body2  = TextStyle(fontSize: 14, fontWeight: FontWeight.w400, height: 1.4);
-  
+
   // ── 라벨/캡션 ──
   static const label  = TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5);
   static const caption = TextStyle(fontSize: 11, fontWeight: FontWeight.w400);
-  
+
   // ── 숫자 (큰 수치 표시용) ──
   static const number = TextStyle(fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: -1.0);
   static const numberSmall = TextStyle(fontSize: 20, fontWeight: FontWeight.w700);
@@ -182,7 +183,7 @@ final routes = [
   GoRoute(path: '/onboarding', builder: ...),
   GoRoute(path: '/login', builder: ...),
   GoRoute(path: '/register', builder: ...),
-  
+
   // 메인 셸 (하단 네비게이션)
   ShellRoute(
     builder: (context, state, child) => MainShell(child: child),
@@ -193,7 +194,7 @@ final routes = [
       GoRoute(path: '/profile', builder: ...),
     ],
   ),
-  
+
   // 상세 화면 (Push)
   GoRoute(path: '/diet/analyze', builder: ...),        // 음식 사진 분석
   GoRoute(path: '/diet/add', builder: ...),             // 식단 기록 추가
@@ -669,32 +670,32 @@ final routes = [
 dependencies:
   flutter:
     sdk: flutter
-  
+
   # 상태 관리
   flutter_riverpod: ^2.6.0
   riverpod_annotation: ^2.6.0
-  
+
   # 라우팅
   go_router: ^14.0.0
-  
+
   # HTTP
   dio: ^5.7.0
-  
+
   # UI
   google_fonts: ^6.2.0           # Inter 폰트
   flutter_svg: ^2.0.0             # SVG 아이콘
   shimmer: ^3.0.0                 # 로딩 시머 효과
   fl_chart: ^0.69.0               # 차트 (프로그레스 링, 주간 차트)
   cached_network_image: ^3.4.0    # 이미지 캐싱
-  
+
   # 기능
   image_picker: ^1.1.0            # 카메라/갤러리
   intl: ^0.19.0                   # 날짜 포맷
-  
+
   # 저장
   flutter_secure_storage: ^9.2.0  # JWT 토큰 보관
   shared_preferences: ^2.3.0      # 설정 저장
-  
+
   # 기타
   lottie: ^3.1.0                  # Lottie 애니메이션
   haptic_feedback: ^0.5.0         # 진동 피드백
@@ -718,7 +719,7 @@ dev_dependencies:
 class AppLayout {
   static const maxContentWidth = 500.0;   // 콘텐츠 최대 너비
   static const horizontalPadding = 16.0;  // 좌우 패딩
-  
+
   // 모든 화면에 적용
   static Widget page({required Widget child}) {
     return Center(

@@ -25,6 +25,24 @@ services:
     volumes:
       - redisdata:/data
 
+  opensearch:
+    image: opensearchproject/opensearch:2.19.3
+    container_name: health_trainer_opensearch
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearchdata:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   backend:
     build:
       context: ./backend
@@ -51,4 +69,5 @@ services:
 volumes:
   pgdata:
   redisdata:
+  opensearchdata:
   uploads:

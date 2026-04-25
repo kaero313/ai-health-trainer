@@ -1,7 +1,8 @@
 # AI Health Trainer - RESTful API 명세
 
-> **이 문서의 목적:** Codex가 FastAPI 라우터를 구현할 때 참조하는 API 설계 명세서.  
+> **이 문서의 목적:** Codex가 FastAPI 라우터를 구현할 때 참조하는 API 설계 명세서.
 > **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)
+> **현재 기준:** 최신 프로젝트 상태와 다음 의사결정은 `docs/OWNER_GUIDE.md`를 우선한다.
 
 ---
 
@@ -247,6 +248,79 @@ Authorization: Bearer <access_token>
 **비즈니스 로직:**
 - 서버에서 TDEE, target_calories, target_protein_g, target_carbs_g, target_fat_g 자동 계산
 - 계산 공식은 `DATABASE_SCHEMA.md` 참조
+
+---
+
+### GET `/profile/check` — 프로필 존재 여부 확인
+
+**인증:** 필요
+
+**성공 응답 (200):**
+```json
+{
+  "has_profile": true
+}
+```
+
+**비즈니스 로직:**
+- 인증 사용자의 프로필이 있으면 `true`, 없으면 `false`를 반환한다.
+- Flutter 라우터 Guard가 최초 로그인 후 프로필 설정 화면으로 보낼지 판단할 때 사용한다.
+
+---
+
+### POST `/profile/weight` — 체중 기록 추가/수정
+
+**인증:** 필요
+
+**쿼리 파라미터:**
+| 파라미터 | 필수 | 설명 |
+|---------|------|------|
+| `weight_kg` | ✅ | 체중 kg, 30.0 ~ 300.0 |
+| `log_date` | ❌ | 기록 날짜, 기본값은 오늘 |
+
+**성공 응답 (200):**
+```json
+{
+  "status": "success",
+  "data": {
+    "log_date": "2026-04-25",
+    "weight_kg": 75.0
+  }
+}
+```
+
+**비즈니스 로직:**
+- 같은 사용자와 날짜 조합은 하나의 기록만 유지한다.
+- 이미 같은 날짜의 기록이 있으면 갱신한다.
+- 체중 변경 후 프로필의 현재 체중과 목표 영양값을 재계산한다.
+
+---
+
+### GET `/profile/weight-history` — 체중 히스토리 조회
+
+**인증:** 필요
+
+**쿼리 파라미터:**
+| 파라미터 | 필수 | 설명 |
+|---------|------|------|
+| `months` | ❌ | 조회 개월 수, 기본값 3, 최소 1 |
+
+**성공 응답 (200):**
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "log_date": "2026-04-01",
+      "weight_kg": 76.2
+    },
+    {
+      "log_date": "2026-04-25",
+      "weight_kg": 75.0
+    }
+  ]
+}
+```
 
 ---
 
@@ -746,7 +820,78 @@ Authorization: Bearer <access_token>
 
 ---
 
-## 8. Codex 구현 가이드
+### GET `/dashboard/monthly` — 월간 리포트
+
+**인증:** 필요
+
+**쿼리 파라미터:**
+| 파라미터 | 필수 | 설명 |
+|---------|------|------|
+| `year` | ❌ | 조회 연도, 기본값은 현재 연도 |
+| `month` | ❌ | 조회 월, 1~12, 기본값은 현재 월 |
+
+**성공 응답 (200):**
+```json
+{
+  "status": "success",
+  "data": {
+    "year": 2026,
+    "month": 4,
+    "total_days": 30,
+    "nutrition_days": [
+      {
+        "date": "2026-04-01",
+        "calories": 2210.5,
+        "protein_g": 118.0,
+        "carbs_g": 260.4,
+        "fat_g": 65.2
+      }
+    ],
+    "exercise_days": [
+      {
+        "date": "2026-04-01",
+        "exercised": true,
+        "total_sets": 12
+      }
+    ],
+    "avg_calories": 2210.5,
+    "avg_protein_g": 118.0,
+    "avg_carbs_g": 260.4,
+    "avg_fat_g": 65.2
+  }
+}
+```
+
+**비즈니스 로직:**
+- 지정 월의 식단/운동 기록을 집계한다.
+- Flutter 월간 리포트 화면에서 체중 히스토리 API와 함께 사용한다.
+
+---
+
+## 8. 헬스체크 API (`/api/v1/health`)
+
+### GET `/health` — 앱/의존성 상태 확인
+
+**인증:** 불필요
+
+**성공 응답 (200):**
+```json
+{
+  "status": "ok",
+  "version": "1.0.0",
+  "db": "connected",
+  "redis": "connected"
+}
+```
+
+**용도:**
+- Docker/운영 환경에서 앱, DB, Redis 연결 상태를 점검한다.
+- DB 연결 실패 시 503과 `{"status": "error", "db": "disconnected"}`를 반환한다.
+- Redis 연결 실패 시 200과 `{"status": "degraded", "db": "connected", "redis": "disconnected"}`를 반환한다.
+
+---
+
+## 9. Codex 구현 가이드
 
 ### 파일 구조
 ```
@@ -758,6 +903,7 @@ backend/app/api/v1/
 ├── diet.py          # 식단 + 사진분석 + 추천 엔드포인트
 ├── exercise.py      # 운동 + 추천 엔드포인트
 ├── dashboard.py     # 대시보드 엔드포인트
+├── health.py        # 헬스체크 엔드포인트
 └── router.py        # APIRouter 통합
 ```
 
@@ -766,7 +912,7 @@ backend/app/api/v1/
 1. **라우터 패턴:**
 ```python
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.core.security import get_current_user
+from app.core.deps import get_current_user
 
 router = APIRouter(prefix="/exercise", tags=["exercise"])
 

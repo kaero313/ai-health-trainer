@@ -1,7 +1,8 @@
 # AI Health Trainer - AI/RAG 전략 명세
 
-> **이 문서의 목적:** Codex가 AI 서비스 레이어를 구현할 때 참조하는 설계서.  
+> **이 문서의 목적:** Codex가 AI 서비스 레이어를 구현할 때 참조하는 설계서.
 > **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)
+> **현재 기준:** 최신 프로젝트 상태와 다음 의사결정은 `docs/OWNER_GUIDE.md`를 우선한다.
 
 ---
 
@@ -51,7 +52,7 @@
 | 음식 사진 분석 | `gemini-2.5-flash` | 10 RPM, 250 RPD | 멀티모달 (Vision), 빠른 응답 |
 | 식단/운동 추천 | `gemini-2.5-flash` | 10 RPM, 250 RPD | 텍스트 생성, 충분한 품질 |
 | 고급 코칭 (복잡한 추론) | `gemini-2.5-pro` | 5 RPM, 25 RPD | 복잡한 분석 시 사용 |
-| 임베딩 | `text-embedding-004` | 무료 | 768 차원 |
+| 임베딩 | `gemini-embedding-001` | 무료 | 3072 차원 |
 
 > **RPM** = 분당 요청 수, **RPD** = 일당 요청 수
 
@@ -69,12 +70,12 @@ AI_CONFIG = {
     # 모델 설정
     "default_model": "gemini-2.5-flash",        # 일반 요청용 (빠르고 무료 한도 넉넉)
     "advanced_model": "gemini-2.5-pro",          # 복잡한 추론용 (무료 한도 적음)
-    "embedding_model": "text-embedding-004",     # 임베딩용
-    
+    "embedding_model": "gemini-embedding-001",   # 임베딩용
+
     # 생성 설정
     "max_output_tokens": 1000,           # 응답 최대 토큰
     "temperature": 0.7,                  # 창의성 수준
-    
+
     # 사용량 제한 (무료 티어 보호)
     "daily_request_limit_per_user": 30,  # 사용자당 일일 AI 호출 제한
     "cache_ttl_seconds": 3600,           # 동일 요청 캐시 1시간
@@ -122,7 +123,7 @@ class AIService:
     async def analyze_food_image(self, image_bytes: bytes, mime_type: str) -> dict:
         """
         음식 사진 분석 - Gemini 2.5 Flash (Vision)
-        
+
         Codex 구현 가이드:
         - image_bytes: 원본 이미지 바이트
         - mime_type: "image/jpeg" 또는 "image/png"
@@ -198,7 +199,7 @@ class AIService:
 ### 4-2. 식단 추천 프롬프트
 
 ```
-당신은 AI 헬스 코치입니다. 사용자의 신체 정보, 목표, 오늘의 식단 기록을 보고 
+당신은 AI 헬스 코치입니다. 사용자의 신체 정보, 목표, 오늘의 식단 기록을 보고
 남은 영양소를 채울 수 있는 식단을 추천하세요.
 
 규칙:
@@ -250,7 +251,7 @@ class AIService:
 ### 4-3. 운동 추천 프롬프트
 
 ```
-당신은 AI 헬스 코치입니다. 사용자의 운동 목표와 과거 운동 기록을 분석하여 
+당신은 AI 헬스 코치입니다. 사용자의 운동 목표와 과거 운동 기록을 분석하여
 다음 운동 계획을 추천하세요.
 
 규칙:
@@ -303,12 +304,12 @@ class AIService:
 
 | 항목 | 변경 전 (OpenAI) | 변경 후 (Gemini) |
 |------|-----------------|-----------------|
-| 모델 | text-embedding-3-small | text-embedding-004 |
-| 차원 | 1536 | 768 |
-| DB 컬럼 | `VECTOR(1536)` | `VECTOR(768)` |
+| 모델 | text-embedding-3-small | gemini-embedding-001 |
+| 차원 | 1536 | 3072 |
+| DB 컬럼 | `VECTOR(1536)` | `VECTOR(3072)` |
 | 비용 | 토큰당 과금 | **무료** |
 
-> **중요:** DB 스키마의 `rag_documents.embedding` 컬럼이 `VECTOR(768)`로 변경됩니다.  
+> **중요:** 현재 DB 스키마의 `rag_documents.embedding` 컬럼은 `VECTOR(3072)`입니다.
 > `DATABASE_SCHEMA.md`도 이에 맞게 업데이트되었습니다.
 
 ### 5-2. 데이터 인제스트 단계
@@ -325,7 +326,7 @@ RAG 데이터 소스 (rag_data/ 폴더)
 [청킹] 문서를 500~1000자 단위로 분할
     │
     ▼
-[임베딩] Gemini text-embedding-004 → 768차원 벡터
+[임베딩] Gemini Embedding (`gemini-embedding-001`) → 3072차원 벡터
     │
     ▼
 [저장] PostgreSQL rag_documents 테이블 (pgvector)
@@ -345,20 +346,20 @@ class RAGService:
     async def get_embedding(self, text: str) -> list[float]:
         """Gemini 임베딩 생성"""
         result = genai.embed_content(
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",
             content=text,
         )
-        return result['embedding']  # 768차원 벡터
+        return result['embedding']  # 3072차원 벡터
 
     async def search(self, query: str, category: str = None, top_k: int = 3) -> list:
         """
-        1. query를 text-embedding-004로 임베딩
+        1. query를 gemini-embedding-001로 임베딩
         2. pgvector에서 코사인 유사도 검색
         3. category 필터 적용 (선택)
         4. 상위 top_k개 문서 반환
         """
         query_embedding = await self.get_embedding(query)
-        
+
         # SQL 예시:
         # SELECT id, title, content, 1 - (embedding <=> :query_vec) as similarity
         # FROM rag_documents
@@ -370,7 +371,7 @@ class RAGService:
     async def ingest_document(self, title: str, content: str, category: str, source: str):
         """
         1. content를 청크로 분할 (500~1000자)
-        2. 각 청크를 Gemini text-embedding-004로 임베딩
+        2. 각 청크를 gemini-embedding-001로 임베딩
         3. rag_documents에 저장
         """
         ...
@@ -417,17 +418,17 @@ def parse_ai_response(response_text: str) -> dict:
         return json.loads(response_text)
     except json.JSONDecodeError:
         pass
-    
+
     # 2차: ```json ... ``` 블록 추출
     match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
     if match:
         return json.loads(match.group(1))
-    
+
     # 3차: { ... } 블록 추출
     match = re.search(r'\{.*\}', response_text, re.DOTALL)
     if match:
         return json.loads(match.group(0))
-    
+
     raise ValueError("AI 응답에서 JSON을 파싱할 수 없습니다.")
 ```
 
@@ -445,8 +446,8 @@ def parse_ai_response(response_text: str) -> dict:
 | 이미지 분석 실패 | "음식을 인식할 수 없습니다. 직접 입력해주세요" |
 | Safety Filter 차단 | 프롬프트 수정 후 재시도, 실패 시 일반 응답 반환 |
 
-> **Gemini 고유 주의사항:**  
-> Gemini는 Safety Filter가 있어 특정 콘텐츠를 차단할 수 있습니다.  
+> **Gemini 고유 주의사항:**
+> Gemini는 Safety Filter가 있어 특정 콘텐츠를 차단할 수 있습니다.
 > 음식/운동 추천은 건강 관련이므로 Safety 설정을 `BLOCK_ONLY_HIGH`로 설정하세요.
 
 ```python

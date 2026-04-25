@@ -1,7 +1,8 @@
 # AI Health Trainer - 개발 가이드라인
 
-> **이 문서의 목적:** Codex가 코드를 작성할 때 따라야 하는 규칙, 컨벤션, 실행 방법 안내.  
+> **이 문서의 목적:** Codex가 코드를 작성할 때 따라야 하는 규칙, 컨벤션, 실행 방법 안내.
 > **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)
+> **현재 기준:** 최신 프로젝트 상태와 다음 의사결정은 `docs/OWNER_GUIDE.md`를 우선한다.
 
 ---
 
@@ -51,7 +52,7 @@ GEMINI_API_KEY=your-gemini-api-key
 # AI Settings
 AI_DEFAULT_MODEL=gemini-2.5-flash
 AI_ADVANCED_MODEL=gemini-2.5-pro
-AI_EMBEDDING_MODEL=text-embedding-004
+AI_EMBEDDING_MODEL=gemini-embedding-001
 AI_MAX_OUTPUT_TOKENS=1000
 AI_TEMPERATURE=0.7
 AI_DAILY_REQUEST_LIMIT=30
@@ -145,7 +146,7 @@ class ExerciseLogResponse(BaseModel):
 
 ```python
 # 인증된 사용자 주입
-from app.core.security import get_current_user
+from app.core.deps import get_current_user
 current_user: User = Depends(get_current_user)
 
 # DB 세션 주입
@@ -219,7 +220,7 @@ final exerciseLogsProvider = FutureProvider.autoDispose
 
 class ApiClient {
   final Dio _dio;
-  
+
   ApiClient() : _dio = Dio(BaseOptions(
     baseUrl: 'http://YOUR_SERVER/api/v1',
     connectTimeout: Duration(seconds: 10),
@@ -324,7 +325,7 @@ main           ← 배포 가능한 안정 버전
   └── develop  ← 개발 통합
        ├── feature/auth          ← 인증 기능
        ├── feature/profile       ← 프로필 기능
-       ├── feature/exercise      ← 운동 기능  
+       ├── feature/exercise      ← 운동 기능
        ├── feature/diet          ← 식단 기능
        ├── feature/dashboard     ← 대시보드
        └── feature/ai-coaching   ← AI 코칭
@@ -341,13 +342,13 @@ refactor: AI 서비스 에러 처리 개선
 
 ---
 
-## 6. Codex 구현 순서 (Phase별 상세)
+## 6. Codex 구현 현황 (Phase별)
 
-### Phase 1: 기반 구축
+### Phase 1: 기반 구축 - 완료
 
 1. **Docker 환경**
-   - `docker-compose.yml` — PostgreSQL(pgvector), Redis, FastAPI
-   - `backend/Dockerfile` — Python 이미지 + requirements
+   - `docker-compose.yml` — PostgreSQL(pgvector), Redis, Backend
+   - `backend/Dockerfile` — Python 3.12 기반 이미지
    - 참조: `DEPLOYMENT.md`
 
 2. **FastAPI 앱 초기화**
@@ -356,36 +357,51 @@ refactor: AI 서비스 에러 처리 개선
    - `backend/app/core/database.py` — async SQLAlchemy 엔진 + 세션
 
 3. **DB 모델 + 마이그레이션**
-   - 모든 SQLAlchemy 모델 작성
+   - 인증, 프로필, 식단, 운동, AI/RAG 기본 모델 작성
    - Alembic 초기화 + 마이그레이션
    - 참조: `DATABASE_SCHEMA.md`
 
 4. **JWT 인증**
    - `backend/app/core/security.py` — 토큰 생성/검증, 비밀번호 해싱
+   - `backend/app/core/deps.py` — 인증 의존성 (`get_current_user`)
    - `backend/app/api/v1/auth.py` — 회원가입/로그인/토큰갱신
    - 참조: `API_SPECIFICATION.md` 섹션 2
 
-5. **Flutter 초기화**
-   - `flutter create frontend`
-   - Riverpod, Dio, go_router 패키지 추가
-   - 기본 네비게이션 (로그인 → 대시보드 → 각 화면)
+### Phase 2: 핵심 CRUD - 완료
 
-### Phase 2: 핵심 CRUD
+5. **프로필 API** — `API_SPECIFICATION.md` 섹션 3
+6. **운동 기록 API** — `API_SPECIFICATION.md` 섹션 5
+7. **식단 기록 API** — `API_SPECIFICATION.md` 섹션 4
+8. **대시보드 API** — `API_SPECIFICATION.md` 섹션 7
 
-6. **프로필 API + UI** — `API_SPECIFICATION.md` 섹션 3
-7. **운동 기록 API + UI** — `API_SPECIFICATION.md` 섹션 5
-8. **식단 기록 API + UI** — `API_SPECIFICATION.md` 섹션 4
-9. **대시보드 API + UI** — `API_SPECIFICATION.md` 섹션 6
+### Phase 3: AI 통합 - 완료
 
-### Phase 3: AI 통합
+9. **AI 서비스** — `AI_RAG_STRATEGY.md` 섹션 3
+10. **RAG 서비스** — `AI_RAG_STRATEGY.md` 섹션 5
+11. **음식 사진 분석** — `AI_RAG_STRATEGY.md` 섹션 4-1
+12. **식단/운동 추천 + AI 채팅** — `AI_RAG_STRATEGY.md` 섹션 4-2, 4-3
 
-10. **AI 서비스** — `AI_RAG_STRATEGY.md` 섹션 3
-11. **RAG 서비스** — `AI_RAG_STRATEGY.md` 섹션 5
-12. **음식 사진 분석** — `AI_RAG_STRATEGY.md` 섹션 4-1
-13. **식단/운동 추천** — `AI_RAG_STRATEGY.md` 섹션 4-2, 4-3
+### Phase 4: Flutter 프론트엔드 - 완료
 
-### Phase 4: 배포
+13. **공통 기반** — 디자인 시스템, Riverpod, GoRouter, Dio/Auth Interceptor
+14. **주요 화면** — 온보딩, 로그인/회원가입, 프로필, 대시보드, 식단, 운동
+15. **AI 화면** — 음식 사진 분석, 식단/운동 추천, AI 코칭 채팅
+16. **UX 마감** — FAB 바텀시트, 화면 전환, 대시보드 AI 코칭 카드, `flutter analyze` 0건
 
-14. **배포 설정** — `DEPLOYMENT.md`
-15. **CI/CD** — GitHub Actions
-16. **Play Store 빌드** — Flutter 릴리스 빌드
+### Phase 5: 배포/운영 기반 - 완료
+
+17. **프로덕션 구성** — `docker-compose.prod.yml`, 멀티스테이지 Dockerfile, Nginx/SSL 템플릿
+18. **자동화** — GitHub Actions CI/CD, PostgreSQL 백업 스크립트
+19. **운영 진단** — `/api/v1/health`, DB/Redis 상태 확인, 네트워크 타임아웃/로그 개선
+20. **RAG 운영** — 한국 음식/보충제 데이터 추가, reset/ingest 스크립트 정비
+
+### Phase 6: 월간 리포트/체중 추적/개발 운영 고도화 - 완료
+
+21. **프로필 Guard** — `/profile/check` API + Flutter 라우터 Guard
+22. **체중 히스토리** — `weight_logs` 모델/마이그레이션, `/profile/weight`, `/profile/weight-history`
+23. **월간 리포트** — `/dashboard/monthly`, Flutter 월간 리포트 화면, 대시보드 진입 카드
+24. **개발 운영** — Codex subagent 설정, HITL Gate 템플릿, OpenSearch compose 서비스
+
+### 다음 작업 기준
+
+Phase 1~6은 완료 상태로 취급한다. 새 작업은 Phase 7 또는 릴리스 후보 작업으로 별도 정의하고, 릴리스 전에는 로컬 테스트용 로그인 기본값 제거, Gemini SDK `google.genai` 전환, Play Store/운영 배포 검증을 확인한다.

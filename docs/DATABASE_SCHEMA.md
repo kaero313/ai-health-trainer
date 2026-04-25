@@ -1,7 +1,8 @@
 # AI Health Trainer - 데이터베이스 스키마 명세
 
-> **이 문서의 목적:** Codex가 SQLAlchemy 모델을 작성할 때 참조하는 DB 설계 명세서.  
+> **이 문서의 목적:** Codex가 SQLAlchemy 모델을 작성할 때 참조하는 DB 설계 명세서.
 > **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)
+> **현재 기준:** 최신 프로젝트 상태와 다음 의사결정은 `docs/OWNER_GUIDE.md`를 우선한다.
 
 ---
 
@@ -99,7 +100,24 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 
 ---
 
-### 2-3. `exercise_logs` — 운동 기록 (운동 단위 헤더)
+### 2-3. `weight_logs` — 체중 히스토리
+
+| 컬럼 | 타입 | 제약조건 | 설명 |
+|------|------|----------|------|
+| `id` | `SERIAL` | PK | |
+| `user_id` | `INTEGER` | FK → users.id, NOT NULL | |
+| `log_date` | `DATE` | NOT NULL | 체중 기록 날짜 |
+| `weight_kg` | `DECIMAL(5,1)` | NOT NULL | 체중 (kg) |
+| `created_at` | `TIMESTAMPTZ` | DEFAULT now() | |
+
+**인덱스:**
+- `ix_weight_logs_user_date` — (user_id, log_date), UNIQUE
+
+**관계:** `users` 1 : N `weight_logs`
+
+---
+
+### 2-4. `exercise_logs` — 운동 기록 (운동 단위 헤더)
 
 | 컬럼 | 타입 | 제약조건 | 설명 |
 |------|------|----------|------|
@@ -130,7 +148,7 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 
 ---
 
-### 2-4. `exercise_sets` — 운동 세트 상세 (exercise_logs의 하위 테이블)
+### 2-5. `exercise_sets` — 운동 세트 상세 (exercise_logs의 하위 테이블)
 
 | 컬럼 | 타입 | 제약조건 | 설명 |
 |------|------|----------|------|
@@ -149,7 +167,7 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 
 ---
 
-### 2-5. `diet_logs` — 식단 기록 (식사 단위 헤더)
+### 2-6. `diet_logs` — 식단 기록 (식사 단위 헤더)
 
 | 컬럼 | 타입 | 제약조건 | 설명 |
 |------|------|----------|------|
@@ -174,7 +192,7 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 
 ---
 
-### 2-6. `diet_log_items` — 식단 항목 상세 (diet_logs의 하위 테이블)
+### 2-7. `diet_log_items` — 식단 항목 상세 (diet_logs의 하위 테이블)
 
 | 컬럼 | 타입 | 제약조건 | 설명 |
 |------|------|----------|------|
@@ -196,7 +214,7 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 
 ---
 
-### 2-7. `ai_recommendations` — AI 추천 기록
+### 2-8. `ai_recommendations` — AI 추천 기록
 
 | 컬럼 | 타입 | 제약조건 | 설명 |
 |------|------|----------|------|
@@ -207,7 +225,7 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 | `prompt_used` | `TEXT` | | 실제 전송된 프롬프트 |
 | `recommendation` | `TEXT` | NOT NULL | AI 응답 내용 |
 | `rag_sources` | `JSONB` | DEFAULT '[]' | 사용된 RAG 문서 ID/제목 목록 |
-| `model_used` | `VARCHAR(50)` | | 사용된 모델명 (예: 'gpt-4o') |
+| `model_used` | `VARCHAR(50)` | | 사용된 모델명 (예: `gemini-2.5-flash`) |
 | `tokens_used` | `INTEGER` | | 사용된 토큰 수 |
 | `created_at` | `TIMESTAMPTZ` | DEFAULT now() | |
 
@@ -216,7 +234,7 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 
 ---
 
-### 2-8. `rag_documents` — RAG 지식 저장소
+### 2-9. `rag_documents` — RAG 지식 저장소
 
 | 컬럼 | 타입 | 제약조건 | 설명 |
 |------|------|----------|------|
@@ -225,14 +243,14 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 | `source` | `VARCHAR(500)` | | 출처 (논문 DOI, URL 등) |
 | `category` | `VARCHAR(50)` | NOT NULL | 카테고리 (아래 참조) |
 | `content` | `TEXT` | NOT NULL | 문서 본문 (청크) |
-| `embedding` | `VECTOR(768)` | NOT NULL | Gemini text-embedding-004 |
+| `embedding` | `VECTOR(3072)` | NOT NULL | Gemini `gemini-embedding-001` |
 | `metadata` | `JSONB` | DEFAULT '{}' | 추가 메타데이터 |
 | `created_at` | `TIMESTAMPTZ` | DEFAULT now() | |
 
 **category 허용값:**
 ```
 'nutrition'       — 영양학
-'exercise_science' — 운동 과학
+'exercise'        — 운동 과학/운동 추천
 'muscle_growth'   — 근성장
 'diet_plan'       — 식단 계획
 'supplement'      — 보충제
@@ -244,7 +262,7 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 
 ---
 
-### 2-9. `refresh_tokens` — JWT Refresh Token 저장
+### 2-10. `refresh_tokens` — JWT Refresh Token 저장
 
 | 컬럼 | 타입 | 제약조건 | 설명 |
 |------|------|----------|------|
@@ -275,17 +293,17 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 │ updated_at   │             │ tdee_kcal        │
 └──────┬───────┘             └──────────────────┘
        │ 1:N
-       ├─────────────────┬───────────────────┐
-       ▼                 ▼                   ▼
+       ├─────────────────┬───────────────────┬───────────────────┐
+       ▼                 ▼                   ▼                   ▼
 ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐
-│exercise_logs │  │  diet_logs   │  │ai_recommendations │
-│──────────────│  │──────────────│  │───────────────────│
-│ id (PK)      │  │ id (PK)      │  │ id, user_id (FK) │
-│ user_id (FK) │  │ user_id (FK) │  │ type             │
-│ exercise_date│  │ log_date     │  │ recommendation   │
-│ exercise_name│  │ meal_type    │  │ model_used       │
-│ muscle_group │  │ image_url    │  └───────────────────┘
-│ duration_min │  │ ai_analyzed  │
+│exercise_logs │  │  diet_logs   │  │ai_recommendations │  ┌─────────────┐
+│──────────────│  │──────────────│  │───────────────────│  │ weight_logs │
+│ id (PK)      │  │ id (PK)      │  │ id, user_id (FK) │  │─────────────│
+│ user_id (FK) │  │ user_id (FK) │  │ type             │  │ id (PK)     │
+│ exercise_date│  │ log_date     │  │ recommendation   │  │ user_id(FK) │
+│ exercise_name│  │ meal_type    │  │ model_used       │  │ log_date    │
+│ muscle_group │  │ image_url    │  └───────────────────┘  │ weight_kg   │
+│ duration_min │  │ ai_analyzed  │                         └─────────────┘
 │ memo         │  └──────┬───────┘
 └──────┬───────┘         │ 1:N
        │ 1:N            ▼
@@ -322,6 +340,7 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 backend/app/models/
 ├── __init__.py          # 모든 모델 import
 ├── user.py              # User, UserProfile
+├── weight_log.py        # WeightLog
 ├── exercise.py          # ExerciseLog, ExerciseSet
 ├── diet.py              # DietLog, DietLogItem
 ├── ai_recommendation.py # AIRecommendation

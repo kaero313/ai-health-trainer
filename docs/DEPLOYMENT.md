@@ -1,7 +1,8 @@
 # AI Health Trainer - 배포 가이드
 
-> **이 문서의 목적:** Docker 환경 구성 및 GCP/AWS VM 배포 가이드.  
+> **이 문서의 목적:** Docker 환경 구성 및 GCP/AWS VM 배포 가이드.
 > **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)
+> **현재 기준:** 최신 프로젝트 상태와 다음 의사결정은 `docs/OWNER_GUIDE.md`를 우선한다.
 
 ---
 
@@ -10,8 +11,6 @@
 ### docker-compose.yml
 
 ```yaml
-version: '3.8'
-
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -38,13 +37,30 @@ services:
     volumes:
       - redisdata:/data
 
+  opensearch:
+    image: opensearchproject/opensearch:2.19.3
+    container_name: health_trainer_opensearch
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearchdata:/usr/share/opensearch/data
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: health_trainer_api
     env_file:
-      - .env
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/health_trainer
+      DATABASE_URL_SYNC: postgresql://postgres:postgres@db:5432/health_trainer
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     volumes:
@@ -60,6 +76,7 @@ services:
 volumes:
   pgdata:
   redisdata:
+  opensearchdata:
   uploads:
 ```
 
@@ -144,7 +161,8 @@ pytest-cov>=5.0.0
     │
     ├── FastAPI (:8000)
     ├── PostgreSQL+pgvector (:5432)
-    └── Redis (:6379)
+    ├── Redis (:6379)
+    └── OpenSearch (:9200, 개발/관측 용도)
 ```
 
 ### docker-compose.prod.yml (프로덕션)
