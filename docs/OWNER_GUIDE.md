@@ -7,6 +7,24 @@
 
 ---
 
+## 0. Document Map
+
+| Document | Role |
+|----------|------|
+| `AGENTS.md` | AI 작업자용 실행 규칙 |
+| `docs/OWNER_GUIDE.md` | 현재 상태와 의사결정의 기준 문서 |
+| `docs/API_SPECIFICATION.md` | API 상세 명세와 요청/응답 예시 |
+| `docs/DATABASE_SCHEMA.md` | DB 테이블/관계/계산식 상세 |
+| `docs/AI_RAG_STRATEGY.md` | AI 프롬프트, Gemini/RAG 전략 |
+| `docs/FLUTTER_UI_DESIGN.md` | Flutter 화면별 UI/UX 상세 설계 |
+| `docs/DEPLOYMENT.md` | Docker/Nginx/배포 상세 |
+| `docs/DEVELOPMENT_GUIDE.md` | 개발 컨벤션과 구현 순서 기록 |
+| `docs/PROJECT_OVERVIEW.md` | 초기 프로젝트 개요와 역할 분담 |
+
+세부 설계 문서는 기능 구현 근거로 유지한다. 최신 Phase 상태와 다음 의사결정은 이 문서를 우선한다.
+
+---
+
 ## 1. Product Direction
 
 AI Health Trainer는 사진 한 장과 운동/체중 기록을 바탕으로 현재 상태를 평가하고, 벌크/다이어트/유지 목표에 맞춘 다음 행동을 추천하는 개인 맞춤형 건강/피트니스 AI 코칭 앱이다.
