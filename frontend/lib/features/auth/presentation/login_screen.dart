@@ -17,6 +17,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
+  // TODO: 배포 전 기본값 제거
   final TextEditingController _emailController = TextEditingController(text: 'admin@admin.com');
   final TextEditingController _passwordController = TextEditingController(text: 'Admin@12345678');
 
