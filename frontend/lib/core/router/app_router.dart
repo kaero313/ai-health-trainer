@@ -9,6 +9,7 @@ import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
 import '../../features/chat/presentation/chat_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
+import '../../features/dashboard/presentation/monthly_report_screen.dart';
 import '../../features/diet/presentation/diet_add_screen.dart';
 import '../../features/diet/presentation/diet_analyze_screen.dart';
 import '../../features/diet/presentation/diet_recommend_screen.dart';
@@ -96,6 +97,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/dashboard',
             builder: (c, s) => const DashboardScreen(),
+            routes: [
+              GoRoute(
+                path: 'monthly',
+                pageBuilder:
+                    (c, s) => _buildTransitionPage(
+                      state: s,
+                      child: const MonthlyReportScreen(),
+                    ),
+              ),
+            ],
           ),
           GoRoute(path: '/diet', builder: (c, s) => const DietScreen()),
           GoRoute(path: '/exercise', builder: (c, s) => const ExerciseScreen()),
