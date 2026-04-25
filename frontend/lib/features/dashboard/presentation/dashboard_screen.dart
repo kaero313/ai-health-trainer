@@ -95,6 +95,8 @@ class DashboardScreen extends ConsumerWidget {
                   const SizedBox(height: AppSpacing.md),
                   _WeeklySummaryCard(today: today, weekly: weekly),
                   const SizedBox(height: AppSpacing.md),
+                  const _MonthlyReportCtaCard(),
+                  const SizedBox(height: AppSpacing.md),
                   const _AiCoachingCard(),
                   const SizedBox(height: AppSpacing.lg),
                 ],
