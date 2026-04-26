@@ -1,7 +1,6 @@
-import asyncio
 import re
 
-import google.generativeai as genai
+from google import genai
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,20 +12,23 @@ class RAGService:
     def __init__(self, db: AsyncSession, settings: Settings):
         self.db = db
         self.settings = settings
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     async def get_embedding(self, text_value: str) -> list[float]:
         normalized = text_value.strip()
         if not normalized:
             raise ValueError("Text for embedding must not be empty")
 
-        result = await asyncio.to_thread(
-            genai.embed_content,
-            model="models/gemini-embedding-001",
-            content=normalized,
+        embedding_model = self.settings.AI_EMBEDDING_MODEL.removeprefix("models/")
+
+        result = await self.client.aio.models.embed_content(
+            model=embedding_model,
+            contents=normalized,
         )
-        embedding = result["embedding"]
-        return [float(value) for value in embedding]
+        embeddings = result.embeddings or []
+        if not embeddings or embeddings[0].values is None:
+            raise ValueError("Embedding response did not include values")
+        return [float(value) for value in embeddings[0].values]
 
     async def search(self, query: str, category: str | None = None, top_k: int = 3) -> list[dict]:
         normalized_query = query.strip()
@@ -37,24 +39,26 @@ class RAGService:
         query_embedding = await self.get_embedding(normalized_query)
         vec_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
+        category_filter = ""
+        params = {
+            "query_vec": vec_str,
+            "top_k": safe_top_k,
+        }
+        if category is not None:
+            category_filter = "WHERE category = :category"
+            params["category"] = category
+
         stmt = text(
             """
             SELECT id, title, content,
                    1 - (embedding <=> (:query_vec)::vector) as similarity
             FROM rag_documents
-            WHERE (:category IS NULL OR category = :category)
+            {category_filter}
             ORDER BY embedding <=> (:query_vec)::vector
             LIMIT :top_k
-            """
+            """.format(category_filter=category_filter)
         )
-        result = await self.db.execute(
-            stmt,
-            {
-                "query_vec": vec_str,
-                "category": category,
-                "top_k": safe_top_k,
-            },
-        )
+        result = await self.db.execute(stmt, params)
         rows = result.mappings().all()
 
         return [
