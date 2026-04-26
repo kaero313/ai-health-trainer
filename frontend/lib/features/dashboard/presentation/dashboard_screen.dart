@@ -50,10 +50,7 @@ class DashboardScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(
-          'Good Morning, ${_extractDisplayName(profileAsync)}',
-          style: AppTypography.h3,
-        ),
+        title: Text(_buildGreeting(profileAsync), style: AppTypography.h3),
       ),
       body: Builder(
         builder: (BuildContext context) {
@@ -114,6 +111,14 @@ class DashboardScreen extends ConsumerWidget {
 
   bool _isDashboardNotFound(Object? error) {
     return error is DashboardRepositoryException && error.statusCode == 404;
+  }
+
+  String _buildGreeting(AsyncValue<Map<String, dynamic>> profileAsync) {
+    final String displayName = _extractDisplayName(profileAsync);
+    if (displayName == '사용자') {
+      return '안녕하세요';
+    }
+    return '$displayName님, 안녕하세요';
   }
 
   String _extractDisplayName(AsyncValue<Map<String, dynamic>> profileAsync) {
@@ -464,10 +469,7 @@ class _MonthlyReportCtaCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
-                const Icon(
-                  Icons.chevron_right,
-                  color: AppColors.textSecondary,
-                ),
+                const Icon(Icons.chevron_right, color: AppColors.textSecondary),
               ],
             ),
           ),
