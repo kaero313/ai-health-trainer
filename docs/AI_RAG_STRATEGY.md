@@ -49,8 +49,8 @@
 
 | 용도 | 모델 | 무료 티어 제한 | 비고 |
 |------|------|--------------|------|
-| 음식 사진 분석 | `gemini-2.5-flash` | 10 RPM, 250 RPD | 멀티모달 (Vision), 빠른 응답 |
-| 식단/운동 추천 | `gemini-2.5-flash` | 10 RPM, 250 RPD | 텍스트 생성, 충분한 품질 |
+| 음식 사진 분석 | `gemini-3-flash-preview` | 10 RPM, 250 RPD | 멀티모달 (Vision), 빠른 응답 |
+| 식단/운동 추천 | `gemini-3-flash-preview` | 10 RPM, 250 RPD | 텍스트 생성, 충분한 품질 |
 | 고급 코칭 (복잡한 추론) | `gemini-2.5-pro` | 5 RPM, 25 RPD | 복잡한 분석 시 사용 |
 | 임베딩 | `gemini-embedding-001` | 무료 | 3072 차원 |
 
@@ -68,12 +68,12 @@
 # backend/app/core/config.py 에 설정
 AI_CONFIG = {
     # 모델 설정
-    "default_model": "gemini-2.5-flash",        # 일반 요청용 (빠르고 무료 한도 넉넉)
+    "default_model": "gemini-3-flash-preview",        # 일반 요청용 (빠르고 무료 한도 넉넉)
     "advanced_model": "gemini-2.5-pro",          # 복잡한 추론용 (무료 한도 적음)
     "embedding_model": "gemini-embedding-001",   # 임베딩용
 
     # 생성 설정
-    "max_output_tokens": 1000,           # 응답 최대 토큰
+    "max_output_tokens": 4096,           # 응답 최대 토큰
     "temperature": 0.7,                  # 창의성 수준
 
     # 사용량 제한 (무료 티어 보호)
@@ -83,7 +83,7 @@ AI_CONFIG = {
 ```
 
 **무료 티어 최대 활용 방법:**
-1. 기본 모델은 `gemini-2.5-flash` 사용 (일 250회 허용, 충분)
+1. 기본 모델은 `gemini-3-flash-preview` 사용 (일 250회 허용, 충분)
 2. 복잡한 코칭만 `gemini-2.5-pro` 사용 (일 25회 제한, 아껴서 사용)
 3. 동일/유사한 요청에 Redis 캐싱
 4. 사용자당 일일 AI 호출 횟수 제한
@@ -106,7 +106,7 @@ backend/app/services/
 ```python
 """
 Codex 구현 가이드:
-- Google Generative AI Python SDK (google-generativeai >= 0.8.0) 사용
+- Google Generative AI Python SDK (google-genai >= 1.33.0) 사용
 - 비동기 호출 지원
 - 모든 LLM 호출은 이 서비스를 통해서만 수행
 - 호출 결과를 ai_recommendations 테이블에 저장
@@ -117,7 +117,7 @@ import google.generativeai as genai
 class AIService:
     def __init__(self, api_key: str):
         genai.configure(api_key=api_key)
-        self.flash_model = genai.GenerativeModel("gemini-2.5-flash")
+        self.flash_model = genai.GenerativeModel("gemini-3-flash-preview")
         self.pro_model = genai.GenerativeModel("gemini-2.5-pro")
 
     async def analyze_food_image(self, image_bytes: bytes, mime_type: str) -> dict:
@@ -157,9 +157,9 @@ class AIService:
 
 | 항목 | Gemini SDK | OpenAI SDK |
 |------|-----------|-----------|
-| 패키지 | `google-generativeai` | `openai` |
+| 패키지 | `google-genai` | `openai` |
 | 초기화 | `genai.configure(api_key=...)` | `AsyncOpenAI(api_key=...)` |
-| 모델 생성 | `genai.GenerativeModel("gemini-2.5-flash")` | `client.chat.completions.create(model=...)` |
+| 모델 생성 | `genai.GenerativeModel("gemini-3-flash-preview")` | `client.chat.completions.create(model=...)` |
 | 이미지 입력 | 바이트 직접 전달 `{"mime_type": ..., "data": ...}` | base64 인코딩 필요 |
 | JSON 출력 | `response_mime_type="application/json"` | `response_format={"type": "json_object"}` |
 | 비동기 호출 | `generate_content_async()` | `await client.chat.completions.create()` |

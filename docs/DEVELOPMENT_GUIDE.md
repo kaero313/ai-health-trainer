@@ -50,10 +50,10 @@ REFRESH_TOKEN_EXPIRE_DAYS=7
 GEMINI_API_KEY=your-gemini-api-key
 
 # AI Settings
-AI_DEFAULT_MODEL=gemini-2.5-flash
+AI_DEFAULT_MODEL=gemini-3-flash-preview
 AI_ADVANCED_MODEL=gemini-2.5-pro
 AI_EMBEDDING_MODEL=gemini-embedding-001
-AI_MAX_OUTPUT_TOKENS=1000
+AI_MAX_OUTPUT_TOKENS=4096
 AI_TEMPERATURE=0.7
 AI_DAILY_REQUEST_LIMIT=30
 
@@ -404,4 +404,4 @@ refactor: AI 서비스 에러 처리 개선
 
 ### 다음 작업 기준
 
-Phase 1~6은 완료 상태로 취급한다. 새 작업은 Phase 7 또는 릴리스 후보 작업으로 별도 정의하고, 릴리스 전에는 로컬 테스트용 로그인 기본값 제거, Gemini SDK `google.genai` 전환, Play Store/운영 배포 검증을 확인한다.
+Phase 1~6은 완료 상태로 취급한다. 새 작업은 Phase 7 또는 릴리스 후보 작업으로 별도 정의하고, 릴리스 전에는 로컬 테스트용 로그인 기본값 제거, Gemini 3 Flash Preview 응답 품질 검증, Play Store/운영 배포 검증을 확인한다.

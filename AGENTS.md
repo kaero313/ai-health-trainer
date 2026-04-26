@@ -15,7 +15,7 @@ AI Health Trainer는 개인 맞춤형 건강/피트니스 AI 코칭 앱이다.
 |------|--------|
 | Backend | FastAPI + PostgreSQL/pgvector + Redis 완료 |
 | Frontend | Flutter 모바일 우선 앱 완료, Web 개발 실행 지원 |
-| AI/RAG | Gemini 2.5 Flash/Pro + `gemini-embedding-001` 완료 |
+| AI/RAG | Gemini 3 Flash Preview + Gemini 2.5 Pro + `gemini-embedding-001` 완료 |
 | Ops | Docker Compose, prod compose, Nginx, CI/CD, backup, health 완료 |
 | Phase | Phase 1~6 완료 |
 | Verification | Backend tests 56 PASS, `flutter analyze` 0 issues |
