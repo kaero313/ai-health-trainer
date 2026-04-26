@@ -315,6 +315,10 @@ class _ExerciseCard extends StatelessWidget {
                   color: AppColors.textSecondary,
                 ),
               ),
+              if (sets.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                _SetDetailsList(sets: sets),
+              ],
               if (memo.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.xs),
                 Text(
@@ -328,6 +332,30 @@ class _ExerciseCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SetDetailsList extends StatelessWidget {
+  final List<Map<String, dynamic>> sets;
+
+  const _SetDetailsList({required this.sets});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (int index = 0; index < sets.length; index += 1) ...[
+          Text(
+            _formatSetDetail(sets[index], index),
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          if (index != sets.length - 1) const SizedBox(height: 2),
+        ],
+      ],
     );
   }
 }
@@ -550,6 +578,16 @@ double? _maxWeight(List<Map<String, dynamic>> sets) {
   }
   weights.sort();
   return weights.last;
+}
+
+String _formatSetDetail(Map<String, dynamic> setData, int index) {
+  final int setNumber = _toInt(setData['set_number']);
+  final int reps = _toInt(setData['reps']);
+  final double? weight = _toDoubleOrNull(setData['weight_kg']);
+  final String setLabel = setNumber > 0 ? '$setNumber세트' : '${index + 1}세트';
+  final String weightLabel =
+      weight == null ? '맨몸' : '${_formatNumber(weight)}kg';
+  return '$setLabel $reps회 · $weightLabel';
 }
 
 int _toInt(dynamic value) {
