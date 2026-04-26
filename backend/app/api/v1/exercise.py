@@ -109,7 +109,7 @@ async def delete_exercise_log(
         await service.delete_log(current_user.id, log_id)
     except ExerciseServiceError as exc:
         _raise_http_error(exc)
-    return ExerciseDeleteResponse(message="Exercise log deleted successfully")
+    return ExerciseDeleteResponse(message="운동 기록을 삭제했습니다.")
 
 
 @router.get("/history/{muscle_group}", response_model=ExerciseHistoryResponse)
