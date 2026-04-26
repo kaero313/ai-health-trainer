@@ -108,7 +108,7 @@ async def delete_diet_log(
         await service.delete_log(current_user.id, log_id)
     except DietServiceError as exc:
         _raise_http_error(exc)
-    return DietDeleteResponse(message="Diet log deleted successfully")
+    return DietDeleteResponse(message="식단 기록을 삭제했습니다.")
 
 
 @router.post("/analyze-image", response_model=FoodAnalysisResponse)
