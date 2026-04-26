@@ -463,7 +463,7 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
     }
 
     final int setCount =
-        widget.sets != null && widget.sets! > 0 ? widget.sets! : 3;
+        widget.sets != null && widget.sets! > 0 ? widget.sets! : 1;
     final int repsCount =
         widget.reps != null && widget.reps! > 0 ? widget.reps! : 10;
     final double? weightKg =
