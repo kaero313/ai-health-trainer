@@ -221,7 +221,7 @@ Models:
 
 | Use | Model |
 |-----|-------|
-| General generation | `gemini-2.5-flash` |
+| General generation | `gemini-3-flash-preview` |
 | Advanced reasoning | `gemini-2.5-pro` |
 | Embedding | `gemini-embedding-001` |
 
@@ -249,7 +249,7 @@ docker compose exec backend python scripts/ingest_rag_data.py --dir rag_data/
 
 Known AI maintenance item:
 
-- `google.generativeai` is deprecated. Plan migration to `google.genai`.
+- Gemini SDK uses `google.genai`.
 
 ---
 
@@ -369,7 +369,7 @@ Health:
 Before public release:
 
 - Remove local testing login defaults from Flutter auth screen.
-- Migrate Gemini SDK from `google.generativeai` to `google.genai`.
+- Monitor Gemini 3 Flash Preview response quality and token usage.
 - Confirm production `.env.prod` values and CORS origins.
 - Validate Nginx HTTPS flow.
 - Decide whether OpenSearch is only development tooling or part of production observability.
