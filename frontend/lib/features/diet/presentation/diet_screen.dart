@@ -274,6 +274,20 @@ class _DietLogCard extends StatelessWidget {
       (double total, Map<String, dynamic> item) =>
           total + _toDouble(item['fat_g']),
     );
+    final double? sugar = _sumOptionalNutrition(items, 'sugar_g');
+    final double? saturatedFat = _sumOptionalNutrition(
+      items,
+      'saturated_fat_g',
+    );
+    final double? unsaturatedFat = _sumOptionalNutrition(
+      items,
+      'unsaturated_fat_g',
+    );
+    final List<String> optionalNutrients = <String>[
+      if (sugar != null) '당 ${_formatNumber(sugar)}g',
+      if (saturatedFat != null) '포화 ${_formatNumber(saturatedFat)}g',
+      if (unsaturatedFat != null) '불포화 ${_formatNumber(unsaturatedFat)}g',
+    ];
 
     return Dismissible(
       key: ValueKey<String>('diet-log-$logId'),
@@ -331,6 +345,22 @@ class _DietLogCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (optionalNutrients.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.xs,
+                children: [
+                  for (final String label in optionalNutrients)
+                    Text(
+                      label,
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -619,6 +649,22 @@ double _logCalories(Map<String, dynamic> log) {
     }
     return total + _toDouble(item['calories']);
   });
+}
+
+double? _sumOptionalNutrition(
+  List<Map<String, dynamic>> items,
+  String fieldName,
+) {
+  bool hasValue = false;
+  double total = 0;
+  for (final Map<String, dynamic> item in items) {
+    if (item[fieldName] == null) {
+      continue;
+    }
+    hasValue = true;
+    total += _toDouble(item[fieldName]);
+  }
+  return hasValue ? total : null;
 }
 
 double _toDouble(dynamic value) {

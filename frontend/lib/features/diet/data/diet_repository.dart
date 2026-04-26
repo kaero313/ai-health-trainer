@@ -81,6 +81,38 @@ class DietRepository {
     }
   }
 
+  Future<List<Map<String, dynamic>>> searchFoods(
+    String query, {
+    int limit = 10,
+  }) async {
+    try {
+      final Response<dynamic> response = await dio.get<dynamic>(
+        '/diet/foods',
+        queryParameters: <String, dynamic>{
+          'query': query.trim(),
+          'limit': limit,
+        },
+      );
+      final dynamic rawResponse = response.data;
+      if (rawResponse is! Map<String, dynamic>) {
+        throw const DietRepositoryException('서버 응답 형식이 올바르지 않습니다.');
+      }
+      if (rawResponse['status'] != 'success') {
+        throw const DietRepositoryException('음식 검색에 실패했습니다.');
+      }
+      final dynamic rawData = rawResponse['data'];
+      if (rawData is! List<dynamic>) {
+        throw const DietRepositoryException('음식 검색 데이터가 비어 있습니다.');
+      }
+      return rawData.whereType<Map<String, dynamic>>().toList();
+    } on DioException catch (e) {
+      throw DietRepositoryException(
+        _extractDioErrorMessage(e),
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> getDietLogs(String date) async {
     try {
       final Response<dynamic> response = await dio.get<dynamic>(

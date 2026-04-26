@@ -11,6 +11,7 @@ from app.models.user import User
 from app.schemas.ai import DietRecommendationResponse, FoodAnalysisResponse
 from app.schemas.diet import (
     DietDeleteResponse,
+    FoodCatalogSearchResponse,
     DietLogCreate,
     DietLogSingleResponse,
     DietLogsByDateResponse,
@@ -80,6 +81,19 @@ async def get_diet_logs(
     except DietServiceError as exc:
         _raise_http_error(exc)
     return DietLogsByDateResponse(data=data)
+
+
+@router.get("/foods", response_model=FoodCatalogSearchResponse)
+async def search_food_catalog(
+    query: str = Query("", max_length=100),
+    limit: int = Query(10, ge=1, le=20),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> FoodCatalogSearchResponse:
+    _ = current_user
+    service = DietService(db)
+    data = await service.search_food_catalog(query, limit)
+    return FoodCatalogSearchResponse(data=data)
 
 
 @router.put("/logs/{log_id}", response_model=DietLogSingleResponse)

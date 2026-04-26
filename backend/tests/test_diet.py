@@ -1,5 +1,7 @@
 import pytest
 
+from app.models.diet import FoodCatalogItem
+
 
 @pytest.mark.asyncio
 async def test_create_diet_log_success(client, register_and_get_token, auth_headers):
@@ -37,6 +39,147 @@ async def test_create_diet_log_success(client, register_and_get_token, auth_head
     assert body["status"] == "success"
     assert body["data"]["meal_type"] == "lunch"
     assert len(body["data"]["items"]) == 2
+    assert body["data"]["items"][0]["food_catalog_item_id"] is None
+    assert body["data"]["items"][0]["serving_grams"] is None
+    assert body["data"]["items"][0]["sugar_g"] is None
+    assert body["data"]["items"][0]["saturated_fat_g"] is None
+    assert body["data"]["items"][0]["unsaturated_fat_g"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_diet_log_with_catalog_and_optional_nutrients(
+    client,
+    db_session,
+    register_and_get_token,
+    auth_headers,
+):
+    access_token, _ = await register_and_get_token(
+        client,
+        "diet-catalog-create@example.com",
+    )
+    catalog_item = FoodCatalogItem(
+        name="닭가슴살",
+        aliases=["chicken breast", "닭가슴"],
+        category="protein",
+        calories=165.0,
+        protein_g=31.0,
+        carbs_g=0.0,
+        fat_g=3.6,
+        sugar_g=0.0,
+        saturated_fat_g=1.0,
+        unsaturated_fat_g=2.0,
+    )
+    db_session.add(catalog_item)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/diet/logs",
+        json={
+            "log_date": "2026-02-17",
+            "meal_type": "lunch",
+            "items": [
+                {
+                    "food_catalog_item_id": catalog_item.id,
+                    "food_name": "닭가슴살",
+                    "serving_size": "150g",
+                    "serving_grams": 150.0,
+                    "calories": 247.5,
+                    "protein_g": 46.5,
+                    "carbs_g": 0.0,
+                    "fat_g": 5.4,
+                    "sugar_g": 0.0,
+                    "saturated_fat_g": 1.5,
+                    "unsaturated_fat_g": 3.0,
+                }
+            ],
+        },
+        headers=auth_headers(access_token),
+    )
+
+    assert response.status_code == 201
+    item = response.json()["data"]["items"][0]
+    assert item["food_catalog_item_id"] == catalog_item.id
+    assert item["serving_grams"] == 150.0
+    assert item["sugar_g"] == 0.0
+    assert item["saturated_fat_g"] == 1.5
+    assert item["unsaturated_fat_g"] == 3.0
+
+
+@pytest.mark.asyncio
+async def test_search_food_catalog_by_name_alias_limit_and_active(
+    client,
+    db_session,
+    register_and_get_token,
+    auth_headers,
+):
+    access_token, _ = await register_and_get_token(
+        client,
+        "diet-food-search@example.com",
+    )
+    db_session.add_all(
+        [
+            FoodCatalogItem(
+                name="닭가슴살",
+                aliases=["chicken breast", "닭가슴"],
+                category="protein",
+                calories=165.0,
+                protein_g=31.0,
+                carbs_g=0.0,
+                fat_g=3.6,
+                sugar_g=0.0,
+                saturated_fat_g=1.0,
+                unsaturated_fat_g=2.0,
+            ),
+            FoodCatalogItem(
+                name="현미밥",
+                aliases=["brown rice"],
+                category="carb",
+                calories=112.0,
+                protein_g=2.6,
+                carbs_g=23.0,
+                fat_g=0.9,
+                sugar_g=0.4,
+                saturated_fat_g=0.2,
+                unsaturated_fat_g=0.6,
+            ),
+            FoodCatalogItem(
+                name="비활성 음식",
+                aliases=["inactive food"],
+                category="meal",
+                calories=100.0,
+                protein_g=1.0,
+                carbs_g=1.0,
+                fat_g=1.0,
+                is_active=False,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    name_response = await client.get(
+        "/api/v1/diet/foods",
+        params={"query": "닭가", "limit": 1},
+        headers=auth_headers(access_token),
+    )
+    assert name_response.status_code == 200
+    assert [item["name"] for item in name_response.json()["data"]] == ["닭가슴살"]
+
+    alias_response = await client.get(
+        "/api/v1/diet/foods",
+        params={"query": "brown", "limit": 10},
+        headers=auth_headers(access_token),
+    )
+    assert alias_response.status_code == 200
+    assert [item["name"] for item in alias_response.json()["data"]] == ["현미밥"]
+
+    empty_query_response = await client.get(
+        "/api/v1/diet/foods",
+        params={"query": "", "limit": 10},
+        headers=auth_headers(access_token),
+    )
+    assert empty_query_response.status_code == 200
+    names = {item["name"] for item in empty_query_response.json()["data"]}
+    assert names == {"닭가슴살", "현미밥"}
 
 
 @pytest.mark.asyncio
