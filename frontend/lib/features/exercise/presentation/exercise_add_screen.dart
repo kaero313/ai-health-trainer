@@ -55,23 +55,14 @@ class ExerciseAddScreen extends ConsumerStatefulWidget {
 
 class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _setsController = TextEditingController(
-    text: '3',
-  );
-  final TextEditingController _repsController = TextEditingController(
-    text: '10',
-  );
-  final TextEditingController _weightController = TextEditingController();
   final TextEditingController _memoController = TextEditingController();
+  final List<_SetInputState> _setInputs = <_SetInputState>[];
 
   late DateTime _selectedDate;
   String _selectedMuscleGroup = kExerciseMuscleGroupOrder.first;
 
   bool _isSaving = false;
   String? _nameError;
-  String? _setsError;
-  String? _repsError;
-  String? _weightError;
   String? _submitError;
 
   @override
@@ -84,10 +75,8 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _setsController.dispose();
-    _repsController.dispose();
-    _weightController.dispose();
     _memoController.dispose();
+    _disposeSetInputs();
     super.dispose();
   }
 
@@ -133,30 +122,92 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
 
   String? _validatePositiveInt(String value, String label) {
     if (value.trim().isEmpty) {
-      return '$label 입력해주세요.';
+      return '$label를 입력해주세요.';
     }
     final int? parsed = int.tryParse(value.trim());
     if (parsed == null) {
-      return '$label 숫자로 입력해주세요.';
+      return '$label는 숫자로 입력해주세요.';
     }
     if (parsed <= 0) {
-      return '$label 1 이상이어야 합니다.';
+      return '$label는 1 이상이어야 합니다.';
     }
     return null;
   }
 
-  String? _validateWeight(String value) {
+  String? _validateWeight(String value, {String label = '무게'}) {
     if (value.trim().isEmpty) {
       return null;
     }
     final double? parsed = double.tryParse(value.trim());
     if (parsed == null) {
-      return '무게는 숫자로 입력해주세요.';
+      return '$label는 숫자로 입력해주세요.';
     }
     if (parsed < 0) {
-      return '무게는 0 이상이어야 합니다.';
+      return '$label는 0 이상이어야 합니다.';
     }
     return null;
+  }
+
+  void _addSetInput() {
+    final String repsText =
+        _setInputs.isEmpty || _setInputs.last.repsController.text.trim().isEmpty
+            ? '10'
+            : _setInputs.last.repsController.text.trim();
+    final String weightText =
+        _setInputs.isEmpty ? '' : _setInputs.last.weightController.text.trim();
+    setState(() {
+      _setInputs.add(
+        _SetInputState(repsText: repsText, weightText: weightText),
+      );
+      _submitError = null;
+    });
+  }
+
+  void _removeSetInput(int index) {
+    if (_setInputs.length <= 1) {
+      return;
+    }
+    setState(() {
+      final _SetInputState removed = _setInputs.removeAt(index);
+      removed.dispose();
+      _submitError = null;
+    });
+  }
+
+  List<Map<String, dynamic>>? _buildSetsPayload() {
+    bool hasError = false;
+    final List<Map<String, dynamic>> sets = <Map<String, dynamic>>[];
+
+    for (int index = 0; index < _setInputs.length; index += 1) {
+      final _SetInputState input = _setInputs[index];
+      final String repsLabel = '${index + 1}세트 횟수';
+      final String weightLabel = '${index + 1}세트 무게';
+      final String? repsError = _validatePositiveInt(
+        input.repsController.text,
+        repsLabel,
+      );
+      final String? weightError = _validateWeight(
+        input.weightController.text,
+        label: weightLabel,
+      );
+      input.repsError = repsError;
+      input.weightError = weightError;
+
+      if (repsError != null || weightError != null) {
+        hasError = true;
+        continue;
+      }
+
+      final String weightText = input.weightController.text.trim();
+      sets.add(<String, dynamic>{
+        'set_number': index + 1,
+        'reps': int.parse(input.repsController.text.trim()),
+        'weight_kg': weightText.isEmpty ? null : double.parse(weightText),
+        'is_completed': true,
+      });
+    }
+
+    return hasError ? null : sets;
   }
 
   Future<void> _pickDate() async {
@@ -178,44 +229,20 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
 
   Future<void> _submit() async {
     final String? nameError = _validateExerciseName(_nameController.text);
-    final String? setsError = _validatePositiveInt(_setsController.text, '세트수');
-    final String? repsError = _validatePositiveInt(_repsController.text, '횟수');
-    final String? weightError = _validateWeight(_weightController.text);
+    final List<Map<String, dynamic>>? sets = _buildSetsPayload();
 
     setState(() {
       _nameError = nameError;
-      _setsError = setsError;
-      _repsError = repsError;
-      _weightError = weightError;
       _submitError = null;
     });
 
-    if (nameError != null ||
-        setsError != null ||
-        repsError != null ||
-        weightError != null) {
+    if (nameError != null || sets == null) {
       return;
     }
 
     setState(() {
       _isSaving = true;
     });
-
-    final int setsCount = int.parse(_setsController.text.trim());
-    final int repsCount = int.parse(_repsController.text.trim());
-    final String weightText = _weightController.text.trim();
-    final double? weight =
-        weightText.isEmpty ? null : double.parse(_weightController.text.trim());
-
-    final List<Map<String, dynamic>> sets = List<Map<String, dynamic>>.generate(
-      setsCount,
-      (int index) => <String, dynamic>{
-        'set_number': index + 1,
-        'reps': repsCount,
-        'weight_kg': weight,
-        'is_completed': true,
-      },
-    );
 
     final Map<String, dynamic> payload = <String, dynamic>{
       'exercise_date': DateFormat('yyyy-MM-dd').format(_selectedDate),
@@ -327,57 +354,43 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
               const SizedBox(height: AppSpacing.md),
               Row(
                 children: [
-                  Expanded(
-                    child: _NumberInputField(
-                      label: '세트수',
-                      hint: '3',
-                      controller: _setsController,
-                      errorText: _setsError,
-                      keyboardType: TextInputType.number,
-                      onChanged: (String value) {
-                        setState(() {
-                          _setsError = _validatePositiveInt(value, '세트수');
-                          _submitError = null;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _NumberInputField(
-                      label: '횟수',
-                      hint: '10',
-                      controller: _repsController,
-                      errorText: _repsError,
-                      keyboardType: TextInputType.number,
-                      onChanged: (String value) {
-                        setState(() {
-                          _repsError = _validatePositiveInt(value, '횟수');
-                          _submitError = null;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _NumberInputField(
-                      label: '무게 (kg)',
-                      hint: '60.0',
-                      controller: _weightController,
-                      errorText: _weightError,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      onChanged: (String value) {
-                        setState(() {
-                          _weightError = _validateWeight(value);
-                          _submitError = null;
-                        });
-                      },
-                    ),
+                  Expanded(child: Text('세트별 기록', style: AppTypography.body2)),
+                  TextButton.icon(
+                    onPressed: _addSetInput,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('세트 추가'),
                   ),
                 ],
               ),
+              const SizedBox(height: AppSpacing.xs),
+              for (int index = 0; index < _setInputs.length; index += 1) ...[
+                _SetInputRow(
+                  setNumber: index + 1,
+                  input: _setInputs[index],
+                  canRemove: _setInputs.length > 1,
+                  onRemove: () => _removeSetInput(index),
+                  onRepsChanged: (String value) {
+                    setState(() {
+                      _setInputs[index].repsError = _validatePositiveInt(
+                        value,
+                        '${index + 1}세트 횟수',
+                      );
+                      _submitError = null;
+                    });
+                  },
+                  onWeightChanged: (String value) {
+                    setState(() {
+                      _setInputs[index].weightError = _validateWeight(
+                        value,
+                        label: '${index + 1}세트 무게',
+                      );
+                      _submitError = null;
+                    });
+                  },
+                ),
+                if (index != _setInputs.length - 1)
+                  const SizedBox(height: AppSpacing.sm),
+              ],
               const SizedBox(height: AppSpacing.md),
               Text('메모 (선택)', style: AppTypography.body2),
               const SizedBox(height: AppSpacing.xs),
@@ -449,24 +462,136 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
       _selectedMuscleGroup = muscleGroup.trim();
     }
 
-    final int? sets = widget.sets;
-    if (sets != null && sets > 0) {
-      _setsController.text = sets.toString();
-    }
+    final int setCount =
+        widget.sets != null && widget.sets! > 0 ? widget.sets! : 3;
+    final int repsCount =
+        widget.reps != null && widget.reps! > 0 ? widget.reps! : 10;
+    final double? weightKg =
+        widget.weightKg != null && widget.weightKg! >= 0
+            ? widget.weightKg
+            : null;
+    _replaceSetInputs(
+      setCount: setCount,
+      repsText: repsCount.toString(),
+      weightText: weightKg == null ? '' : _formatWeight(weightKg),
+    );
+  }
 
-    final int? reps = widget.reps;
-    if (reps != null && reps > 0) {
-      _repsController.text = reps.toString();
-    }
+  void _replaceSetInputs({
+    required int setCount,
+    required String repsText,
+    required String weightText,
+  }) {
+    _disposeSetInputs();
+    _setInputs.addAll(
+      List<_SetInputState>.generate(
+        setCount,
+        (_) => _SetInputState(repsText: repsText, weightText: weightText),
+      ),
+    );
+  }
 
-    final double? weightKg = widget.weightKg;
-    if (weightKg != null && weightKg >= 0) {
-      _weightController.text = _formatWeight(weightKg);
+  void _disposeSetInputs() {
+    for (final _SetInputState input in _setInputs) {
+      input.dispose();
     }
+    _setInputs.clear();
   }
 }
 
-class _NumberInputField extends StatelessWidget {
+class _SetInputState {
+  final TextEditingController repsController;
+  final TextEditingController weightController;
+  String? repsError;
+  String? weightError;
+
+  _SetInputState({required String repsText, String weightText = ''})
+    : repsController = TextEditingController(text: repsText),
+      weightController = TextEditingController(text: weightText);
+
+  void dispose() {
+    repsController.dispose();
+    weightController.dispose();
+  }
+}
+
+class _SetInputRow extends StatelessWidget {
+  final int setNumber;
+  final _SetInputState input;
+  final bool canRemove;
+  final VoidCallback onRemove;
+  final ValueChanged<String> onRepsChanged;
+  final ValueChanged<String> onWeightChanged;
+
+  const _SetInputRow({
+    required this.setNumber,
+    required this.input,
+    required this.canRemove,
+    required this.onRemove,
+    required this.onRepsChanged,
+    required this.onWeightChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 48,
+              height: 48,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('$setNumber세트', style: AppTypography.caption),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: _SetNumberField(
+                label: '횟수',
+                hint: '10',
+                controller: input.repsController,
+                errorText: input.repsError,
+                keyboardType: TextInputType.number,
+                onChanged: onRepsChanged,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: _SetNumberField(
+                label: '무게(kg)',
+                hint: '60',
+                controller: input.weightController,
+                errorText: input.weightError,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged: onWeightChanged,
+              ),
+            ),
+            IconButton(
+              tooltip: '세트 삭제',
+              onPressed: canRemove ? onRemove : null,
+              icon: const Icon(Icons.delete_outline),
+              color: AppColors.textSecondary,
+              disabledColor: AppColors.textDisabled,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SetNumberField extends StatelessWidget {
   final String label;
   final String hint;
   final TextEditingController controller;
@@ -474,7 +599,7 @@ class _NumberInputField extends StatelessWidget {
   final TextInputType keyboardType;
   final ValueChanged<String> onChanged;
 
-  const _NumberInputField({
+  const _SetNumberField({
     required this.label,
     required this.hint,
     required this.controller,
@@ -485,56 +610,43 @@ class _NumberInputField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: AppTypography.caption),
-        const SizedBox(height: AppSpacing.xs),
-        TextField(
-          controller: controller,
-          keyboardType: keyboardType,
-          style: AppTypography.body1,
-          onChanged: onChanged,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: AppTypography.body2.copyWith(
-              color: AppColors.textSecondary,
-            ),
-            filled: true,
-            fillColor: AppColors.surfaceLight,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.md,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: const BorderSide(color: AppColors.divider),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: const BorderSide(
-                color: AppColors.primary,
-                width: 1.2,
-              ),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: const BorderSide(color: AppColors.error),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: const BorderSide(color: AppColors.error, width: 1.2),
-            ),
-          ),
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      style: AppTypography.body1,
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        errorText: errorText,
+        errorMaxLines: 2,
+        labelStyle: AppTypography.caption.copyWith(
+          color: AppColors.textSecondary,
         ),
-        if (errorText != null) ...[
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            errorText!,
-            style: AppTypography.caption.copyWith(color: AppColors.error),
-          ),
-        ],
-      ],
+        hintStyle: AppTypography.body2.copyWith(color: AppColors.textSecondary),
+        filled: true,
+        fillColor: AppColors.surfaceLight,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.sm,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderSide: const BorderSide(color: AppColors.divider),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderSide: const BorderSide(color: AppColors.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderSide: const BorderSide(color: AppColors.error, width: 1.2),
+        ),
+      ),
     );
   }
 }
