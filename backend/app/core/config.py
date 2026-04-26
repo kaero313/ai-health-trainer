@@ -21,10 +21,10 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = ""
 
-    AI_DEFAULT_MODEL: str = "gemini-2.5-flash"
+    AI_DEFAULT_MODEL: str = "gemini-3-flash-preview"
     AI_ADVANCED_MODEL: str = "gemini-2.5-pro"
     AI_EMBEDDING_MODEL: str = "gemini-embedding-001"
-    AI_MAX_OUTPUT_TOKENS: int = 1000
+    AI_MAX_OUTPUT_TOKENS: int = 4096
     AI_TEMPERATURE: float = 0.7
     AI_DAILY_REQUEST_LIMIT: int = 30
 
