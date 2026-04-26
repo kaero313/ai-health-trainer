@@ -3,20 +3,32 @@ import json
 import re
 from datetime import datetime, timezone
 
-import google.generativeai as genai
-from google.generativeai.types import HarmBlockThreshold, HarmCategory
+from google import genai
+from google.genai import types
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.models.ai_recommendation import AIRecommendation
 
-SAFETY_SETTINGS = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-}
+SAFETY_SETTINGS = [
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    ),
+]
 
 FOOD_ANALYSIS_PROMPT = """당신은 전문 영양사입니다. 음식 사진을 보고 아래 정보를 JSON 형식으로 추출하세요.
 
@@ -165,18 +177,19 @@ class AIServiceError(Exception):
 
 class AIService:
     def __init__(self, settings: Settings) -> None:
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.flash_model = genai.GenerativeModel(settings.AI_DEFAULT_MODEL)
-        self.pro_model = genai.GenerativeModel(settings.AI_ADVANCED_MODEL)
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.flash_model = settings.AI_DEFAULT_MODEL.removeprefix("models/")
+        self.pro_model = settings.AI_ADVANCED_MODEL.removeprefix("models/")
         self.settings = settings
 
     async def analyze_food_image(self, image_bytes: bytes, mime_type: str) -> dict:
-        image_part = {"mime_type": mime_type, "data": image_bytes}
+        image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
         contents = [FOOD_ANALYSIS_PROMPT, image_part]
-        generation_config = genai.GenerationConfig(
+        generation_config = types.GenerateContentConfig(
             response_mime_type="application/json",
             max_output_tokens=self.settings.AI_MAX_OUTPUT_TOKENS,
             temperature=0.3,
+            safety_settings=SAFETY_SETTINGS,
         )
         parsed = await self._request_and_parse(self.flash_model, contents, generation_config)
         foods = parsed.get("foods")
@@ -190,10 +203,11 @@ class AIService:
         except KeyError as exc:
             raise AIServiceError(503, "AI_SERVICE_ERROR", f"AI 서비스에 문제가 발생했습니다: {exc}") from exc
 
-        generation_config = genai.GenerationConfig(
+        generation_config = types.GenerateContentConfig(
             response_mime_type="application/json",
             max_output_tokens=self.settings.AI_MAX_OUTPUT_TOKENS,
             temperature=0.7,
+            safety_settings=SAFETY_SETTINGS,
         )
         return await self._request_and_parse(self.flash_model, [prompt], generation_config)
 
@@ -203,10 +217,11 @@ class AIService:
         except KeyError as exc:
             raise AIServiceError(503, "AI_SERVICE_ERROR", f"AI 서비스에 문제가 발생했습니다: {exc}") from exc
 
-        generation_config = genai.GenerationConfig(
+        generation_config = types.GenerateContentConfig(
             response_mime_type="application/json",
             max_output_tokens=self.settings.AI_MAX_OUTPUT_TOKENS,
             temperature=0.7,
+            safety_settings=SAFETY_SETTINGS,
         )
         return await self._request_and_parse(self.flash_model, [prompt], generation_config)
 
@@ -216,10 +231,11 @@ class AIService:
             user_context=user_context,
             user_message=user_message,
         )
-        generation_config = genai.GenerationConfig(
+        generation_config = types.GenerateContentConfig(
             response_mime_type="application/json",
             max_output_tokens=self.settings.AI_MAX_OUTPUT_TOKENS,
             temperature=0.7,
+            safety_settings=SAFETY_SETTINGS,
         )
         return await self._request_and_parse(self.flash_model, [prompt], generation_config)
 
@@ -270,10 +286,10 @@ class AIService:
         for attempt in range(max_retries + 1):
             try:
                 response = await asyncio.wait_for(
-                    model.generate_content_async(
-                        contents,
-                        generation_config=generation_config,
-                        safety_settings=SAFETY_SETTINGS,
+                    self.client.aio.models.generate_content(
+                        model=model,
+                        contents=contents,
+                        config=generation_config,
                     ),
                     timeout=30.0,
                 )
