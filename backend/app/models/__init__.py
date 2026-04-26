@@ -1,5 +1,5 @@
 from app.models.ai_recommendation import AIRecommendation, RecommendationTypeEnum
-from app.models.diet import DietLog, DietLogItem, MealTypeEnum
+from app.models.diet import DietLog, DietLogItem, FoodCatalogItem, MealTypeEnum
 from app.models.exercise import ExerciseLog, ExerciseSet, MuscleGroupEnum
 from app.models.rag_document import RagDocument
 from app.models.token import RefreshToken
@@ -13,6 +13,7 @@ __all__ = [
     "DietLogItem",
     "ExerciseLog",
     "ExerciseSet",
+    "FoodCatalogItem",
     "GenderEnum",
     "GoalEnum",
     "MealTypeEnum",

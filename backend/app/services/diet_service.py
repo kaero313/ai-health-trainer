@@ -1,11 +1,11 @@
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.diet import DietLog, DietLogItem, MealTypeEnum
+from app.models.diet import DietLog, DietLogItem, FoodCatalogItem, MealTypeEnum
 from app.models.user import UserProfile
 from app.schemas.diet import (
     DailyDietData,
@@ -15,6 +15,7 @@ from app.schemas.diet import (
     DietLogItemResponse,
     DietLogResponse,
     DietLogUpdate,
+    FoodCatalogItemResponse,
 )
 
 
@@ -136,6 +137,30 @@ class DietService:
         await self.db.delete(log)
         await self.db.commit()
 
+    async def search_food_catalog(
+        self,
+        query: str,
+        limit: int,
+    ) -> list[FoodCatalogItemResponse]:
+        normalized_query = query.strip()
+        statement = select(FoodCatalogItem).where(
+            FoodCatalogItem.is_active.is_(True)
+        )
+
+        if normalized_query:
+            pattern = f"%{normalized_query}%"
+            statement = statement.where(
+                or_(
+                    FoodCatalogItem.name.ilike(pattern),
+                    cast(FoodCatalogItem.aliases, String).ilike(pattern),
+                )
+            )
+
+        result = await self.db.execute(
+            statement.order_by(FoodCatalogItem.name).limit(limit)
+        )
+        return [self._to_food_catalog_response(item) for item in result.scalars().all()]
+
     async def _get_log_by_id(self, log_id: int, include_items: bool) -> DietLog | None:
         statement = select(DietLog).where(DietLog.id == log_id)
         if include_items:
@@ -149,12 +174,33 @@ class DietService:
         for item_payload in items_payload:
             diet_items.append(
                 DietLogItem(
+                    food_catalog_item_id=item_payload.food_catalog_item_id,
                     food_name=item_payload.food_name,
                     serving_size=item_payload.serving_size,
+                    serving_grams=(
+                        Decimal(str(item_payload.serving_grams))
+                        if item_payload.serving_grams is not None
+                        else None
+                    ),
                     calories=Decimal(str(item_payload.calories)),
                     protein_g=Decimal(str(item_payload.protein_g)),
                     carbs_g=Decimal(str(item_payload.carbs_g)),
                     fat_g=Decimal(str(item_payload.fat_g)),
+                    sugar_g=(
+                        Decimal(str(item_payload.sugar_g))
+                        if item_payload.sugar_g is not None
+                        else None
+                    ),
+                    saturated_fat_g=(
+                        Decimal(str(item_payload.saturated_fat_g))
+                        if item_payload.saturated_fat_g is not None
+                        else None
+                    ),
+                    unsaturated_fat_g=(
+                        Decimal(str(item_payload.unsaturated_fat_g))
+                        if item_payload.unsaturated_fat_g is not None
+                        else None
+                    ),
                     confidence=(
                         Decimal(str(item_payload.confidence))
                         if item_payload.confidence is not None
@@ -179,13 +225,55 @@ class DietService:
     def _to_item_response(item: DietLogItem) -> DietLogItemResponse:
         return DietLogItemResponse(
             id=item.id,
+            food_catalog_item_id=item.food_catalog_item_id,
             food_name=item.food_name,
             serving_size=item.serving_size,
+            serving_grams=(
+                float(item.serving_grams)
+                if item.serving_grams is not None
+                else None
+            ),
             calories=float(item.calories),
             protein_g=float(item.protein_g),
             carbs_g=float(item.carbs_g),
             fat_g=float(item.fat_g),
+            sugar_g=float(item.sugar_g) if item.sugar_g is not None else None,
+            saturated_fat_g=(
+                float(item.saturated_fat_g)
+                if item.saturated_fat_g is not None
+                else None
+            ),
+            unsaturated_fat_g=(
+                float(item.unsaturated_fat_g)
+                if item.unsaturated_fat_g is not None
+                else None
+            ),
             confidence=float(item.confidence) if item.confidence is not None else None,
+        )
+
+    @staticmethod
+    def _to_food_catalog_response(item: FoodCatalogItem) -> FoodCatalogItemResponse:
+        return FoodCatalogItemResponse(
+            id=item.id,
+            name=item.name,
+            aliases=item.aliases,
+            category=item.category,
+            serving_basis_g=float(item.serving_basis_g),
+            calories=float(item.calories),
+            protein_g=float(item.protein_g),
+            carbs_g=float(item.carbs_g),
+            fat_g=float(item.fat_g),
+            sugar_g=float(item.sugar_g) if item.sugar_g is not None else None,
+            saturated_fat_g=(
+                float(item.saturated_fat_g)
+                if item.saturated_fat_g is not None
+                else None
+            ),
+            unsaturated_fat_g=(
+                float(item.unsaturated_fat_g)
+                if item.unsaturated_fat_g is not None
+                else None
+            ),
         )
 
     @staticmethod
