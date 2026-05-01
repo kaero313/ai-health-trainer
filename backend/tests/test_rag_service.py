@@ -1,10 +1,11 @@
-﻿from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
 
 from app.core.config import get_settings
-from app.models.rag import RagChunk, RagIngestJob, RagSource
+from app.models.rag import RagChunk, RagIngestJob, RagRetrievalTrace, RagSource
+from app.models.user import User
 from app.services.rag_index_service import RAGIndexError
 from app.services.rag_service import RAGService
 
@@ -58,7 +59,7 @@ async def test_ingest_document_creates_source_chunks_and_job(db_session):
 
     chunk_count = await service.ingest_document(
         title="Protein Basics",
-        content="Protein supports recovery and muscle growth.\n\nTargets should be adjusted by body weight.",
+        content="단백질은 근육 회복과 성장에 중요합니다.\n\n목표와 체중에 맞춰 섭취량을 조정합니다.",
         category="nutrition",
         source="internal://protein-basics",
         tags=["protein", "nutrition"],
@@ -83,8 +84,8 @@ async def test_ingest_document_creates_source_chunks_and_job(db_session):
 async def test_hybrid_search_merges_keyword_and_vector_hits(db_session, monkeypatch):
     settings = get_settings()
     service = RAGService(db_session, settings)
-    chunk_a = await _create_rag_chunk(db_session, title="protein guide", content="protein target")
-    chunk_b = await _create_rag_chunk(db_session, title="diet guide", content="diet protein strategy")
+    chunk_a = await _create_rag_chunk(db_session, title="protein guide", content="단백질 섭취 기준")
+    chunk_b = await _create_rag_chunk(db_session, title="diet guide", content="다이어트 단백질 전략")
 
     service.get_embedding = AsyncMock(return_value=_embedding())
     service.index_service.keyword_search = AsyncMock(
@@ -99,7 +100,7 @@ async def test_hybrid_search_merges_keyword_and_vector_hits(db_session, monkeypa
         ]
     )
 
-    results = await service.search("diet protein", category="nutrition", top_k=2)
+    results = await service.search("다이어트 단백질", category="nutrition", top_k=2)
 
     assert [item["chunk_id"] for item in results] == [chunk_b.id, chunk_a.id]
     assert results[0]["search_backend"] == "opensearch"
@@ -127,3 +128,34 @@ async def test_search_falls_back_to_pgvector_when_opensearch_fails(db_session):
     assert results[0]["source_grade"] == "B"
     assert results[0]["search_backend"] == "pgvector_fallback"
     assert results[0]["search_mode"] == "vector"
+
+
+@pytest.mark.asyncio
+async def test_search_writes_retrieval_trace(db_session):
+    user = User(email="rag-trace@example.com", password_hash="hash")
+    db_session.add(user)
+    await db_session.flush()
+    chunk = await _create_rag_chunk(db_session, title="trace guide", content="trace content")
+
+    service = RAGService(db_session, get_settings())
+    service.get_embedding = AsyncMock(return_value=_embedding())
+    service.index_service.keyword_search = AsyncMock(
+        return_value=[{"_id": str(chunk.id), "_score": 4.0, "_source": {"chunk_id": str(chunk.id)}}]
+    )
+    service.index_service.vector_search = AsyncMock(return_value=[])
+
+    results = await service.search(
+        "trace",
+        category="nutrition",
+        top_k=1,
+        user_id=user.id,
+        request_type="diet",
+        trace_group_id="trace-group-id",
+    )
+
+    assert results[0]["rag_trace_group_id"] == "trace-group-id"
+    traces = (await db_session.execute(select(RagRetrievalTrace))).scalars().all()
+    assert len(traces) == 1
+    assert traces[0].chunk_id == chunk.id
+    assert traces[0].search_backend == "opensearch"
+    assert traces[0].search_mode == "hybrid"
