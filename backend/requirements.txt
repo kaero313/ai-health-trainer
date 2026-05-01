@@ -21,6 +21,7 @@ email-validator>=2.0.0
 
 # AI
 google-genai>=1.33.0
+opensearch-py[async]>=2.6.0
 
 # Cache
 redis>=5.0.0
