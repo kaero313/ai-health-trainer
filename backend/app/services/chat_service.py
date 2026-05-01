@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import time
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.models.ai_recommendation import AIRecommendation, RecommendationTypeEnum
 from app.models.diet import DietLog, DietLogItem
 from app.models.exercise import ExerciseLog
+from app.models.rag import AIGenerationTrace
 from app.models.user import UserProfile
 from app.services.ai_service import AIService
 from app.services.rag_service import RAGService
@@ -65,11 +69,21 @@ class ChatService:
         else:
             raise ChatServiceError(400, "VALIDATION_ERROR", "지원하지 않는 context_type입니다")
 
-        documents = await self.rag_service.search(rag_query, category=rag_category, top_k=3)
+        trace_group_id = str(uuid4())
+        documents = await self.rag_service.search(
+            rag_query,
+            category=rag_category,
+            top_k=3,
+            user_id=user_id,
+            request_type="chat",
+            trace_group_id=trace_group_id,
+        )
         rag_context = self._build_rag_context(documents)
         user_context_text = "\n".join(context_lines)
 
+        started = time.perf_counter()
         ai_result = await self.ai_service.chat(message, user_context_text, rag_context)
+        latency_ms = int((time.perf_counter() - started) * 1000)
         answer = str(ai_result.get("answer", "")).strip()
         if not answer:
             raise ChatServiceError(502, "AI_PARSE_ERROR", "AI 응답을 처리할 수 없습니다")
@@ -89,6 +103,10 @@ class ChatService:
             message=message,
             answer=answer,
             rag_sources=sources,
+            trace_group_id=trace_group_id,
+            input_context_hash=self._hash_text(user_context_text + "\n" + message),
+            output_hash=self._hash_text(answer),
+            latency_ms=latency_ms,
         )
 
         return {
@@ -185,6 +203,10 @@ class ChatService:
         message: str,
         answer: str,
         rag_sources: list[str],
+        trace_group_id: str | None,
+        input_context_hash: str | None,
+        output_hash: str | None,
+        latency_ms: int | None,
     ) -> None:
         summary_message = message.strip()
         if len(summary_message) > 120:
@@ -202,6 +224,21 @@ class ChatService:
 
         try:
             self.db.add(recommendation)
+            await self.db.flush()
+            await self.rag_service.mark_traces_request_id(trace_group_id, recommendation.id)
+            self.db.add(
+                AIGenerationTrace(
+                    user_id=user_id,
+                    recommendation_id=recommendation.id,
+                    request_type="chat",
+                    prompt_version="chat_v1",
+                    model_used=self.ai_service.settings.AI_DEFAULT_MODEL,
+                    rag_trace_group_id=trace_group_id,
+                    input_context_hash=input_context_hash,
+                    output_hash=output_hash,
+                    latency_ms=latency_ms,
+                )
+            )
             await self.db.commit()
         except Exception as exc:
             await self.db.rollback()
@@ -232,3 +269,7 @@ class ChatService:
     @staticmethod
     def _round_one_decimal(value: float) -> float:
         return float(Decimal(str(value)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+    @staticmethod
+    def _hash_text(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()

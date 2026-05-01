@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import time
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
+from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.models.ai_recommendation import AIRecommendation, RecommendationTypeEnum
 from app.models.diet import DietLog, DietLogItem
 from app.models.exercise import ExerciseLog, MuscleGroupEnum
+from app.models.rag import AIGenerationTrace
 from app.models.user import UserProfile
 from app.services.ai_service import AIService
 from app.services.rag_service import RAGService
@@ -75,14 +79,20 @@ class RecommendationService:
             "consumed_fat": consumed_fat,
         }
 
+        trace_group_id = str(uuid4())
         documents = await self.rag_service.search(
             f"{goal_description} 식단 추천",
             category="nutrition",
             top_k=3,
+            user_id=user_id,
+            request_type="diet",
+            trace_group_id=trace_group_id,
         )
         rag_context = self._build_rag_context(documents)
 
+        started = time.perf_counter()
         ai_result = await self.ai_service.recommend_diet(user_context, rag_context)
+        latency_ms = int((time.perf_counter() - started) * 1000)
         recommendation_text = str(ai_result.get("recommendation", ""))
         suggested_foods = ai_result.get("suggested_foods")
         if not isinstance(suggested_foods, list):
@@ -96,6 +106,12 @@ class RecommendationService:
             recommendation=recommendation_text,
             rag_sources=sources,
             prompt_used=None,
+            request_type="diet",
+            prompt_version="diet_recommend_v1",
+            trace_group_id=trace_group_id,
+            input_context_hash=self._hash_text(str(user_context)),
+            output_hash=self._hash_text(recommendation_text),
+            latency_ms=latency_ms,
         )
 
         return {
@@ -124,10 +140,14 @@ class RecommendationService:
             else (recent_logs[0].muscle_group.value if recent_logs else "full_body")
         )
 
+        trace_group_id = str(uuid4())
         documents = await self.rag_service.search(
             f"{goal_description} {selected_muscle_group} 운동 추천",
             category="exercise",
             top_k=3,
+            user_id=user_id,
+            request_type="exercise",
+            trace_group_id=trace_group_id,
         )
         rag_context = self._build_rag_context(documents)
 
@@ -139,7 +159,9 @@ class RecommendationService:
             "exercise_history": exercise_history,
         }
 
+        started = time.perf_counter()
         ai_result = await self.ai_service.recommend_exercise(user_context, rag_context)
+        latency_ms = int((time.perf_counter() - started) * 1000)
         recommendation_text = str(ai_result.get("recommendation", ""))
         suggested_exercises = ai_result.get("suggested_exercises")
         if not isinstance(suggested_exercises, list):
@@ -153,6 +175,12 @@ class RecommendationService:
             recommendation=recommendation_text,
             rag_sources=sources,
             prompt_used=None,
+            request_type="exercise",
+            prompt_version="exercise_recommend_v1",
+            trace_group_id=trace_group_id,
+            input_context_hash=self._hash_text(str(user_context)),
+            output_hash=self._hash_text(recommendation_text),
+            latency_ms=latency_ms,
         )
 
         return {
@@ -214,6 +242,12 @@ class RecommendationService:
         recommendation: str,
         rag_sources: list[str],
         prompt_used: str | None,
+        request_type: str,
+        prompt_version: str,
+        trace_group_id: str | None,
+        input_context_hash: str | None,
+        output_hash: str | None,
+        latency_ms: int | None,
     ) -> None:
         record = AIRecommendation(
             user_id=user_id,
@@ -226,6 +260,21 @@ class RecommendationService:
         )
         try:
             self.db.add(record)
+            await self.db.flush()
+            await self.rag_service.mark_traces_request_id(trace_group_id, record.id)
+            self.db.add(
+                AIGenerationTrace(
+                    user_id=user_id,
+                    recommendation_id=record.id,
+                    request_type=request_type,
+                    prompt_version=prompt_version,
+                    model_used=self.ai_service.settings.AI_DEFAULT_MODEL,
+                    rag_trace_group_id=trace_group_id,
+                    input_context_hash=input_context_hash,
+                    output_hash=output_hash,
+                    latency_ms=latency_ms,
+                )
+            )
             await self.db.commit()
         except Exception as exc:
             await self.db.rollback()
@@ -236,6 +285,10 @@ class RecommendationService:
         if not documents:
             return "참고 자료 없음"
         return "\n\n".join(f"[{doc['title']}]\n{doc['content']}" for doc in documents)
+
+    @staticmethod
+    def _hash_text(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _build_exercise_history(logs: list[ExerciseLog]) -> str:
