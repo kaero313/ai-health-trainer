@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/health_trainer"
     DATABASE_URL_SYNC: str = "postgresql://postgres:postgres@localhost:5432/health_trainer"
     REDIS_URL: str = "redis://localhost:6379/0"
+    OPENSEARCH_URL: str = "http://localhost:9200"
 
     JWT_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
@@ -27,6 +28,11 @@ class Settings(BaseSettings):
     AI_MAX_OUTPUT_TOKENS: int = 4096
     AI_TEMPERATURE: float = 0.7
     AI_DAILY_REQUEST_LIMIT: int = 30
+
+    RAG_OPENSEARCH_INDEX: str = "rag_chunks_v1"
+    RAG_OPENSEARCH_ALIAS: str = "rag_chunks_current"
+    RAG_VECTOR_WEIGHT: float = 0.65
+    RAG_KEYWORD_WEIGHT: float = 0.35
 
     UPLOAD_DIR: str = "/data/uploads"
     MAX_IMAGE_SIZE_MB: int = 10
