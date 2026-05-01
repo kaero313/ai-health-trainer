@@ -22,14 +22,18 @@ async def reset_rag_data() -> None:
 
     try:
         async with session_factory() as session:
-            result = await session.execute(text("SELECT count(*) FROM rag_documents"))
+            result = await session.execute(text("SELECT count(*) FROM rag_chunks"))
             count = result.scalar_one()
-            print(f"현재 rag_documents 레코드 수: {count}")
+            print(f"현재 rag_chunks 레코드 수: {count}")
 
             if count > 0:
-                await session.execute(text("DELETE FROM rag_documents"))
+                await session.execute(text("DELETE FROM ai_generation_traces"))
+                await session.execute(text("DELETE FROM rag_retrieval_traces"))
+                await session.execute(text("DELETE FROM rag_ingest_jobs"))
+                await session.execute(text("DELETE FROM rag_chunks"))
+                await session.execute(text("DELETE FROM rag_sources"))
                 await session.commit()
-                print(f"삭제 완료: {count}개 레코드")
+                print(f"삭제 완료: {count}개 chunk와 관련 RAG 운영 레코드")
             else:
                 print("삭제할 데이터가 없습니다.")
     finally:

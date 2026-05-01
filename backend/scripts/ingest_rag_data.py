@@ -17,6 +17,7 @@ def _build_parser() -> argparse.ArgumentParser:
     target_group.add_argument("--dir", dest="directory", help="인제스트할 폴더 경로")
     target_group.add_argument("--file", dest="file_path", help="인제스트할 단일 파일 경로")
     parser.add_argument("--category", help="단일 파일 인제스트 시 카테고리")
+    parser.add_argument("--tags", default="", help="Comma-separated tags for --file ingest")
     return parser
 
 
@@ -46,14 +47,46 @@ def _infer_category(file_name: str) -> str:
     if normalized.startswith("nutrition_"):
         return "nutrition"
     if normalized.startswith("exercise_"):
-        return "exercise_science"
+        return "exercise"
     if normalized.startswith("supplement_"):
-        return "supplement"
+        return "nutrition"
     if normalized.startswith("diet_plan_"):
-        return "diet_plan"
+        return "goal_strategy"
     if normalized.startswith("muscle_"):
-        return "muscle_growth"
+        return "anatomy"
+    if normalized.startswith("anatomy_"):
+        return "anatomy"
+    if normalized.startswith("safety_"):
+        return "safety"
+    if normalized.startswith("goal_strategy_"):
+        return "goal_strategy"
     return "nutrition"
+
+
+def _split_tags(raw_value: str | None) -> list[str]:
+    if not raw_value:
+        return []
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
+def _infer_tags(file_name: str) -> list[str]:
+    stem = Path(file_name.lower()).stem
+    tag_map = {
+        "nutrition_basics": ["nutrition", "calorie", "macro"],
+        "nutrition_bulking_guide": ["bulk", "calorie_surplus", "protein"],
+        "nutrition_cutting_guide": ["diet", "calorie_deficit", "protein"],
+        "nutrition_korean_foods": ["korean_food", "meal_example", "macro"],
+        "nutrition_maintain_guide": ["maintain", "calorie", "habit"],
+        "nutrition_protein_meal_examples": ["protein", "diet", "korean_food"],
+        "nutrition_supplement_guide": ["supplement", "protein", "creatine"],
+        "exercise_lower_body": ["legs", "strength", "hypertrophy"],
+        "exercise_progressive_overload": ["progressive_overload", "strength", "hypertrophy"],
+        "exercise_upper_body": ["chest", "back", "shoulder", "hypertrophy"],
+        "anatomy_major_muscle_groups": ["chest", "back", "legs", "shoulder", "joint"],
+        "safety_joint_pain_boundary": ["pain", "injury_prevention", "medical_referral"],
+        "goal_strategy_bulk_diet_maintain": ["bulk", "diet", "maintain", "plateau"],
+    }
+    return tag_map.get(stem, [_infer_category(file_name)])
 
 
 def _collect_files(directory: Path) -> list[Path]:
@@ -96,6 +129,7 @@ async def _run_ingest(args: argparse.Namespace) -> None:
                         content=content,
                         category=category,
                         source=str(file_path),
+                        tags=_infer_tags(file_path.name),
                     )
                     total_files += 1
                     total_chunks += chunk_count
@@ -113,6 +147,7 @@ async def _run_ingest(args: argparse.Namespace) -> None:
                     content=content,
                     category=args.category,
                     source=str(target_file),
+                    tags=_split_tags(args.tags),
                 )
                 total_files = 1
                 total_chunks = chunk_count
