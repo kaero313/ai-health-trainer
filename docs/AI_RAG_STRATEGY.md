@@ -3,6 +3,7 @@
 > **이 문서의 목적:** Codex가 AI 서비스 레이어를 구현할 때 참조하는 설계서.
 > **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)
 > **현재 기준:** 최신 프로젝트 상태와 다음 의사결정은 `docs/OWNER_GUIDE.md`를 우선한다.
+> **RAG 운영 기준:** 지식 수집, 정제, 버전 관리, OpenSearch 색인, 삭제, 재색인, trace 정책은 `docs/RAG_OPERATIONS.md`를 우선한다.
 
 ---
 
@@ -300,17 +301,18 @@ class AIService:
 
 ## 5. RAG 파이프라인 구현 명세
 
-### 5-1. 임베딩 모델 변경 사항
+### 5-1. 임베딩과 검색 저장소
 
-| 항목 | 변경 전 (OpenAI) | 변경 후 (Gemini) |
-|------|-----------------|-----------------|
-| 모델 | text-embedding-3-small | gemini-embedding-001 |
-| 차원 | 1536 | 3072 |
-| DB 컬럼 | `VECTOR(1536)` | `VECTOR(3072)` |
-| 비용 | 토큰당 과금 | **무료** |
+| 항목 | 선택 |
+|------|------|
+| 임베딩 모델 | `gemini-embedding-001` |
+| 차원 | 3072 |
+| PostgreSQL 컬럼 | `rag_chunks.embedding VECTOR(3072)` |
+| Retrieval index | OpenSearch `rag_chunks_current` alias |
+| Source of truth | PostgreSQL `rag_sources`, `rag_chunks` |
 
-> **중요:** 현재 DB 스키마의 `rag_documents.embedding` 컬럼은 `VECTOR(3072)`입니다.
-> `DATABASE_SCHEMA.md`도 이에 맞게 업데이트되었습니다.
+> **중요:** RAG v2의 기본 검색 경로는 OpenSearch hybrid retrieval이다.
+> PostgreSQL/pgvector는 source of truth와 장애 fallback 역할을 맡는다.
 
 ### 5-2. 데이터 인제스트 단계
 
@@ -329,7 +331,10 @@ RAG 데이터 소스 (rag_data/ 폴더)
 [임베딩] Gemini Embedding (`gemini-embedding-001`) → 3072차원 벡터
     │
     ▼
-[저장] PostgreSQL rag_documents 테이블 (pgvector)
+[저장] PostgreSQL rag_sources/rag_chunks 원장
+    │
+    ▼
+[색인] OpenSearch rag_chunks_current retrieval index
 ```
 
 ### 5-3. 검색 단계
@@ -354,15 +359,16 @@ class RAGService:
     async def search(self, query: str, category: str = None, top_k: int = 3) -> list:
         """
         1. query를 gemini-embedding-001로 임베딩
-        2. pgvector에서 코사인 유사도 검색
-        3. category 필터 적용 (선택)
-        4. 상위 top_k개 문서 반환
+        2. OpenSearch hybrid/vector 검색
+        3. 장애 시 pgvector fallback
+        4. retrieval trace 저장
+        5. 상위 top_k개 문서 반환
         """
         query_embedding = await self.get_embedding(query)
 
         # SQL 예시:
         # SELECT id, title, content, 1 - (embedding <=> :query_vec) as similarity
-        # FROM rag_documents
+        # FROM rag_chunks
         # WHERE category = :category (optional)
         # ORDER BY embedding <=> :query_vec
         # LIMIT :top_k;
@@ -372,7 +378,8 @@ class RAGService:
         """
         1. content를 청크로 분할 (500~1000자)
         2. 각 청크를 gemini-embedding-001로 임베딩
-        3. rag_documents에 저장
+        3. rag_sources/rag_chunks에 저장
+        4. OpenSearch rag_chunks_current에 색인
         """
         ...
 ```

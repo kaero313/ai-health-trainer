@@ -234,31 +234,35 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 
 ---
 
-### 2-9. `rag_documents` — RAG 지식 저장소
+### 2-9. RAG KnowledgeOps 테이블
 
-| 컬럼 | 타입 | 제약조건 | 설명 |
-|------|------|----------|------|
-| `id` | `SERIAL` | PK | |
-| `title` | `VARCHAR(500)` | NOT NULL | 문서 제목 |
-| `source` | `VARCHAR(500)` | | 출처 (논문 DOI, URL 등) |
-| `category` | `VARCHAR(50)` | NOT NULL | 카테고리 (아래 참조) |
-| `content` | `TEXT` | NOT NULL | 문서 본문 (청크) |
-| `embedding` | `VECTOR(3072)` | NOT NULL | Gemini `gemini-embedding-001` |
-| `metadata` | `JSONB` | DEFAULT '{}' | 추가 메타데이터 |
-| `created_at` | `TIMESTAMPTZ` | DEFAULT now() | |
+RAG v2는 PostgreSQL을 source of truth로 사용하고, OpenSearch `rag_chunks_current` alias를 retrieval index로 사용한다.
 
-**category 허용값:**
+| 테이블 | 역할 |
+|--------|------|
+| `rag_sources` | 원문 출처, 신뢰도, category/tag, version, status 관리 |
+| `rag_chunks` | 검색 가능한 chunk, `VECTOR(3072)` embedding, OpenSearch 색인 상태 관리 |
+| `rag_ingest_jobs` | ingest/reindex/archive 작업 상태와 실패 원인 기록 |
+| `rag_retrieval_traces` | AI 요청별 검색 query, backend, mode, score, chunk/source 기록 |
+| `ai_generation_traces` | prompt version, model, context/output hash, latency 기록 |
+
+기본 category:
+
 ```
-'nutrition'       — 영양학
-'exercise'        — 운동 과학/운동 추천
-'muscle_growth'   — 근성장
-'diet_plan'       — 식단 계획
-'supplement'      — 보충제
+'nutrition'      — 영양학
+'exercise'       — 운동 프로그램/운동 생리학
+'anatomy'        — 근육군/관절/움직임 패턴
+'safety'         — 부상 예방/의료 경계
+'goal_strategy'  — 벌크업/다이어트/유지 전략
+'app_policy'     — AI 응답 정책
 ```
 
-**인덱스:**
-- `ix_rag_documents_category` — category
-- `ix_rag_documents_embedding` — embedding (ivfflat, lists=100)
+핵심 규칙:
+
+- `rag_chunks.embedding`은 Gemini `gemini-embedding-001` 기준 `VECTOR(3072)`이다.
+- OpenSearch는 검색 projection이며 원본/source/version/status는 PostgreSQL 기준이다.
+- OpenSearch 장애 시 PostgreSQL/pgvector fallback을 사용하고 trace에 남긴다.
+- 기존 `rag_documents`는 RAG v2 전환으로 제거되었다.
 
 ---
 
@@ -321,14 +325,30 @@ target_carbs_g = (target_calories - target_protein_g * 4 - target_fat_g * 9) / 4
 └──────────────┘ │ confidence   │
                   └──────────────┘
 
-┌──────────────────┐  ┌──────────────────┐
-│  refresh_tokens  │  │  rag_documents   │
-│──────────────────│  │──────────────────│
-│ id, user_id (FK) │  │ id (PK)          │
-│ token (UQ)       │  │ title, category  │
-│ expires_at       │  │ content          │
-│ is_revoked       │  │ embedding (VEC)  │
-└──────────────────┘  └──────────────────┘
+┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│  refresh_tokens  │  │   rag_sources    │  │    rag_chunks    │
+│──────────────────│  │──────────────────│  │──────────────────│
+│ id, user_id (FK) │  │ id, title        │  │ id, source_id    │
+│ token (UQ)       │  │ category, status │◀─│ content          │
+│ expires_at       │  │ version, hash    │  │ embedding (VEC)  │
+│ is_revoked       │  └──────────────────┘  │ index_status    │
+└──────────────────┘                        └──────────────────┘
+
+┌──────────────────┐  ┌──────────────────────┐
+│rag_ingest_jobs   │  │ rag_retrieval_traces │
+│──────────────────│  │──────────────────────│
+│ source_id        │  │ user_id, request_type│
+│ status, counters │  │ chunk_id, source_id  │
+│ error fields     │  │ backend/mode/score   │
+└──────────────────┘  └──────────────────────┘
+
+┌──────────────────────┐
+│ ai_generation_traces │
+│──────────────────────│
+│ recommendation_id    │
+│ prompt/model/version │
+│ context/output hash  │
+└──────────────────────┘
 ```
 
 ---
@@ -344,7 +364,7 @@ backend/app/models/
 ├── exercise.py          # ExerciseLog, ExerciseSet
 ├── diet.py              # DietLog, DietLogItem
 ├── ai_recommendation.py # AIRecommendation
-├── rag_document.py      # RAGDocument
+├── rag.py               # RagSource, RagChunk, RAG job/trace models
 └── token.py             # RefreshToken
 ```
 

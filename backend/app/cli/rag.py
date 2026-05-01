@@ -1,12 +1,17 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 from pathlib import Path
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
+from app.services.rag_evaluation import evaluate_retrieval, load_retrieval_cases
 from app.services.rag_service import RAGService
+
+
+DEFAULT_EVAL_CASES_PATH = Path(__file__).resolve().parents[2] / "rag_eval" / "retrieval_cases.json"
 
 
 def _split_tags(raw_value: str | None) -> list[str]:
@@ -62,6 +67,20 @@ async def _archive(args: argparse.Namespace) -> None:
     print(f"Archived sources={result['sources']} chunks={result['chunks']}")
 
 
+async def _evaluate(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    cases = load_retrieval_cases(args.cases)
+    async with AsyncSessionLocal() as db:
+        result = await evaluate_retrieval(
+            RAGService(db, settings),
+            cases,
+            top_k=args.top_k,
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result["failed"]:
+        raise SystemExit(1)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="RAG KnowledgeOps CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -87,6 +106,10 @@ def build_parser() -> argparse.ArgumentParser:
     archive = subparsers.add_parser("archive", help="Archive a RAG source and remove its indexed chunks")
     archive.add_argument("--source-id", type=int, required=True, help="Source id")
 
+    evaluate = subparsers.add_parser("evaluate", help="Run retrieval evaluation cases against RAG search")
+    evaluate.add_argument("--cases", default=str(DEFAULT_EVAL_CASES_PATH), help="Evaluation cases JSON path")
+    evaluate.add_argument("--top-k", type=int, default=3, help="Number of retrieval results per case")
+
     return parser
 
 
@@ -104,6 +127,8 @@ async def _main() -> None:
         await _reindex(args)
     elif args.command == "archive":
         await _archive(args)
+    elif args.command == "evaluate":
+        await _evaluate(args)
     else:
         parser.error(f"Unsupported command: {args.command}")
 

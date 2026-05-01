@@ -1,0 +1,32 @@
+[
+  {
+    "query": "다이어트 중 단백질이 부족할 때 한국 식단에서 무엇을 추가하면 좋을까?",
+    "expected_categories": ["nutrition"],
+    "expected_tags": ["protein", "diet", "korean_food"],
+    "expected_source_keywords": ["단백질", "식사"]
+  },
+  {
+    "query": "벤치프레스 중량은 언제 올리고 반복수는 어떻게 조절해야 할까?",
+    "expected_categories": ["exercise"],
+    "expected_tags": ["progressive_overload", "strength", "hypertrophy"],
+    "expected_source_keywords": ["점진", "과부하"]
+  },
+  {
+    "query": "스쿼트할 때 무릎 통증이 있으면 운동 추천을 어떻게 제한해야 할까?",
+    "expected_categories": ["safety"],
+    "expected_tags": ["pain", "injury_prevention", "medical_referral"],
+    "expected_source_keywords": ["통증", "위험"]
+  },
+  {
+    "query": "벌크업과 다이어트와 유지를 목표별로 어떻게 다르게 운영해야 할까?",
+    "expected_categories": ["goal_strategy"],
+    "expected_tags": ["bulk", "diet", "maintain"],
+    "expected_source_keywords": ["벌크", "다이어트", "유지"]
+  },
+  {
+    "query": "가슴, 등, 하체 운동을 주요 근육군 기준으로 설명해줘",
+    "expected_categories": ["anatomy"],
+    "expected_tags": ["chest", "back", "legs"],
+    "expected_source_keywords": ["근육군", "해부"]
+  }
+]
