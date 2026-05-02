@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     RAG_OPENSEARCH_ALIAS: str = "rag_chunks_current"
     RAG_VECTOR_WEIGHT: float = 0.65
     RAG_KEYWORD_WEIGHT: float = 0.35
+    RAG_PARTIAL_REFRESH_CHANGE_RATIO: float = 0.30
+    RAG_PARSER_CONFIDENCE_THRESHOLD: float = 0.70
+    RAG_ALLOWED_REEMBEDDING_SECONDS: float = 300.0
+    RAG_ESTIMATED_EMBEDDING_SECONDS_PER_CHUNK: float = 1.5
 
     UPLOAD_DIR: str = "/data/uploads"
     MAX_IMAGE_SIZE_MB: int = 10
