@@ -1,30 +1,61 @@
 from __future__ import annotations
 
-import hashlib
-import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 
-from google import genai
 from sqlalchemy import and_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.models.rag import RagChunk, RagIngestJob, RagRetrievalTrace, RagSource
+from app.models.rag import (
+    RagChunk,
+    RagEmbeddingCache,
+    RagIngestJob,
+    RagPipelineDecision,
+    RagRetrievalTrace,
+    RagSource,
+)
 from app.services.rag_index_service import RAGIndexError, RAGIndexService
+from app.services.rag_pipeline import (
+    CHUNKER_VERSION,
+    NORMALIZATION_VERSION,
+    ChunkPlan,
+    ParsedDocument,
+    RAGChunkPlanner,
+    RAGDecisionPolicy,
+    RAGDocumentParser,
+    SourceMetadata,
+    build_index_payload_hash,
+    estimate_token_count,
+    hash_text,
+    normalize_text,
+    origin_type_for_path,
+    split_over_max,
+)
+
+try:
+    from google import genai
+except ImportError:  # pragma: no cover - local CLI help can run before deps are installed
+    genai = None  # type: ignore[assignment]
 
 
 class RAGService:
     def __init__(self, db: AsyncSession, settings: Settings):
         self.db = db
         self.settings = settings
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY) if genai is not None else None
         self.index_service = RAGIndexService(settings)
+        self.parser = RAGDocumentParser()
+        self.chunk_planner = RAGChunkPlanner()
+        self.decision_policy = RAGDecisionPolicy()
 
     async def get_embedding(self, text_value: str) -> list[float]:
         normalized = text_value.strip()
         if not normalized:
             raise ValueError("Text for embedding must not be empty")
+        if self.client is None:
+            raise ValueError("google-genai is required for embedding generation")
 
         embedding_model = self._embedding_model_name()
         result = await self.client.aio.models.embed_content(
@@ -59,10 +90,18 @@ class RAGService:
             documents = await self._search_opensearch(normalized_query, query_embedding, category, safe_top_k)
             search_backend = "opensearch"
             search_mode = "hybrid"
-        except RAGIndexError:
+        except RAGIndexError as exc:
             documents = await self._search_pgvector(normalized_query, query_embedding, category, safe_top_k)
             search_backend = "pgvector_fallback"
             search_mode = "vector"
+            await self._save_pipeline_decision(
+                self.decision_policy.opensearch_fallback(
+                    query=normalized_query,
+                    category=category,
+                    top_k=safe_top_k,
+                    error=str(exc),
+                )
+            )
 
         for document in documents:
             document["rag_trace_group_id"] = group_id
@@ -82,6 +121,8 @@ class RAGService:
                 search_backend=search_backend,
                 search_mode=search_mode,
             )
+        else:
+            await self.db.commit()
 
         return documents
 
@@ -98,110 +139,170 @@ class RAGService:
         license_value: str | None = "internal-summary",
         language: str = "ko",
         author_or_org: str | None = None,
+        parser_type: str = "text",
     ) -> int:
-        normalized_content = content.strip()
-        chunks = self._chunk_text(normalized_content)
-        content_hash = self._hash_text(normalized_content)
-        started_at = datetime.now(timezone.utc)
-        embedding_model = self._embedding_model_name()
-
-        job = RagIngestJob(
-            job_type="create",
-            status="running",
-            requested_by="cli",
-            input_hash=content_hash,
-            embedding_model=embedding_model,
-            target_index=self.settings.RAG_OPENSEARCH_INDEX,
-            chunks_total=len(chunks),
-            started_at=started_at,
-        )
-        self.db.add(job)
-
-        if not chunks:
-            job.status = "succeeded"
-            job.finished_at = datetime.now(timezone.utc)
-            await self.db.commit()
-            return 0
-
-        source_record = RagSource(
+        parsed = self.parser.parse_content(
+            content,
             title=title,
-            source_type=source_type,
-            source_url=source or None,
-            source_grade=source_grade,
-            license=license_value,
+            source_uri=source or None,
+            parser_type=parser_type,
+        )
+        result = await self._ingest_parsed_document(
+            parsed=parsed,
+            title=title,
             category=category,
+            source_url=source or None,
+            origin_type="manual_text",
+            origin_uri=source or None,
             tags=self._normalize_tags(tags),
+            source_type=source_type,
+            source_grade=source_grade,
+            license_value=license_value,
             language=language,
             author_or_org=author_or_org,
-            reviewed_at=datetime.now(timezone.utc),
-            status="active",
-            version=1,
-            content_hash=content_hash,
+            refresh_policy="manual",
+            existing_source=None,
+            force=False,
         )
-        self.db.add(source_record)
-        await self.db.flush()
-        job.source_id = source_record.id
+        return int(result["chunks_active"])
 
-        chunk_records: list[RagChunk] = []
-        try:
-            total = len(chunks)
-            for idx, chunk in enumerate(chunks, start=1):
-                embedding = await self.get_embedding(chunk)
-                chunk_record = RagChunk(
-                    source_id=source_record.id,
-                    chunk_index=idx,
-                    title=f"{title} ({idx}/{total})",
-                    content=chunk,
-                    content_hash=self._hash_text(chunk),
-                    category=category,
-                    tags=self._normalize_tags(tags),
-                    embedding=embedding,
-                    embedding_model=embedding_model,
-                    embedding_dim=len(embedding),
-                    opensearch_index=self.settings.RAG_OPENSEARCH_INDEX,
-                    index_status="pending",
-                    token_count=self._estimate_token_count(chunk),
-                    status="active",
-                    version=1,
-                )
-                self.db.add(chunk_record)
-                chunk_records.append(chunk_record)
+    async def parse_preview(self, file_path: str | Path, *, parser_type: str = "auto") -> dict:
+        parsed = self.parser.parse_file(file_path, parser_type=parser_type)
+        plans = self._build_chunk_plans(
+            parsed,
+            source_title=parsed.title,
+            category="preview",
+            tags=[],
+            source_grade="B",
+            source_version=1,
+        )
+        return {
+            "parser_type": parsed.parser_type,
+            "parser_version": parsed.parser_version,
+            "parser_confidence": parsed.parser_confidence,
+            "content_hash": parsed.content_hash,
+            "chunks_total": len(plans),
+            "chunks": [
+                {
+                    "chunk_index": plan.chunk_index,
+                    "title": plan.title,
+                    "content_hash": plan.content_hash,
+                    "anchor_hash": plan.anchor_hash,
+                    "chunk_strategy": plan.chunk_strategy,
+                    "chunk_anchor": plan.chunk_anchor,
+                    "page_number": plan.page_number,
+                    "token_count": plan.token_count,
+                    "preview": plan.content[:240],
+                }
+                for plan in plans
+            ],
+        }
 
-            await self.db.flush()
-            for chunk_record in chunk_records:
-                chunk_record.opensearch_document_id = str(chunk_record.id)
+    async def register_source(
+        self,
+        *,
+        file_path: str | Path,
+        title: str | None,
+        category: str,
+        tags: list[str] | None = None,
+        parser_type: str = "auto",
+        source_url: str | None = None,
+        source_type: str = "file",
+        source_grade: str = "B",
+        license_value: str | None = "internal-summary",
+        language: str = "ko",
+        author_or_org: str | None = None,
+        refresh_policy: str = "manual",
+        refresh_interval_hours: int | None = None,
+    ) -> dict[str, object]:
+        path = Path(file_path)
+        parsed = self.parser.parse_file(path, parser_type=parser_type)
+        return await self._ingest_parsed_document(
+            parsed=parsed,
+            title=title or parsed.title,
+            category=category,
+            source_url=source_url,
+            origin_type=origin_type_for_path(path),
+            origin_uri=str(path),
+            tags=self._normalize_tags(tags),
+            source_type=source_type,
+            source_grade=source_grade,
+            license_value=license_value,
+            language=language,
+            author_or_org=author_or_org,
+            refresh_policy=refresh_policy,
+            refresh_interval_hours=refresh_interval_hours,
+            existing_source=None,
+            force=False,
+        )
 
-            indexed_succeeded = 0
-            for chunk_record in chunk_records:
-                try:
-                    await self.index_service.index_chunk(chunk_record, source_record)
-                except RAGIndexError:
-                    chunk_record.index_status = "failed"
-                    continue
-                chunk_record.index_status = "indexed"
-                chunk_record.indexed_at = datetime.now(timezone.utc)
-                indexed_succeeded += 1
+    async def refresh_source(self, source_id: int, *, force: bool = False) -> dict[str, object]:
+        source = await self.db.get(RagSource, source_id)
+        if source is None:
+            return {"status": "not_found", "source_id": source_id}
+        if not source.origin_uri:
+            return {"status": "failed", "source_id": source_id, "error": "SOURCE_ORIGIN_URI_MISSING"}
 
-            job.chunks_succeeded = len(chunk_records)
-            job.indexed_total = len(chunk_records)
-            job.indexed_succeeded = indexed_succeeded
-            job.indexed_failed = len(chunk_records) - indexed_succeeded
-            job.status = "succeeded" if job.indexed_failed == 0 else "failed"
-            if job.indexed_failed:
-                job.error_code = "OPENSEARCH_INDEX_FAILED"
-                job.error_message = "일부 chunk의 OpenSearch 색인에 실패했습니다"
-            job.finished_at = datetime.now(timezone.utc)
-            await self.db.commit()
-        except Exception:
-            job.status = "failed"
-            job.chunks_failed = len(chunks)
-            job.error_code = "INGEST_FAILED"
-            job.error_message = "RAG 문서 ingest에 실패했습니다"
-            job.finished_at = datetime.now(timezone.utc)
-            await self.db.rollback()
-            raise
+        parsed = self.parser.parse_file(source.origin_uri, parser_type=source.parser_type or "auto")
+        return await self._ingest_parsed_document(
+            parsed=parsed,
+            title=source.title,
+            category=source.category,
+            source_url=source.source_url,
+            origin_type=source.origin_type,
+            origin_uri=source.origin_uri,
+            tags=list(source.tags or []),
+            source_type=source.source_type,
+            source_grade=source.source_grade,
+            license_value=source.license,
+            language=source.language,
+            author_or_org=source.author_or_org,
+            refresh_policy=source.refresh_policy,
+            refresh_interval_hours=source.refresh_interval_hours,
+            existing_source=source,
+            force=force,
+        )
 
-        return len(chunk_records)
+    async def refresh_due(self, *, limit: int = 20) -> list[dict[str, object]]:
+        now = datetime.now(timezone.utc)
+        stmt = (
+            select(RagSource)
+            .where(
+                RagSource.status == "active",
+                RagSource.refresh_policy == "scheduled",
+                RagSource.next_refresh_at.is_not(None),
+                RagSource.next_refresh_at <= now,
+            )
+            .order_by(RagSource.next_refresh_at.asc())
+            .limit(limit)
+        )
+        sources = (await self.db.execute(stmt)).scalars().all()
+        results: list[dict[str, object]] = []
+        for source in sources:
+            results.append(await self.refresh_source(source.id))
+        return results
+
+    async def list_decisions(self, *, job_id: int | None = None, limit: int = 20) -> list[dict[str, object]]:
+        stmt = select(RagPipelineDecision).order_by(RagPipelineDecision.id.desc()).limit(limit)
+        if job_id is not None:
+            stmt = stmt.where(RagPipelineDecision.job_id == job_id)
+        rows = (await self.db.execute(stmt)).scalars().all()
+        return [
+            {
+                "id": row.id,
+                "job_id": row.job_id,
+                "source_id": row.source_id,
+                "decision_type": row.decision_type,
+                "policy_version": row.policy_version,
+                "selected_action": row.selected_action,
+                "risk_level": row.risk_level,
+                "reason_code": row.reason_code,
+                "context": row.context,
+                "tradeoffs": row.tradeoffs,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
 
     async def ensure_index(self) -> bool:
         return await self.index_service.ensure_index()
@@ -223,7 +324,13 @@ class RAGService:
         rows = (await self.db.execute(stmt)).all()
         indexed = 0
         failed = 0
+        skipped = 0
         for chunk, source in rows:
+            payload_hash = self._index_payload_hash(chunk, source)
+            if chunk.index_status == "indexed" and chunk.index_payload_hash == payload_hash:
+                skipped += 1
+                continue
+            chunk.index_payload_hash = payload_hash
             try:
                 await self.index_service.index_chunk(chunk, source)
             except RAGIndexError:
@@ -236,7 +343,7 @@ class RAGService:
             chunk.opensearch_document_id = str(chunk.id)
             indexed += 1
         await self.db.commit()
-        return {"indexed": indexed, "failed": failed}
+        return {"indexed": indexed, "failed": failed, "skipped": skipped}
 
     async def archive_source(self, source_id: int) -> dict[str, int]:
         source = await self.db.get(RagSource, source_id)
@@ -244,19 +351,15 @@ class RAGService:
             return {"sources": 0, "chunks": 0}
 
         source.status = "archived"
+        source.last_refresh_status = "archived"
         chunks = (
             await self.db.execute(select(RagChunk).where(RagChunk.source_id == source_id))
         ).scalars().all()
 
         archived_chunks = 0
         for chunk in chunks:
-            chunk.status = "archived"
-            chunk.index_status = "deleted"
+            await self._archive_chunk(chunk)
             archived_chunks += 1
-            try:
-                await self.index_service.delete_chunk(chunk.id)
-            except RAGIndexError:
-                pass
         await self.db.commit()
         return {"sources": 1, "chunks": archived_chunks}
 
@@ -268,6 +371,390 @@ class RAGService:
             .where(RagRetrievalTrace.rag_trace_group_id == trace_group_id)
             .values(request_id=request_id)
         )
+
+    async def _ingest_parsed_document(
+        self,
+        *,
+        parsed: ParsedDocument,
+        title: str,
+        category: str,
+        source_url: str | None,
+        origin_type: str,
+        origin_uri: str | None,
+        tags: list[str],
+        source_type: str,
+        source_grade: str,
+        license_value: str | None,
+        language: str,
+        author_or_org: str | None,
+        refresh_policy: str,
+        existing_source: RagSource | None,
+        force: bool,
+        refresh_interval_hours: int | None = None,
+    ) -> dict[str, object]:
+        started_at = datetime.now(timezone.utc)
+        embedding_model = self._embedding_model_name()
+        source_exists = existing_source is not None
+        old_chunks = await self._load_active_source_chunks(existing_source.id) if existing_source else []
+        next_source_version = (existing_source.version + 1) if existing_source else 1
+        plans = self._build_chunk_plans(
+            parsed,
+            source_title=title,
+            category=category,
+            tags=tags,
+            source_grade=source_grade,
+            source_version=next_source_version,
+        )
+        source_hash_same = bool(existing_source and existing_source.content_hash == parsed.content_hash and not force)
+        parser_or_chunker_changed = bool(
+            existing_source
+            and (
+                existing_source.parser_version != parsed.parser_version
+                or existing_source.chunker_version != CHUNKER_VERSION
+                or existing_source.normalization_version != NORMALIZATION_VERSION
+            )
+        )
+        change_ratio = self._change_ratio(old_chunks, plans)
+        estimated_embedding_count = self._estimate_new_embedding_count(old_chunks, plans)
+        estimated_embedding_seconds = (
+            estimated_embedding_count * self.settings.RAG_ESTIMATED_EMBEDDING_SECONDS_PER_CHUNK
+        )
+        decision = self.decision_policy.choose_ingest_action(
+            source_exists=source_exists,
+            source_hash_same=source_hash_same,
+            parser_confidence=parsed.parser_confidence,
+            change_ratio=change_ratio,
+            parser_or_chunker_changed=parser_or_chunker_changed,
+            estimated_embedding_seconds=estimated_embedding_seconds,
+            allowed_embedding_seconds=self.settings.RAG_ALLOWED_REEMBEDDING_SECONDS,
+            partial_refresh_threshold=self.settings.RAG_PARTIAL_REFRESH_CHANGE_RATIO,
+            parser_confidence_threshold=self.settings.RAG_PARSER_CONFIDENCE_THRESHOLD,
+            source_grade=source_grade,
+            category=category,
+        )
+
+        job = RagIngestJob(
+            job_type="refresh" if existing_source else "create",
+            status="running",
+            requested_by="cli",
+            input_hash=parsed.content_hash,
+            embedding_model=embedding_model,
+            target_index=self.settings.RAG_OPENSEARCH_INDEX,
+            chunks_total=len(plans),
+            pipeline_stage="policy_decision",
+            parser_confidence=parsed.parser_confidence,
+            change_ratio=change_ratio,
+            estimated_embedding_seconds=estimated_embedding_seconds,
+            started_at=started_at,
+        )
+        if existing_source:
+            job.source_id = existing_source.id
+        self.db.add(job)
+        await self.db.flush()
+        await self._save_pipeline_decision(decision, job_id=job.id, source_id=existing_source.id if existing_source else None)
+
+        if decision.selected_action in {"skip_refresh", "manual_review_required", "defer_reembedding"}:
+            job.status = "skipped"
+            job.pipeline_stage = decision.selected_action
+            job.skipped_reason = decision.reason_code
+            job.finished_at = datetime.now(timezone.utc)
+            job.latency_ms = self._latency_ms(started_at)
+            if existing_source:
+                existing_source.last_checked_at = datetime.now(timezone.utc)
+                existing_source.last_refresh_status = decision.selected_action
+            await self.db.commit()
+            return {
+                "status": job.status,
+                "job_id": job.id,
+                "source_id": existing_source.id if existing_source else None,
+                "decision": decision.selected_action,
+                "chunks_active": len(old_chunks),
+                "chunks_created": 0,
+                "chunks_reused": 0,
+            }
+
+        source = existing_source or RagSource(
+            title=title,
+            source_type=source_type,
+            source_url=source_url,
+            origin_type=origin_type,
+            origin_uri=origin_uri,
+            ingest_method="cli",
+            source_grade=source_grade,
+            license=license_value,
+            category=category,
+            tags=tags,
+            language=language,
+            author_or_org=author_or_org,
+            status="active",
+            version=1,
+            content_hash=parsed.content_hash,
+        )
+        if existing_source is None:
+            self.db.add(source)
+            await self.db.flush()
+            job.source_id = source.id
+        else:
+            source.version = next_source_version
+
+        self._apply_source_metadata(
+            source,
+            parsed=parsed,
+            title=title,
+            source_type=source_type,
+            source_url=source_url,
+            origin_type=origin_type,
+            origin_uri=origin_uri,
+            tags=tags,
+            source_grade=source_grade,
+            license_value=license_value,
+            category=category,
+            language=language,
+            author_or_org=author_or_org,
+            refresh_policy=refresh_policy,
+            refresh_interval_hours=refresh_interval_hours,
+        )
+
+        created = 0
+        reused = 0
+        indexed_succeeded = 0
+        indexed_failed = 0
+        index_skipped = 0
+        embedding_reused = 0
+        reembedded = 0
+
+        try:
+            job.pipeline_stage = "chunk_persist"
+            if decision.selected_action == "partial_refresh" and old_chunks:
+                old_by_anchor = {chunk.anchor_hash: chunk for chunk in old_chunks}
+                new_anchor_hashes = {plan.anchor_hash for plan in plans}
+                for plan in plans:
+                    existing_chunk = old_by_anchor.get(plan.anchor_hash)
+                    if (
+                        existing_chunk
+                        and existing_chunk.content_hash == plan.content_hash
+                        and existing_chunk.embedding_input_hash == plan.embedding_input_hash
+                    ):
+                        plan_payload_hash = self._index_payload_hash(existing_chunk, source)
+                        if existing_chunk.index_status == "indexed" and existing_chunk.index_payload_hash == plan_payload_hash:
+                            index_skipped += 1
+                        else:
+                            existing_chunk.index_payload_hash = plan_payload_hash
+                            try:
+                                await self.index_service.index_chunk(existing_chunk, source)
+                            except RAGIndexError:
+                                existing_chunk.index_status = "failed"
+                                indexed_failed += 1
+                            else:
+                                existing_chunk.index_status = "indexed"
+                                existing_chunk.indexed_at = datetime.now(timezone.utc)
+                                indexed_succeeded += 1
+                        reused += 1
+                        continue
+                    if existing_chunk:
+                        await self._archive_chunk(existing_chunk)
+                    chunk, was_reused = await self._create_chunk_from_plan(plan, source, tags, category)
+                    created += 1
+                    embedding_reused += int(was_reused)
+                    reembedded += int(not was_reused)
+                    if chunk.index_status == "indexed":
+                        indexed_succeeded += 1
+                    elif chunk.index_status == "failed":
+                        indexed_failed += 1
+
+                for old_chunk in old_chunks:
+                    if old_chunk.anchor_hash not in new_anchor_hashes:
+                        await self._archive_chunk(old_chunk)
+            else:
+                for old_chunk in old_chunks:
+                    await self._archive_chunk(old_chunk)
+                for plan in plans:
+                    chunk, was_reused = await self._create_chunk_from_plan(plan, source, tags, category)
+                    created += 1
+                    embedding_reused += int(was_reused)
+                    reembedded += int(not was_reused)
+                    if chunk.index_status == "indexed":
+                        indexed_succeeded += 1
+                    elif chunk.index_status == "failed":
+                        indexed_failed += 1
+
+            job.pipeline_stage = "finished"
+            job.chunks_succeeded = created + reused
+            job.indexed_total = created + reused
+            job.indexed_succeeded = indexed_succeeded
+            job.indexed_failed = indexed_failed
+            job.index_skip_count = index_skipped
+            job.embedding_reuse_count = embedding_reused + reused
+            job.reembedding_count = reembedded
+            job.status = "succeeded" if indexed_failed == 0 else "failed"
+            if indexed_failed:
+                job.error_code = "OPENSEARCH_INDEX_FAILED"
+                job.error_message = "Some RAG chunks failed OpenSearch indexing"
+            job.finished_at = datetime.now(timezone.utc)
+            job.latency_ms = self._latency_ms(started_at)
+            source.last_refresh_status = job.status
+            await self.db.commit()
+        except Exception:
+            job.status = "failed"
+            job.pipeline_stage = "failed"
+            job.chunks_failed = len(plans)
+            job.error_code = "INGEST_FAILED"
+            job.error_message = "RAG ingest pipeline failed"
+            job.finished_at = datetime.now(timezone.utc)
+            job.latency_ms = self._latency_ms(started_at)
+            await self.db.rollback()
+            raise
+
+        return {
+            "status": job.status,
+            "job_id": job.id,
+            "source_id": source.id,
+            "decision": decision.selected_action,
+            "chunks_active": created + reused,
+            "chunks_created": created,
+            "chunks_reused": reused,
+            "embedding_reuse_count": job.embedding_reuse_count,
+            "reembedding_count": job.reembedding_count,
+            "index_skip_count": job.index_skip_count,
+        }
+
+    async def _create_chunk_from_plan(
+        self,
+        plan: ChunkPlan,
+        source: RagSource,
+        tags: list[str],
+        category: str,
+    ) -> tuple[RagChunk, bool]:
+        embedding, reused, cache_id = await self._get_or_create_embedding(plan)
+        metadata = dict(plan.metadata)
+        metadata["embedding_reuse"] = {"reused": reused, "cache_id": cache_id}
+        chunk = RagChunk(
+            source_id=source.id,
+            chunk_index=plan.chunk_index,
+            title=plan.title,
+            content=plan.content,
+            content_hash=plan.content_hash,
+            anchor_hash=plan.anchor_hash,
+            embedding_input_hash=plan.embedding_input_hash,
+            index_payload_hash=plan.index_payload_hash,
+            category=category,
+            tags=tags,
+            embedding=embedding,
+            embedding_model=self._embedding_model_name(),
+            embedding_dim=len(embedding),
+            opensearch_index=self.settings.RAG_OPENSEARCH_INDEX,
+            index_status="pending",
+            token_count=plan.token_count,
+            source_version=source.version,
+            chunk_strategy=plan.chunk_strategy,
+            chunk_anchor=plan.chunk_anchor,
+            page_number=plan.page_number,
+            metadata_=metadata,
+            status="active",
+            version=1,
+        )
+        self.db.add(chunk)
+        await self.db.flush()
+        chunk.opensearch_document_id = str(chunk.id)
+        try:
+            await self.index_service.index_chunk(chunk, source)
+        except RAGIndexError:
+            chunk.index_status = "failed"
+        else:
+            chunk.index_status = "indexed"
+            chunk.indexed_at = datetime.now(timezone.utc)
+        return chunk, reused
+
+    async def _get_or_create_embedding(self, plan: ChunkPlan) -> tuple[list[float], bool, int | None]:
+        embedding_model = self._embedding_model_name()
+        stmt = select(RagEmbeddingCache).where(
+            RagEmbeddingCache.embedding_input_hash == plan.embedding_input_hash,
+            RagEmbeddingCache.embedding_model == embedding_model,
+            RagEmbeddingCache.embedding_dim == 3072,
+            RagEmbeddingCache.normalization_version == NORMALIZATION_VERSION,
+        )
+        cache = (await self.db.execute(stmt)).scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+        if cache is not None:
+            cache.usage_count += 1
+            cache.last_used_at = now
+            return [float(value) for value in cache.embedding], True, cache.id
+
+        embedding = await self.get_embedding(plan.content)
+        cache = RagEmbeddingCache(
+            embedding_input_hash=plan.embedding_input_hash,
+            content_hash=plan.content_hash,
+            embedding_model=embedding_model,
+            embedding_dim=len(embedding),
+            normalization_version=NORMALIZATION_VERSION,
+            embedding=embedding,
+            usage_count=1,
+            last_used_at=now,
+        )
+        self.db.add(cache)
+        await self.db.flush()
+        return embedding, False, cache.id
+
+    async def _archive_chunk(self, chunk: RagChunk) -> None:
+        chunk.status = "archived"
+        chunk.index_status = "deleted"
+        try:
+            await self.index_service.delete_chunk(chunk.id)
+        except RAGIndexError:
+            pass
+
+    def _apply_source_metadata(
+        self,
+        source: RagSource,
+        *,
+        parsed: ParsedDocument,
+        title: str,
+        source_type: str,
+        source_url: str | None,
+        origin_type: str,
+        origin_uri: str | None,
+        tags: list[str],
+        source_grade: str,
+        license_value: str | None,
+        category: str,
+        language: str,
+        author_or_org: str | None,
+        refresh_policy: str,
+        refresh_interval_hours: int | None,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        source.title = title
+        source.source_type = source_type
+        source.source_url = source_url
+        source.origin_type = origin_type
+        source.origin_uri = origin_uri
+        source.ingest_method = "cli"
+        source.parser_type = parsed.parser_type
+        source.parser_version = parsed.parser_version
+        source.chunk_strategy = self._strategy_for_parser(parsed.parser_type)
+        source.chunker_version = CHUNKER_VERSION
+        source.normalization_version = NORMALIZATION_VERSION
+        source.refresh_policy = refresh_policy
+        source.refresh_interval_hours = refresh_interval_hours
+        source.next_refresh_at = self._next_refresh_at(refresh_policy, refresh_interval_hours, now)
+        source.last_checked_at = now
+        source.source_grade = source_grade
+        source.license = license_value
+        source.category = category
+        source.tags = tags
+        source.language = language
+        source.author_or_org = author_or_org
+        source.reviewed_at = now
+        source.status = "active"
+        source.content_hash = parsed.content_hash
+        source.metadata_ = SourceMetadata(
+            parser_type=parsed.parser_type,
+            parser_version=parsed.parser_version,
+            raw_content_hash=parsed.raw_content_hash,
+            normalized_content_hash=parsed.content_hash,
+            parser_confidence=parsed.parser_confidence,
+            skipped_sections=parsed.skipped_sections,
+        ).model_dump()
 
     async def _search_opensearch(
         self,
@@ -375,6 +862,15 @@ class RAGService:
         rows = (await self.db.execute(stmt)).all()
         return {chunk.id: (chunk, source) for chunk, source in rows}
 
+    async def _load_active_source_chunks(self, source_id: int) -> list[RagChunk]:
+        return (
+            await self.db.execute(
+                select(RagChunk)
+                .where(RagChunk.source_id == source_id, RagChunk.status == "active")
+                .order_by(RagChunk.chunk_index.asc())
+            )
+        ).scalars().all()
+
     async def _save_retrieval_traces(
         self,
         *,
@@ -415,6 +911,27 @@ class RAGService:
                 )
             )
         await self.db.commit()
+
+    async def _save_pipeline_decision(
+        self,
+        decision,
+        *,
+        job_id: int | None = None,
+        source_id: int | None = None,
+    ) -> None:
+        self.db.add(
+            RagPipelineDecision(
+                job_id=job_id,
+                source_id=source_id,
+                decision_type=decision.decision_type,
+                policy_version=decision.policy_version,
+                selected_action=decision.selected_action,
+                risk_level=decision.risk_level,
+                reason_code=decision.reason_code,
+                context=decision.context,
+                tradeoffs=decision.tradeoffs,
+            )
+        )
 
     def _merge_hybrid_hits(self, keyword_hits: list[dict], vector_hits: list[dict]) -> list[dict]:
         merged: dict[str, dict] = {}
@@ -472,8 +989,82 @@ class RAGService:
             "index_version": index_version,
         }
 
-    def _chunk_text(self, text_value: str, min_size: int = 50, max_size: int = 1000) -> list[str]:
-        normalized = text_value.replace("\r\n", "\n").strip()
+    def _build_chunk_plans(
+        self,
+        parsed: ParsedDocument,
+        *,
+        source_title: str,
+        category: str,
+        tags: list[str],
+        source_grade: str,
+        source_version: int,
+    ) -> list[ChunkPlan]:
+        return self.chunk_planner.build_chunks(
+            parsed,
+            source_title=source_title,
+            category=category,
+            tags=tags,
+            source_grade=source_grade,
+            embedding_model=self._embedding_model_name(),
+            embedding_dim=3072,
+            source_version=source_version,
+        )
+
+    def _index_payload_hash(self, chunk: RagChunk, source: RagSource) -> str:
+        return build_index_payload_hash(
+            title=chunk.title,
+            content_hash=chunk.content_hash,
+            category=chunk.category,
+            tags=list(chunk.tags or []),
+            source_grade=source.source_grade,
+            status=chunk.status if source.status == "active" else source.status,
+            embedding_input_hash=chunk.embedding_input_hash,
+            source_version=chunk.source_version,
+        )
+
+    @staticmethod
+    def _change_ratio(old_chunks: list[RagChunk], new_plans: list[ChunkPlan]) -> float:
+        if not old_chunks:
+            return 1.0 if new_plans else 0.0
+        old_hashes = {chunk.content_hash for chunk in old_chunks}
+        new_hashes = {plan.content_hash for plan in new_plans}
+        stable = len(old_hashes.intersection(new_hashes))
+        denominator = max(len(old_hashes), len(new_hashes), 1)
+        return max(0.0, min(1.0, 1.0 - (stable / denominator)))
+
+    @staticmethod
+    def _estimate_new_embedding_count(old_chunks: list[RagChunk], new_plans: list[ChunkPlan]) -> int:
+        old_inputs = {chunk.embedding_input_hash for chunk in old_chunks}
+        return sum(1 for plan in new_plans if plan.embedding_input_hash not in old_inputs)
+
+    @staticmethod
+    def _strategy_for_parser(parser_type: str) -> str:
+        if parser_type == "markdown":
+            return "section"
+        if parser_type == "pdf_text":
+            return "page_paragraph"
+        return "paragraph"
+
+    @staticmethod
+    def _next_refresh_at(
+        refresh_policy: str,
+        refresh_interval_hours: int | None,
+        now: datetime,
+    ) -> datetime | None:
+        if refresh_policy != "scheduled" or not refresh_interval_hours:
+            return None
+        return now + timedelta(hours=refresh_interval_hours)
+
+    @staticmethod
+    def _latency_ms(started_at: datetime) -> int:
+        return int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
+
+    def _embedding_model_name(self) -> str:
+        return self.settings.AI_EMBEDDING_MODEL.removeprefix("models/")
+
+    @staticmethod
+    def _chunk_text(text_value: str, min_size: int = 50, max_size: int = 1000) -> list[str]:
+        normalized = normalize_text(text_value)
         if not normalized:
             return []
 
@@ -482,7 +1073,7 @@ class RAGService:
         current = ""
 
         for paragraph in paragraphs:
-            paragraph_chunks = self._split_over_max(paragraph, max_size)
+            paragraph_chunks = split_over_max(paragraph, max_size)
             for paragraph_chunk in paragraph_chunks:
                 if not current:
                     current = paragraph_chunk
@@ -512,47 +1103,13 @@ class RAGService:
 
         return [chunk.strip() for chunk in merged_chunks if chunk.strip()]
 
-    def _embedding_model_name(self) -> str:
-        return self.settings.AI_EMBEDDING_MODEL.removeprefix("models/")
-
     @staticmethod
     def _split_over_max(text_value: str, max_size: int) -> list[str]:
-        if len(text_value) <= max_size:
-            return [text_value]
-
-        sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", text_value) if sentence.strip()]
-        if len(sentences) <= 1:
-            return [text_value[i : i + max_size] for i in range(0, len(text_value), max_size)]
-
-        chunks: list[str] = []
-        current = ""
-        for sentence in sentences:
-            if len(sentence) > max_size:
-                if current:
-                    chunks.append(current)
-                    current = ""
-                chunks.extend(sentence[i : i + max_size] for i in range(0, len(sentence), max_size))
-                continue
-
-            if not current:
-                current = sentence
-                continue
-
-            candidate = f"{current} {sentence}"
-            if len(candidate) <= max_size:
-                current = candidate
-            else:
-                chunks.append(current)
-                current = sentence
-
-        if current:
-            chunks.append(current)
-
-        return chunks
+        return split_over_max(text_value, max_size)
 
     @staticmethod
     def _hash_text(value: str) -> str:
-        return hashlib.sha256(value.strip().encode("utf-8")).hexdigest()
+        return hash_text(value.strip())
 
     @staticmethod
     def _normalize_tags(tags: list[str] | None) -> list[str]:
@@ -562,4 +1119,4 @@ class RAGService:
 
     @staticmethod
     def _estimate_token_count(value: str) -> int:
-        return max(1, len(value) // 4)
+        return estimate_token_count(value)
