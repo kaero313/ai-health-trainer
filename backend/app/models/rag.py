@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -21,12 +21,28 @@ class RagSource(Base):
     __table_args__ = (
         Index("ix_rag_sources_category_status", "category", "status"),
         Index("ix_rag_sources_content_hash", "content_hash"),
+        Index("ix_rag_sources_refresh_due", "refresh_policy", "next_refresh_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False, server_default="internal_policy")
     source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    origin_type: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual_text")
+    origin_uri: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    ingest_method: Mapped[str] = mapped_column(String(30), nullable=False, server_default="cli")
+    parser_type: Mapped[str] = mapped_column(String(50), nullable=False, server_default="text")
+    parser_version: Mapped[str] = mapped_column(String(50), nullable=False, server_default="text-parser-v1")
+    chunk_strategy: Mapped[str] = mapped_column(String(50), nullable=False, server_default="paragraph")
+    chunker_version: Mapped[str] = mapped_column(String(50), nullable=False, server_default="structure-chunker-v1")
+    normalization_version: Mapped[str] = mapped_column(String(50), nullable=False, server_default="chunk-normalize-v1")
+    refresh_policy: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
+    refresh_interval_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    external_etag: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    external_last_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_refresh_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     source_grade: Mapped[str] = mapped_column(String(5), nullable=False, server_default="B")
     license: Mapped[str | None] = mapped_column(String(200), nullable=True)
     category: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -66,6 +82,9 @@ class RagChunk(Base):
         Index("ix_rag_chunks_category_status", "category", "status"),
         Index("ix_rag_chunks_index_status", "index_status"),
         Index("ix_rag_chunks_content_hash", "content_hash"),
+        Index("ix_rag_chunks_anchor_hash", "anchor_hash"),
+        Index("ix_rag_chunks_embedding_input_hash", "embedding_input_hash"),
+        Index("ix_rag_chunks_index_payload_hash", "index_payload_hash"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -74,6 +93,9 @@ class RagChunk(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    anchor_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    embedding_input_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    index_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     embedding: Mapped[list[float]] = mapped_column(Vector(3072), nullable=False)
@@ -84,6 +106,16 @@ class RagChunk(Base):
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     index_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    chunk_strategy: Mapped[str] = mapped_column(String(50), nullable=False, server_default="paragraph")
+    chunk_anchor: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_: Mapped[dict[str, object]] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -118,11 +150,71 @@ class RagIngestJob(Base):
     indexed_total: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     indexed_succeeded: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     indexed_failed: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    pipeline_stage: Mapped[str] = mapped_column(String(50), nullable=False, server_default="created")
+    parser_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    change_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    embedding_reuse_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    reembedding_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    index_skip_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    estimated_embedding_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    skipped_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    source: Mapped[RagSource | None] = relationship("RagSource")
+
+
+class RagEmbeddingCache(Base):
+    __tablename__ = "rag_embedding_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "embedding_input_hash",
+            "embedding_model",
+            "embedding_dim",
+            "normalization_version",
+            name="uq_rag_embedding_cache_input",
+        ),
+        Index("ix_rag_embedding_cache_content_hash", "content_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    embedding_input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
+    embedding_dim: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("3072"))
+    normalization_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(3072), nullable=False)
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class RagPipelineDecision(Base):
+    __tablename__ = "rag_pipeline_decisions"
+    __table_args__ = (
+        Index("ix_rag_pipeline_decisions_job_id", "job_id"),
+        Index("ix_rag_pipeline_decisions_source_id", "source_id"),
+        Index("ix_rag_pipeline_decisions_type", "decision_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("rag_ingest_jobs.id", ondelete="SET NULL"), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("rag_sources.id", ondelete="SET NULL"), nullable=True)
+    decision_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    selected_action: Mapped[str] = mapped_column(String(50), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    context: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    tradeoffs: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    job: Mapped[RagIngestJob | None] = relationship("RagIngestJob")
+    source: Mapped[RagSource | None] = relationship("RagSource")
 
 
 class RagRetrievalTrace(Base):
