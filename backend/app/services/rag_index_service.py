@@ -117,6 +117,38 @@ class RAGIndexService:
         finally:
             await client.close()
 
+    async def index_status(self) -> dict[str, Any]:
+        client = self._client()
+        try:
+            exists = await client.indices.exists(index=self.index_name)
+            alias_exists = await client.indices.exists_alias(name=self.alias_name)
+            if not exists:
+                return {
+                    "index": self.index_name,
+                    "alias": self.alias_name,
+                    "exists": False,
+                    "alias_exists": bool(alias_exists),
+                }
+
+            rows = await client.cat.indices(index=self.index_name, format="json")
+            row = rows[0] if rows else {}
+            return {
+                "index": self.index_name,
+                "alias": self.alias_name,
+                "exists": True,
+                "alias_exists": bool(alias_exists),
+                "health": row.get("health"),
+                "status": row.get("status"),
+                "docs_count": _safe_int(row.get("docs.count")),
+                "docs_deleted": _safe_int(row.get("docs.deleted")),
+                "store_size": row.get("store.size"),
+                "primary_store_size": row.get("pri.store.size"),
+            }
+        except Exception as exc:
+            raise RAGIndexError(str(exc)) from exc
+        finally:
+            await client.close()
+
     def build_document(self, chunk: RagChunk, source: RagSource) -> dict[str, Any]:
         return {
             "chunk_id": str(chunk.id),
@@ -222,3 +254,10 @@ class RAGIndexService:
 
         hits = response.get("hits", {}).get("hits", [])
         return [hit for hit in hits if isinstance(hit, dict)]
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

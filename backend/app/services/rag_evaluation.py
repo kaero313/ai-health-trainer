@@ -24,6 +24,9 @@ class RetrievalEvaluationResult:
     category_matched: bool
     tag_matched: bool
     source_matched: bool
+    fallback_used: bool
+    safety_source_hit: bool
+    source_grade_hit: bool
     top_titles: list[str]
 
 
@@ -62,11 +65,17 @@ async def evaluate_retrieval(
         results.append(_evaluate_case(case, documents))
 
     passed = sum(1 for result in results if result.passed)
+    fallback_count = sum(1 for result in results if result.fallback_used)
+    safety_source_hit_count = sum(1 for result in results if result.safety_source_hit)
+    source_grade_hit_count = sum(1 for result in results if result.source_grade_hit)
     return {
         "total": len(results),
         "passed": passed,
         "failed": len(results) - passed,
         "pass_rate": passed / len(results) if results else 0.0,
+        "fallback_count": fallback_count,
+        "safety_source_hit_count": safety_source_hit_count,
+        "source_grade_hit_count": source_grade_hit_count,
         "results": [
             {
                 "query": result.query,
@@ -74,6 +83,9 @@ async def evaluate_retrieval(
                 "category_matched": result.category_matched,
                 "tag_matched": result.tag_matched,
                 "source_matched": result.source_matched,
+                "fallback_used": result.fallback_used,
+                "safety_source_hit": result.safety_source_hit,
+                "source_grade_hit": result.source_grade_hit,
                 "top_titles": result.top_titles,
             }
             for result in results
@@ -98,6 +110,9 @@ def _evaluate_case(case: RetrievalEvaluationCase, documents: list[dict]) -> Retr
     source_matched = not case.expected_source_keywords or any(
         keyword in title_blob for keyword in case.expected_source_keywords
     )
+    fallback_used = any(document.get("search_backend") == "pgvector_fallback" for document in documents)
+    safety_source_hit = any(document.get("category") == "safety" for document in documents)
+    source_grade_hit = any(str(document.get("source_grade") or "") in {"A", "B"} for document in documents)
 
     return RetrievalEvaluationResult(
         query=case.query,
@@ -105,5 +120,8 @@ def _evaluate_case(case: RetrievalEvaluationCase, documents: list[dict]) -> Retr
         category_matched=category_matched,
         tag_matched=tag_matched,
         source_matched=source_matched,
+        fallback_used=fallback_used,
+        safety_source_hit=safety_source_hit,
+        source_grade_hit=source_grade_hit,
         top_titles=[str(document.get("title") or "") for document in documents],
     )

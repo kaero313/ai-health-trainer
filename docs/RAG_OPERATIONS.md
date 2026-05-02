@@ -670,6 +670,8 @@ RAG 품질은 "검색 품질"과 "생성 품질"을 분리해서 평가한다.
 - no-result 비율
 - 안전 질문에서 safety 문서 포함 여부
 
+현재 RAG v1 운영 검증 결과는 `docs/RAG_EVALUATION_REPORT.md`에 기록한다. 이 리포트는 `python -m app.cli.rag validate-v1`로 재생성하며, seed ingest 이후의 DB count, OpenSearch index 상태, retrieval evaluation, refresh decision trace를 함께 남겨 v1 종료 기준의 근거로 사용한다.
+
 ### 13-2. Generation evaluation
 
 평가 기준:
@@ -739,10 +741,16 @@ RAG 품질은 "검색 품질"과 "생성 품질"을 분리해서 평가한다.
   - retrieval trace 저장
 
 - `backend/app/cli/rag.py`
-  - `ensure-index`, `delete-index`, `ingest`, `reindex`, `archive`, `evaluate`
+  - `ensure-index`, `delete-index`, `ingest`, `reindex`, `archive`, `parse-preview`, `register-source`, `refresh-source`, `refresh-due`, `decisions`, `evaluate`, `validate-v1`
 
 - `backend/app/services/rag_evaluation.py`, `backend/rag_eval/retrieval_cases.json`
   - retrieval evaluation case loading, top-k result scoring, category/tag/source keyword match summary
+
+- `docs/RAG_EVALUATION_REPORT.md`
+  - `validate-v1`로 재생성 가능한 RAG v1 seed ingest, OpenSearch retrieval evaluation, skip/partial/full refresh decision 검증 결과
+
+- `backend/tests/test_rag_service.py`, `backend/tests/test_rag_cli.py`
+  - create_source decision trace integrity, Text/PDF parser file-path registration, UTF-8/LF report writer 검증
 
 - `backend/app/services/recommendation_service.py`, `backend/app/services/chat_service.py`
   - 식단 추천, 운동 추천, AI 채팅이 v2 RAG 검색 경로 사용
@@ -754,9 +762,9 @@ RAG 품질은 "검색 품질"과 "생성 품질"을 분리해서 평가한다.
 
 1. `docs/RAG_ADVANCED_PORTFOLIO_ROADMAP.md` 기준으로 고급 RAG/AI 백엔드 포트폴리오 backlog를 계속 추적한다.
 2. `docs/RAG_DECISION_POLICY.md` 기준으로 상황별 refresh/reindex/fallback 의사결정을 trace로 남긴다.
-3. `docs/RAG_PIPELINE_ARCHITECTURE.md` 기준으로 RAG Pipeline Control Plane을 구현한다.
-4. 문서/PDF vertical slice를 먼저 완성한다: source registry, parser/chunker, refresh CLI, reindex, evaluation report.
-5. OpenSearch E2E ingest/evaluate를 실행하고 `docs/RAG_EVALUATION_REPORT.md`로 결과를 남긴다.
+3. `docs/RAG_EVALUATION_REPORT.md`에서 확인한 v1 운영 검증 결과를 기준선으로 유지한다.
+4. failed/pending chunk retry, stale OpenSearch cleanup, source freshness report 등 운영 복구 기능을 구현한다.
+5. blue-green reindex와 evaluation gate로 `rag_chunks_v2` 검증 후 alias switch 흐름을 구현한다.
 6. trace/debug CLI 또는 Admin API를 추가해 AI 답변의 source/chunk/model/prompt 근거를 조회할 수 있게 한다.
 7. 이후 URL/API connector, scheduler/worker, image OCR/vision, video transcript/timestamp RAG로 확장한다.
 

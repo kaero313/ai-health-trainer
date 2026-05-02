@@ -236,7 +236,7 @@ evaluation cases
  -> report markdown
 ```
 
-다음 단계에서는 `docs/RAG_EVALUATION_REPORT.md`를 생성해 실제 결과를 기록한다.
+현재 `validate-v1` CLI가 이 흐름을 실행하고 `docs/RAG_EVALUATION_REPORT.md`를 재생성한다.
 
 평가 기준:
 

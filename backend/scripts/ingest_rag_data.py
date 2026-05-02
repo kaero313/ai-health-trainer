@@ -123,14 +123,17 @@ async def _run_ingest(args: argparse.Namespace) -> None:
 
                 for file_path in files:
                     title, content = _read_document(file_path)
+                    _ = content
                     category = _infer_category(file_path.name)
-                    chunk_count = await rag_service.ingest_document(
+                    result = await rag_service.register_source(
+                        file_path=file_path,
                         title=title,
-                        content=content,
                         category=category,
-                        source=str(file_path),
                         tags=_infer_tags(file_path.name),
+                        source_type="internal_seed",
+                        refresh_policy="manual",
                     )
+                    chunk_count = int(result["chunks_active"])
                     total_files += 1
                     total_chunks += chunk_count
                     print(f"인제스트: {file_path.name} - {chunk_count} 청크 저장")
@@ -142,13 +145,16 @@ async def _run_ingest(args: argparse.Namespace) -> None:
                     raise ValueError("--file 사용 시 --category가 필요합니다")
 
                 title, content = _read_document(target_file)
-                chunk_count = await rag_service.ingest_document(
+                _ = content
+                result = await rag_service.register_source(
+                    file_path=target_file,
                     title=title,
-                    content=content,
                     category=args.category,
-                    source=str(target_file),
                     tags=_split_tags(args.tags),
+                    source_type="file",
+                    refresh_policy="manual",
                 )
+                chunk_count = int(result["chunks_active"])
                 total_files = 1
                 total_chunks = chunk_count
                 print(f"인제스트: {target_file.name} - {chunk_count} 청크 저장")

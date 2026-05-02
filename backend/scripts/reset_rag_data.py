@@ -29,8 +29,10 @@ async def reset_rag_data() -> None:
             if count > 0:
                 await session.execute(text("DELETE FROM ai_generation_traces"))
                 await session.execute(text("DELETE FROM rag_retrieval_traces"))
+                await session.execute(text("DELETE FROM rag_pipeline_decisions"))
                 await session.execute(text("DELETE FROM rag_ingest_jobs"))
                 await session.execute(text("DELETE FROM rag_chunks"))
+                await session.execute(text("DELETE FROM rag_embedding_cache"))
                 await session.execute(text("DELETE FROM rag_sources"))
                 await session.commit()
                 print(f"삭제 완료: {count}개 chunk와 관련 RAG 운영 레코드")

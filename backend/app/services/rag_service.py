@@ -310,6 +310,9 @@ class RAGService:
     async def delete_index(self) -> bool:
         return await self.index_service.delete_index()
 
+    async def index_status(self) -> dict[str, object]:
+        return await self.index_service.index_status()
+
     async def reindex(self, source_id: int | None = None) -> dict[str, int]:
         await self.ensure_index()
         stmt = (
@@ -451,9 +454,13 @@ class RAGService:
             job.source_id = existing_source.id
         self.db.add(job)
         await self.db.flush()
-        await self._save_pipeline_decision(decision, job_id=job.id, source_id=existing_source.id if existing_source else None)
 
         if decision.selected_action in {"skip_refresh", "manual_review_required", "defer_reembedding"}:
+            await self._save_pipeline_decision(
+                decision,
+                job_id=job.id,
+                source_id=existing_source.id if existing_source else None,
+            )
             job.status = "skipped"
             job.pipeline_stage = decision.selected_action
             job.skipped_reason = decision.reason_code
@@ -496,6 +503,8 @@ class RAGService:
             job.source_id = source.id
         else:
             source.version = next_source_version
+
+        await self._save_pipeline_decision(decision, job_id=job.id, source_id=source.id)
 
         self._apply_source_metadata(
             source,
