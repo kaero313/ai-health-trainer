@@ -752,11 +752,13 @@ RAG 품질은 "검색 품질"과 "생성 품질"을 분리해서 평가한다.
 
 ### 다음 구현 우선순위
 
-1. 저작권 리스크가 낮은 내부 요약 seed 문서 추가
-2. RAG evaluation seed와 회귀 테스트 추가
-3. README에 RAG 운영 아키텍처 다이어그램 추가
-4. OpenSearch hybrid score weight 평가/튜닝
-5. Admin API 또는 debug endpoint 추가 여부 결정
+1. `docs/RAG_ADVANCED_PORTFOLIO_ROADMAP.md` 기준으로 고급 RAG/AI 백엔드 포트폴리오 backlog를 계속 추적한다.
+2. `docs/RAG_DECISION_POLICY.md` 기준으로 상황별 refresh/reindex/fallback 의사결정을 trace로 남긴다.
+3. `docs/RAG_PIPELINE_ARCHITECTURE.md` 기준으로 RAG Pipeline Control Plane을 구현한다.
+4. 문서/PDF vertical slice를 먼저 완성한다: source registry, parser/chunker, refresh CLI, reindex, evaluation report.
+5. OpenSearch E2E ingest/evaluate를 실행하고 `docs/RAG_EVALUATION_REPORT.md`로 결과를 남긴다.
+6. trace/debug CLI 또는 Admin API를 추가해 AI 답변의 source/chunk/model/prompt 근거를 조회할 수 있게 한다.
+7. 이후 URL/API connector, scheduler/worker, image OCR/vision, video transcript/timestamp RAG로 확장한다.
 
 ---
 

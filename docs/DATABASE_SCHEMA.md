@@ -388,3 +388,14 @@ alembic upgrade head
 # 롤백
 alembic downgrade -1
 ```
+
+---
+
+## RAG Decision/Policy Layer Addendum
+
+RAG v1 고도화부터 RAG 테이블은 단순 검색 저장소가 아니라 운영 의사결정 원장 역할도 한다.
+
+- `rag_embedding_cache`: `embedding_input_hash + embedding_model + embedding_dim + normalization_version` 기준 embedding 재사용 캐시
+- `rag_pipeline_decisions`: refresh/reindex/fallback 상황별 `policy_version`, `selected_action`, `risk_level`, `reason_code`, `context`, `tradeoffs` 기록
+- `rag_chunks`: `anchor_hash`, `embedding_input_hash`, `index_payload_hash`, `chunk_strategy`, `chunk_anchor`, `source_version`, `metadata`로 chunk lineage 추적
+- `rag_ingest_jobs`: `parser_confidence`, `change_ratio`, `embedding_reuse_count`, `reembedding_count`, `index_skip_count`, `estimated_embedding_seconds`, `latency_ms`, `skipped_reason`으로 운영 판단 지표 저장
