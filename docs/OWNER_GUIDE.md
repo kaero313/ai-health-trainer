@@ -17,6 +17,9 @@
 | `docs/DATABASE_SCHEMA.md` | DB 테이블/관계/계산식 상세 |
 | `docs/AI_RAG_STRATEGY.md` | AI 프롬프트, Gemini/RAG 전략 |
 | `docs/RAG_OPERATIONS.md` | RAG 지식 수집/정제/버전/OpenSearch 색인/삭제/추적 운영 정책 |
+| `docs/RAG_ADVANCED_PORTFOLIO_ROADMAP.md` | 고급 RAG/AI 백엔드 포트폴리오 고도화 로드맵 |
+| `docs/RAG_PIPELINE_ARCHITECTURE.md` | RAG source registry, parser/chunker, refresh/reindex 파이프라인 기준 |
+| `docs/RAG_DECISION_POLICY.md` | RAG 변경 감지, 재임베딩, fallback 상황별 의사결정 정책 |
 | `docs/FLUTTER_UI_DESIGN.md` | Flutter 화면별 UI/UX 상세 설계 |
 | `docs/DEPLOYMENT.md` | Docker/Nginx/배포 상세 |
 | `docs/DEVELOPMENT_GUIDE.md` | 개발 컨벤션과 구현 순서 기록 |

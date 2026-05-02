@@ -43,6 +43,15 @@ RAG 운영 명령:
 docker compose exec backend python -m app.cli.rag ensure-index
 docker compose exec backend python backend/scripts/ingest_rag_data.py --dir rag_data
 docker compose exec backend python -m app.cli.rag evaluate
+docker compose exec backend python -m app.cli.rag parse-preview --file rag_data/nutrition_basics.md
+docker compose exec backend python -m app.cli.rag refresh-source --source-id 1
+docker compose exec backend python -m app.cli.rag decisions --job-id 1
 ```
 
 상세 운영 기준은 `docs/RAG_OPERATIONS.md`를 기준으로 한다.
+
+고급 RAG/AI 백엔드 포트폴리오 고도화 기준:
+
+- `docs/RAG_ADVANCED_PORTFOLIO_ROADMAP.md`
+- `docs/RAG_PIPELINE_ARCHITECTURE.md`
+- `docs/RAG_DECISION_POLICY.md`
