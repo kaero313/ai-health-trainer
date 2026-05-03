@@ -79,6 +79,9 @@ class SourceMetadata(BaseModel):
     normalized_content_hash: str
     parser_confidence: float
     skipped_sections: int = 0
+    parent_section_count: int = 0
+    parent_section_hashes: list[str] = Field(default_factory=list)
+    fetch_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ChunkMetadata(BaseModel):
@@ -94,6 +97,12 @@ class ChunkMetadata(BaseModel):
     char_range: list[int] | None = None
     split_reason: str | None = None
     merge_reason: str | None = None
+    parent_heading_path: list[str] | None = None
+    parent_section_hash: str | None = None
+    source_anchor: str | None = None
+    source_url: str | None = None
+    source_content_type: str | None = None
+    chunk_role: str | None = None
     anchor_inputs: dict[str, Any] = Field(default_factory=dict)
     embedding_reuse: dict[str, Any] = Field(default_factory=dict)
 
