@@ -532,15 +532,18 @@ class RAGChunkPlanner:
         max_chars: int = DEFAULT_MAX_CHUNK_CHARS,
     ) -> list[ChunkPlan]:
         chunk_strategy = self._strategy_for_parser(parsed.parser_type)
-        raw_chunks: list[tuple[ParsedSection, str, int, int, str | None]] = []
-        for section in parsed.sections:
-            normalized_section = normalize_text(section.text)
-            if not normalized_section:
-                continue
-            parts = split_over_max(normalized_section, max_chars)
-            for split_idx, part in enumerate(parts, start=1):
-                split_reason = "max_chars" if len(parts) > 1 else None
-                raw_chunks.append((section, part, split_idx, len(parts), split_reason))
+        if parsed.parser_type == "html":
+            raw_chunks = self._html_evidence_chunks(parsed.sections, max(max_chars, int(max_chars * 1.5)))
+        else:
+            raw_chunks: list[tuple[ParsedSection, str, int, int, str | None]] = []
+            for section in parsed.sections:
+                normalized_section = normalize_text(section.text)
+                if not normalized_section:
+                    continue
+                parts = split_over_max(normalized_section, max_chars)
+                for split_idx, part in enumerate(parts, start=1):
+                    split_reason = "max_chars" if len(parts) > 1 else None
+                    raw_chunks.append((section, part, split_idx, len(parts), split_reason))
 
         merged = self._merge_short_chunks(raw_chunks, min_chars, max_chars)
         plans: list[ChunkPlan] = []
@@ -552,6 +555,10 @@ class RAGChunkPlanner:
                 "parser_type": parsed.parser_type,
                 "chunk_strategy": chunk_strategy,
                 "section_path": section.section_path,
+                "parent_heading_path": section.parent_heading_path,
+                "parent_section_hash": section.parent_section_hash,
+                "source_anchor": section.source_anchor,
+                "source_url": section.source_url,
                 "page_number": section.page_number,
                 "paragraph_range": list(section.paragraph_range) if section.paragraph_range else None,
                 "split_index": split_idx if split_total > 1 else None,
@@ -582,6 +589,12 @@ class RAGChunkPlanner:
                 char_range=list(section.char_range) if section.char_range else None,
                 split_reason=split_reason,
                 merge_reason=merge_reason,
+                parent_heading_path=section.parent_heading_path,
+                parent_section_hash=section.parent_section_hash,
+                source_anchor=section.source_anchor,
+                source_url=section.source_url,
+                source_content_type=section.source_content_type,
+                chunk_role="child_evidence" if parsed.parser_type == "html" else None,
                 anchor_inputs=anchor_inputs,
             ).model_dump(exclude_none=True)
             plans.append(
@@ -594,7 +607,7 @@ class RAGChunkPlanner:
                     embedding_input_hash=embedding_input_hash,
                     index_payload_hash=index_payload_hash,
                     chunk_strategy=chunk_strategy,
-                    chunk_anchor=json.dumps(anchor_inputs, ensure_ascii=False, sort_keys=True),
+                    chunk_anchor=self._chunk_anchor(anchor_inputs),
                     page_number=section.page_number,
                     token_count=estimate_token_count(content),
                     metadata=metadata,
@@ -606,6 +619,8 @@ class RAGChunkPlanner:
     def _strategy_for_parser(parser_type: str) -> str:
         if parser_type == "markdown":
             return "section"
+        if parser_type == "html":
+            return "hybrid_evidence"
         if parser_type == "pdf_text":
             return "page_paragraph"
         return "paragraph"
@@ -614,6 +629,17 @@ class RAGChunkPlanner:
     def _chunk_title(source_title: str, section: ParsedSection, index: int, total: int) -> str:
         title = section.title or source_title
         return f"{title} ({index}/{total})"
+
+    @staticmethod
+    def _chunk_anchor(anchor_inputs: dict[str, Any]) -> str:
+        label = (
+            anchor_inputs.get("source_anchor")
+            or " > ".join(anchor_inputs.get("section_path") or [])
+            or anchor_inputs.get("source_uri")
+            or "chunk"
+        )
+        compact_label = re.sub(r"\s+", "-", str(label).strip().lower())[:180].strip("-")
+        return f"{compact_label or 'chunk'}:{hash_json(anchor_inputs)[:16]}"
 
     @staticmethod
     def _merge_short_chunks(
@@ -628,7 +654,7 @@ class RAGChunkPlanner:
                 continue
             prev_section, prev_content, prev_split_idx, prev_split_total, prev_split_reason, prev_merge_reason = merged[-1]
             candidate = f"{prev_content}\n\n{content}"
-            if len(candidate) <= max_chars:
+            if len(candidate) <= max_chars and RAGChunkPlanner._can_merge_sections(prev_section, section):
                 merged[-1] = (
                     prev_section,
                     candidate,
@@ -640,6 +666,75 @@ class RAGChunkPlanner:
             else:
                 merged.append((section, content, split_idx, split_total, split_reason, None))
         return merged
+
+    @staticmethod
+    def _can_merge_sections(left: ParsedSection, right: ParsedSection) -> bool:
+        if left.parent_section_hash or right.parent_section_hash:
+            return left.parent_section_hash == right.parent_section_hash
+        return left.section_path == right.section_path and left.page_number == right.page_number
+
+    @staticmethod
+    def _html_evidence_chunks(
+        sections: list[ParsedSection],
+        max_chars: int,
+    ) -> list[tuple[ParsedSection, str, int, int, str | None]]:
+        raw_chunks: list[tuple[ParsedSection, str, int, int, str | None]] = []
+        current_section: ParsedSection | None = None
+        current_content = ""
+        current_start_paragraph: int | None = None
+        current_end_paragraph: int | None = None
+
+        def flush() -> None:
+            nonlocal current_section, current_content, current_start_paragraph, current_end_paragraph
+            if current_section is None or not current_content:
+                return
+            grouped_section = ParsedSection(
+                title=current_section.title,
+                text=current_content,
+                section_path=current_section.section_path,
+                paragraph_range=(
+                    current_start_paragraph or 1,
+                    current_end_paragraph or current_start_paragraph or 1,
+                ),
+                parent_heading_path=current_section.parent_heading_path,
+                parent_section_hash=current_section.parent_section_hash,
+                source_anchor=current_section.source_anchor,
+                source_url=current_section.source_url,
+                source_content_type=current_section.source_content_type,
+            )
+            raw_chunks.append((grouped_section, current_content, 1, 1, None))
+            current_section = None
+            current_content = ""
+            current_start_paragraph = None
+            current_end_paragraph = None
+
+        for section in sections:
+            normalized_section = normalize_text(section.text)
+            if not normalized_section:
+                continue
+            parts = split_over_max(normalized_section, max_chars)
+            for split_idx, part in enumerate(parts, start=1):
+                split_reason = "max_chars" if len(parts) > 1 else None
+                if split_reason:
+                    flush()
+                    raw_chunks.append((section, part, split_idx, len(parts), split_reason))
+                    continue
+                same_parent = (
+                    current_section is not None
+                    and current_section.parent_section_hash == section.parent_section_hash
+                )
+                candidate = f"{current_content}\n\n{part}" if current_content else part
+                if not same_parent or len(candidate) > max_chars:
+                    flush()
+                    current_section = section
+                    current_content = part
+                    current_start_paragraph = section.paragraph_range[0] if section.paragraph_range else None
+                    current_end_paragraph = section.paragraph_range[1] if section.paragraph_range else current_start_paragraph
+                    continue
+                current_content = candidate
+                current_end_paragraph = section.paragraph_range[1] if section.paragraph_range else current_end_paragraph
+        flush()
+        return raw_chunks
 
 
 class RAGDecisionPolicy:
