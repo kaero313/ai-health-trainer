@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "description": "Official RAG source catalog for AI Health Trainer v1 URL acquisition.",
+  "sources": [
+    {
+      "key": "odphp_physical_activity_guidelines_qa",
+      "url": "https://odphp.health.gov/our-work/nutrition-physical-activity/physical-activity-guidelines/about-physical-activity-guidelines/questions-answers",
+      "title": "ODPHP Physical Activity Guidelines Questions and Answers",
+      "category": "exercise",
+      "tags": ["physical-activity", "guideline", "safety", "public-health"],
+      "source_type": "official_guideline",
+      "source_grade": "A",
+      "license": "public-sector-official-webpage",
+      "language": "en",
+      "author_or_org": "U.S. Department of Health and Human Services, Office of Disease Prevention and Health Promotion",
+      "refresh_policy": "scheduled",
+      "refresh_interval_hours": 720
+    },
+    {
+      "key": "cdc_nutrition_guidelines_recommendations",
+      "url": "https://www.cdc.gov/nutrition/php/guidelines-recommendations/index.html",
+      "title": "CDC Nutrition Guidelines and Recommendations",
+      "category": "nutrition",
+      "tags": ["nutrition", "guideline", "diet", "public-health"],
+      "source_type": "official_guideline",
+      "source_grade": "A",
+      "license": "public-sector-official-webpage",
+      "language": "en",
+      "author_or_org": "Centers for Disease Control and Prevention",
+      "refresh_policy": "scheduled",
+      "refresh_interval_hours": 720
+    },
+    {
+      "key": "nih_ods_exercise_athletic_performance_fact_sheet",
+      "url": "https://ods.od.nih.gov/factsheets/ExerciseAndAthleticPerformance-HealthProfessional/",
+      "title": "NIH ODS Dietary Supplements for Exercise and Athletic Performance Fact Sheet",
+      "category": "supplement",
+      "tags": ["supplement", "exercise", "athletic-performance", "safety", "fact-sheet"],
+      "source_type": "official_guideline",
+      "source_grade": "A",
+      "license": "public-sector-official-webpage",
+      "language": "en",
+      "author_or_org": "National Institutes of Health Office of Dietary Supplements",
+      "refresh_policy": "scheduled",
+      "refresh_interval_hours": 720
+    }
+  ]
+}
