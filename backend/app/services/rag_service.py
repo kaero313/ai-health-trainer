@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import and_, select, text, update
+from sqlalchemy import and_, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
@@ -33,6 +34,7 @@ from app.services.rag_pipeline import (
     origin_type_for_path,
     split_over_max,
 )
+from app.services.rag_source_acquisition import FetchedUrlContent, RAGUrlFetcher
 
 try:
     from google import genai
@@ -47,6 +49,7 @@ class RAGService:
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY) if genai is not None else None
         self.index_service = RAGIndexService(settings)
         self.parser = RAGDocumentParser()
+        self.url_fetcher = RAGUrlFetcher(settings)
         self.chunk_planner = RAGChunkPlanner()
         self.decision_policy = RAGDecisionPolicy()
 
@@ -195,6 +198,50 @@ class RAGService:
                     "preview": plan.content[:240],
                 }
                 for plan in plans
+            ],
+        }
+
+    async def fetch_preview_url(self, url: str, *, title: str | None = None) -> dict[str, object]:
+        fetched = await self.url_fetcher.fetch(url)
+        parsed = self._parse_fetched_url(fetched, title=title)
+        plans = self._build_chunk_plans(
+            parsed,
+            source_title=parsed.title,
+            category="preview",
+            tags=[],
+            source_grade="A",
+            source_version=1,
+        )
+        parent_sections = self._parent_section_preview(plans)
+        return {
+            "url": url,
+            "final_url": fetched.final_url,
+            "content_type": fetched.content_type,
+            "http_headers": {
+                "etag": fetched.etag,
+                "last_modified": fetched.last_modified,
+            },
+            "raw_content_hash": fetched.raw_content_hash,
+            "normalized_content_hash": parsed.content_hash,
+            "title": parsed.title,
+            "parser_type": parsed.parser_type,
+            "parser_version": parsed.parser_version,
+            "parser_confidence": parsed.parser_confidence,
+            "parent_sections_total": len(parent_sections),
+            "child_chunks_total": len(plans),
+            "parent_sections": parent_sections[:20],
+            "child_chunks": [
+                {
+                    "chunk_index": plan.chunk_index,
+                    "title": plan.title,
+                    "content_hash": plan.content_hash,
+                    "parent_heading_path": plan.metadata.get("parent_heading_path"),
+                    "parent_section_hash": plan.metadata.get("parent_section_hash"),
+                    "chunk_strategy": plan.chunk_strategy,
+                    "token_count": plan.token_count,
+                    "preview": plan.content[:240],
+                }
+                for plan in plans[:20]
             ],
         }
 
@@ -374,6 +421,57 @@ class RAGService:
             .where(RagRetrievalTrace.rag_trace_group_id == trace_group_id)
             .values(request_id=request_id)
         )
+
+    def _parse_fetched_url(
+        self,
+        fetched: FetchedUrlContent,
+        *,
+        title: str | None = None,
+        extra_metadata: dict[str, object | None] | None = None,
+    ) -> ParsedDocument:
+        metadata = fetched.metadata()
+        if extra_metadata:
+            metadata.update({key: value for key, value in extra_metadata.items() if value is not None})
+        return self.parser.parse_html(
+            fetched.text,
+            title=title,
+            source_uri=fetched.requested_url,
+            source_url=fetched.final_url,
+            content_type=fetched.content_type,
+            fetch_metadata=metadata,
+        )
+
+    async def _find_existing_url_source(self, requested_url: str, final_url: str) -> RagSource | None:
+        url_values = list({requested_url, final_url})
+        stmt = (
+            select(RagSource)
+            .where(
+                RagSource.status == "active",
+                RagSource.origin_type == "url_html",
+                or_(RagSource.origin_uri.in_(url_values), RagSource.source_url.in_(url_values)),
+            )
+            .order_by(RagSource.id.asc())
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    @staticmethod
+    def _parent_section_preview(plans: list[ChunkPlan]) -> list[dict[str, object]]:
+        sections: dict[str, dict[str, object]] = {}
+        for plan in plans:
+            parent_hash = str(plan.metadata.get("parent_section_hash") or "")
+            if not parent_hash:
+                continue
+            record = sections.setdefault(
+                parent_hash,
+                {
+                    "parent_section_hash": parent_hash,
+                    "parent_heading_path": plan.metadata.get("parent_heading_path"),
+                    "child_chunk_count": 0,
+                },
+            )
+            record["child_chunk_count"] = int(record["child_chunk_count"]) + 1
+        return list(sections.values())
 
     async def _ingest_parsed_document(
         self,
