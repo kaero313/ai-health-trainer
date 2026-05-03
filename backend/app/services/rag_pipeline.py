@@ -15,9 +15,14 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional until PDF ingest is used
     PdfReader = None  # type: ignore[assignment]
 
+try:
+    from bs4 import BeautifulSoup
+except ModuleNotFoundError:  # pragma: no cover - optional until HTML ingest is used
+    BeautifulSoup = None  # type: ignore[assignment]
+
 
 NORMALIZATION_VERSION = "chunk-normalize-v1"
-CHUNKER_VERSION = "structure-chunker-v1"
+CHUNKER_VERSION = "structure-chunker-v2"
 POLICY_VERSION = "rag-policy-v1"
 HASH_SCHEMA_VERSION = 1
 METADATA_SCHEMA_VERSION = 1
@@ -29,6 +34,7 @@ PARSER_VERSIONS = {
     "markdown": "markdown-parser-v1",
     "text": "text-parser-v1",
     "pdf_text": "pdf-text-parser-v1",
+    "html": "html-parser-v1",
 }
 
 
@@ -40,6 +46,11 @@ class ParsedSection:
     page_number: int | None = None
     paragraph_range: tuple[int, int] | None = None
     char_range: tuple[int, int] | None = None
+    parent_heading_path: list[str] | None = None
+    parent_section_hash: str | None = None
+    source_anchor: str | None = None
+    source_url: str | None = None
+    source_content_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +65,7 @@ class ParsedDocument:
     normalized_content: str
     sections: list[ParsedSection]
     skipped_sections: int = 0
+    fetch_metadata: dict[str, Any] | None = None
 
 
 class SourceMetadata(BaseModel):
@@ -247,6 +259,146 @@ class RAGDocumentParser:
             sections=sections,
         )
 
+    def parse_html(
+        self,
+        content: str,
+        *,
+        title: str | None = None,
+        source_uri: str | None = None,
+        source_url: str | None = None,
+        content_type: str | None = None,
+        fetch_metadata: dict[str, Any] | None = None,
+    ) -> ParsedDocument:
+        if BeautifulSoup is None:
+            raise ValueError("beautifulsoup4 is required for html parsing")
+
+        raw_hash = hash_text(content)
+        soup = BeautifulSoup(content, "html.parser")
+        html_title = self._html_title(soup)
+        document_title = title or html_title or source_uri or "HTML source"
+
+        for selector in ["script", "style", "noscript", "nav", "footer", "header", "svg"]:
+            for node in soup.select(selector):
+                node.decompose()
+
+        root = soup.find("main") or soup.find("article") or soup.body or soup
+        parent_records: list[dict[str, Any]] = []
+        heading_stack: list[str] = ["Document"]
+        current_children: list[str] = []
+        current_heading_seen = False
+        skip_current_parent = False
+        paragraph_counter = 1
+        skipped = 0
+
+        def flush_parent() -> None:
+            nonlocal current_children
+            normalized_children = [normalize_text(child) for child in current_children if normalize_text(child)]
+            if normalized_children:
+                parent_records.append(
+                    {
+                        "heading_path": list(heading_stack),
+                        "children": normalized_children,
+                        "heading_seen": current_heading_seen,
+                    }
+                )
+            current_children = []
+
+        for element in root.find_all(["h1", "h2", "h3", "p", "li", "tr"], recursive=True):
+            name = str(element.name or "").lower()
+            if name in {"h1", "h2", "h3"}:
+                heading = self._html_clean_text(element.get_text(" ", strip=True))
+                if not heading:
+                    continue
+                flush_parent()
+                skip_current_parent = self._is_html_boilerplate_heading(heading)
+                level = int(name[1])
+                if heading_stack == ["Document"]:
+                    heading_stack = []
+                heading_stack = heading_stack[: level - 1] + [heading]
+                current_heading_seen = True
+                continue
+
+            if skip_current_parent:
+                skipped += 1
+                continue
+            if name in {"p", "li"} and element.find_parent("tr") is not None:
+                continue
+            if name == "p" and element.find_parent("li") is not None:
+                continue
+            if name == "tr":
+                cells = [
+                    self._html_clean_text(cell.get_text(" ", strip=True))
+                    for cell in element.find_all(["th", "td"], recursive=False)
+                ]
+                text_value = " | ".join(cell for cell in cells if cell)
+            else:
+                text_value = self._html_clean_text(element.get_text(" ", strip=True))
+
+            if text_value and not self._is_html_boilerplate_text(text_value):
+                current_children.append(text_value)
+            else:
+                skipped += 1
+        flush_parent()
+
+        sections: list[ParsedSection] = []
+        all_section_texts: list[str] = []
+        parent_hashes: list[str] = []
+        for parent_index, record in enumerate(parent_records, start=1):
+            heading_path = record["heading_path"] or ["Document"]
+            parent_text = "\n\n".join(record["children"])
+            parent_hash = hash_json(
+                {
+                    "source_uri": source_uri,
+                    "source_url": source_url,
+                    "heading_path": heading_path,
+                    "parent_text_hash": hash_text(parent_text),
+                }
+            )
+            parent_hashes.append(parent_hash)
+            parent_anchor = self._html_anchor(heading_path, parent_index)
+            heading_label = " > ".join(heading_path)
+            for child in record["children"]:
+                child_text = f"{heading_label}\n\n{child}" if heading_label else child
+                sections.append(
+                    ParsedSection(
+                        title=heading_path[-1] if heading_path else document_title,
+                        text=child_text,
+                        section_path=list(heading_path),
+                        paragraph_range=(paragraph_counter, paragraph_counter),
+                        parent_heading_path=list(heading_path),
+                        parent_section_hash=parent_hash,
+                        source_anchor=parent_anchor,
+                        source_url=source_url,
+                        source_content_type=content_type,
+                    )
+                )
+                all_section_texts.append(child_text)
+                paragraph_counter += 1
+
+        normalized_content = normalize_text("\n\n".join(all_section_texts))
+        parser_confidence = self._html_confidence(
+            sections=sections,
+            normalized_content=normalized_content,
+            heading_count=sum(1 for record in parent_records if record.get("heading_seen")),
+        )
+        metadata = dict(fetch_metadata or {})
+        metadata["parent_section_hashes"] = parent_hashes
+        metadata["parent_section_count"] = len(parent_hashes)
+
+        return ParsedDocument(
+            title=document_title,
+            source_uri=source_uri,
+            parser_type="html",
+            parser_version=PARSER_VERSIONS["html"],
+            parser_confidence=parser_confidence,
+            content_hash=hash_text(normalized_content),
+            raw_content_hash=raw_hash,
+            normalized_content=normalized_content,
+            sections=sections,
+            skipped_sections=skipped,
+            fetch_metadata=metadata,
+        )
+
     def _parse_pdf(self, path: Path) -> ParsedDocument:
         if PdfReader is None:
             raise ValueError("pypdf is required for pdf_text parsing")
@@ -293,6 +445,66 @@ class RAGDocumentParser:
             sections=sections,
             skipped_sections=skipped,
         )
+
+    @staticmethod
+    def _html_title(soup: Any) -> str | None:
+        title_node = soup.find("title")
+        if title_node:
+            title = RAGDocumentParser._html_clean_text(title_node.get_text(" ", strip=True))
+            if title:
+                return title
+        h1_node = soup.find("h1")
+        if h1_node:
+            title = RAGDocumentParser._html_clean_text(h1_node.get_text(" ", strip=True))
+            if title:
+                return title
+        return None
+
+    @staticmethod
+    def _html_clean_text(value: str) -> str:
+        return re.sub(r"\s+", " ", value or "").strip()
+
+    @staticmethod
+    def _html_anchor(heading_path: list[str], index: int) -> str:
+        slug = "-".join(
+            re.sub(r"[^a-z0-9]+", "-", item.lower()).strip("-")
+            for item in heading_path
+            if item.strip()
+        )
+        return slug[:180] or f"section-{index}"
+
+    @staticmethod
+    def _html_confidence(*, sections: list[ParsedSection], normalized_content: str, heading_count: int) -> float:
+        if not sections:
+            return 0.0
+        if heading_count and len(normalized_content) >= 300:
+            return 0.95
+        if heading_count:
+            return 0.82
+        if len(normalized_content) >= 300:
+            return 0.75
+        return 0.55
+
+    @staticmethod
+    def _is_html_boilerplate_heading(value: str) -> bool:
+        normalized = re.sub(r"\s+", " ", value or "").strip().lower()
+        return normalized in {
+            "on this page",
+            "related pages",
+            "related topics",
+            "more information",
+            "resources",
+            "for more information",
+        }
+
+    @staticmethod
+    def _is_html_boilerplate_text(value: str) -> bool:
+        normalized = re.sub(r"\s+", " ", value or "").strip().lower()
+        return normalized in {
+            "top of page",
+            "back to top",
+            "return to top",
+        }
 
 
 class RAGChunkPlanner:
