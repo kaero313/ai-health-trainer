@@ -283,6 +283,49 @@ class RAGService:
             force=False,
         )
 
+    async def register_url(
+        self,
+        *,
+        url: str,
+        title: str | None,
+        category: str,
+        tags: list[str] | None = None,
+        source_type: str = "official_guideline",
+        source_grade: str = "A",
+        license_value: str | None = None,
+        language: str = "en",
+        author_or_org: str | None = None,
+        refresh_policy: str = "scheduled",
+        refresh_interval_hours: int | None = 720,
+        catalog_key: str | None = None,
+        catalog_file: str | None = None,
+    ) -> dict[str, object]:
+        fetched = await self.url_fetcher.fetch(url)
+        parsed = self._parse_fetched_url(
+            fetched,
+            title=title,
+            extra_metadata={"catalog_key": catalog_key, "catalog_file": catalog_file},
+        )
+        existing_source = await self._find_existing_url_source(url, fetched.final_url)
+        return await self._ingest_parsed_document(
+            parsed=parsed,
+            title=title or parsed.title,
+            category=category,
+            source_url=fetched.final_url,
+            origin_type="url_html",
+            origin_uri=url,
+            tags=self._normalize_tags(tags),
+            source_type=source_type,
+            source_grade=source_grade,
+            license_value=license_value,
+            language=language,
+            author_or_org=author_or_org,
+            refresh_policy=refresh_policy,
+            refresh_interval_hours=refresh_interval_hours,
+            existing_source=existing_source,
+            force=False,
+        )
+
     async def refresh_source(self, source_id: int, *, force: bool = False) -> dict[str, object]:
         source = await self.db.get(RagSource, source_id)
         if source is None:
@@ -861,7 +904,13 @@ class RAGService:
             normalized_content_hash=parsed.content_hash,
             parser_confidence=parsed.parser_confidence,
             skipped_sections=parsed.skipped_sections,
+            parent_section_count=len(self._parent_section_hashes_from_parsed(parsed)),
+            parent_section_hashes=self._parent_section_hashes_from_parsed(parsed),
+            fetch_metadata=parsed.fetch_metadata or {},
         ).model_dump()
+        fetch_metadata = parsed.fetch_metadata or {}
+        source.external_etag = self._optional_str(fetch_metadata.get("etag"))
+        source.external_last_modified = self._parse_http_datetime(fetch_metadata.get("last_modified"))
 
     async def _search_opensearch(
         self,
@@ -1148,9 +1197,39 @@ class RAGService:
     def _strategy_for_parser(parser_type: str) -> str:
         if parser_type == "markdown":
             return "section"
+        if parser_type == "html":
+            return "hybrid_evidence"
         if parser_type == "pdf_text":
             return "page_paragraph"
         return "paragraph"
+
+    @staticmethod
+    def _parent_section_hashes_from_parsed(parsed: ParsedDocument) -> list[str]:
+        hashes: list[str] = []
+        seen: set[str] = set()
+        for section in parsed.sections:
+            if section.parent_section_hash and section.parent_section_hash not in seen:
+                seen.add(section.parent_section_hash)
+                hashes.append(section.parent_section_hash)
+        return hashes
+
+    @staticmethod
+    def _optional_str(value: object) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    @staticmethod
+    def _parse_http_datetime(value: object) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = parsedate_to_datetime(str(value))
+        except (TypeError, ValueError, IndexError, OverflowError):
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
 
     @staticmethod
     def _next_refresh_at(
