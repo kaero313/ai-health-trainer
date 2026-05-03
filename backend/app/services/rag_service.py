@@ -333,12 +333,18 @@ class RAGService:
         if not source.origin_uri:
             return {"status": "failed", "source_id": source_id, "error": "SOURCE_ORIGIN_URI_MISSING"}
 
-        parsed = self.parser.parse_file(source.origin_uri, parser_type=source.parser_type or "auto")
+        if source.origin_type == "url_html" or source.parser_type == "html":
+            fetched = await self.url_fetcher.fetch(source.origin_uri)
+            parsed = self._parse_fetched_url(fetched, title=source.title)
+            source_url = fetched.final_url
+        else:
+            parsed = self.parser.parse_file(source.origin_uri, parser_type=source.parser_type or "auto")
+            source_url = source.source_url
         return await self._ingest_parsed_document(
             parsed=parsed,
             title=source.title,
             category=source.category,
-            source_url=source.source_url,
+            source_url=source_url,
             origin_type=source.origin_type,
             origin_uri=source.origin_uri,
             tags=list(source.tags or []),
@@ -559,6 +565,12 @@ class RAGService:
             )
         )
         change_ratio = self._change_ratio(old_chunks, plans)
+        refresh_context = self._refresh_decision_context(
+            existing_source=existing_source,
+            old_chunks=old_chunks,
+            new_plans=plans,
+            parsed=parsed,
+        )
         estimated_embedding_count = self._estimate_new_embedding_count(old_chunks, plans)
         estimated_embedding_seconds = (
             estimated_embedding_count * self.settings.RAG_ESTIMATED_EMBEDDING_SECONDS_PER_CHUNK
@@ -575,6 +587,7 @@ class RAGService:
             parser_confidence_threshold=self.settings.RAG_PARSER_CONFIDENCE_THRESHOLD,
             source_grade=source_grade,
             category=category,
+            extra_context=refresh_context,
         )
 
         job = RagIngestJob(
@@ -1189,6 +1202,50 @@ class RAGService:
         return max(0.0, min(1.0, 1.0 - (stable / denominator)))
 
     @staticmethod
+    def _refresh_decision_context(
+        *,
+        existing_source: RagSource | None,
+        old_chunks: list[RagChunk],
+        new_plans: list[ChunkPlan],
+        parsed: ParsedDocument,
+    ) -> dict[str, object]:
+        old_parent_hashes = {
+            str((chunk.metadata_ or {}).get("parent_section_hash"))
+            for chunk in old_chunks
+            if (chunk.metadata_ or {}).get("parent_section_hash")
+        }
+        new_parent_hashes = {
+            str(plan.metadata.get("parent_section_hash"))
+            for plan in new_plans
+            if plan.metadata.get("parent_section_hash")
+        }
+        changed_sections = max(
+            len(new_parent_hashes - old_parent_hashes),
+            len(old_parent_hashes - new_parent_hashes),
+        )
+        total_sections = max(len(new_parent_hashes), len(old_parent_hashes), 0)
+        section_change_ratio = changed_sections / total_sections if total_sections else 0.0
+        fetch_metadata = parsed.fetch_metadata or {}
+        previous_metadata = existing_source.metadata_ if existing_source else {}
+        previous_fetch = previous_metadata.get("fetch_metadata") if isinstance(previous_metadata, dict) else {}
+        if not isinstance(previous_fetch, dict):
+            previous_fetch = {}
+
+        return {
+            "changed_section_count": changed_sections,
+            "total_section_count": total_sections,
+            "section_change_ratio": round(section_change_ratio, 4),
+            "etag_changed": _metadata_changed(previous_fetch.get("etag"), fetch_metadata.get("etag")),
+            "last_modified_changed": _metadata_changed(
+                previous_fetch.get("last_modified"),
+                fetch_metadata.get("last_modified"),
+            ),
+            "raw_content_hash": fetch_metadata.get("raw_content_hash"),
+            "final_url": fetch_metadata.get("final_url"),
+            "content_type": fetch_metadata.get("content_type"),
+        }
+
+    @staticmethod
     def _estimate_new_embedding_count(old_chunks: list[RagChunk], new_plans: list[ChunkPlan]) -> int:
         old_inputs = {chunk.embedding_input_hash for chunk in old_chunks}
         return sum(1 for plan in new_plans if plan.embedding_input_hash not in old_inputs)
@@ -1306,3 +1363,9 @@ class RAGService:
     @staticmethod
     def _estimate_token_count(value: str) -> int:
         return estimate_token_count(value)
+
+
+def _metadata_changed(previous: object, current: object) -> bool:
+    if previous in {None, ""} and current in {None, ""}:
+        return False
+    return previous != current

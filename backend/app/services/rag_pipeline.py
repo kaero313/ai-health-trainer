@@ -752,6 +752,7 @@ class RAGDecisionPolicy:
         parser_confidence_threshold: float,
         source_grade: str,
         category: str,
+        extra_context: dict[str, Any] | None = None,
     ) -> PipelineDecision:
         context = {
             "source_exists": source_exists,
@@ -766,6 +767,8 @@ class RAGDecisionPolicy:
             "source_grade": source_grade,
             "category": category,
         }
+        if extra_context:
+            context.update(extra_context)
 
         if parser_confidence < parser_confidence_threshold:
             return PipelineDecision(
@@ -779,18 +782,6 @@ class RAGDecisionPolicy:
                     "rejected": "automatic ingest despite likely parser loss",
                 },
             )
-        if source_exists and source_hash_same:
-            return PipelineDecision(
-                decision_type="ingest_refresh",
-                selected_action="skip_refresh",
-                risk_level="low",
-                reason_code="SOURCE_HASH_UNCHANGED",
-                context=context,
-                tradeoffs={
-                    "accepted": "avoid unnecessary parsing, embedding, and indexing work",
-                    "rejected": "forced reindex with no content change",
-                },
-            )
         if estimated_embedding_seconds > allowed_embedding_seconds:
             return PipelineDecision(
                 decision_type="ingest_refresh",
@@ -801,6 +792,18 @@ class RAGDecisionPolicy:
                 tradeoffs={
                     "accepted": "protect operational time budget and API quota",
                     "rejected": "blocking refresh until all embeddings complete",
+                },
+            )
+        if source_exists and source_hash_same and not parser_or_chunker_changed:
+            return PipelineDecision(
+                decision_type="ingest_refresh",
+                selected_action="skip_refresh",
+                risk_level="low",
+                reason_code="SOURCE_HASH_UNCHANGED",
+                context=context,
+                tradeoffs={
+                    "accepted": "avoid unnecessary parsing, embedding, and indexing work",
+                    "rejected": "forced reindex with no content change",
                 },
             )
         if not source_exists:
