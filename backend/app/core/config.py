@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     RAG_PARSER_CONFIDENCE_THRESHOLD: float = 0.70
     RAG_ALLOWED_REEMBEDDING_SECONDS: float = 300.0
     RAG_ESTIMATED_EMBEDDING_SECONDS_PER_CHUNK: float = 1.5
+    RAG_URL_FETCH_TIMEOUT_SECONDS: float = 20.0
+    RAG_URL_MAX_BYTES: int = 2_000_000
+    RAG_URL_USER_AGENT: str = "AIHealthTrainerRAG/1.0"
 
     UPLOAD_DIR: str = "/data/uploads"
     MAX_IMAGE_SIZE_MB: int = 10
