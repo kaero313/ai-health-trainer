@@ -66,6 +66,16 @@ async def _parse_preview(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+async def _fetch_preview(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGService(db, settings).fetch_preview_url(
+            args.url,
+            title=args.title,
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 async def _register_source(args: argparse.Namespace) -> None:
     settings = get_settings()
     async with AsyncSessionLocal() as db:
@@ -85,6 +95,56 @@ async def _register_source(args: argparse.Namespace) -> None:
             refresh_interval_hours=args.refresh_interval_hours,
         )
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _register_url(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGService(db, settings).register_url(
+            url=args.url,
+            title=args.title,
+            category=args.category,
+            tags=_split_tags(args.tags),
+            source_type=args.source_type,
+            source_grade=args.source_grade,
+            license_value=args.license,
+            language=args.language,
+            author_or_org=args.author_or_org,
+            refresh_policy=args.refresh_policy,
+            refresh_interval_hours=args.refresh_interval_hours,
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _ingest_catalog(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    catalog_path = Path(args.file)
+    payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+    sources = payload.get("sources", []) if isinstance(payload, dict) else payload
+    if not isinstance(sources, list):
+        raise SystemExit("Catalog file must contain a sources list")
+
+    results: list[dict[str, Any]] = []
+    async with AsyncSessionLocal() as db:
+        service = RAGService(db, settings)
+        for source in sources:
+            result = await service.register_url(
+                url=source["url"],
+                title=source.get("title"),
+                category=source["category"],
+                tags=source.get("tags") or [],
+                source_type=source.get("source_type", "official_guideline"),
+                source_grade=source.get("source_grade", "A"),
+                license_value=source.get("license"),
+                language=source.get("language", "en"),
+                author_or_org=source.get("author_or_org"),
+                refresh_policy=source.get("refresh_policy", "scheduled"),
+                refresh_interval_hours=source.get("refresh_interval_hours"),
+                catalog_key=source.get("key"),
+                catalog_file=str(catalog_path),
+            )
+            results.append({"key": source.get("key"), "url": source["url"], **result})
+    print(json.dumps({"catalog": str(catalog_path), "results": results}, ensure_ascii=False, indent=2))
 
 
 async def _refresh_source(args: argparse.Namespace) -> None:
@@ -151,6 +211,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         service = RAGService(db, settings)
         evaluation = await evaluate_retrieval(service, cases, top_k=args.top_k)
         db_counts = await _load_v1_db_counts(db)
+        url_source_summary = await _load_v1_url_source_summary(db)
         decision_summary = await _load_v1_decision_summary(db)
         recent_jobs = await _load_v1_recent_jobs(db, limit=args.job_limit)
         try:
@@ -167,6 +228,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
     report = {
         "evaluation": evaluation,
         "db_counts": db_counts,
+        "url_source_summary": url_source_summary,
         "decision_summary": decision_summary,
         "recent_jobs": recent_jobs,
         "index_status": index_status,
@@ -195,6 +257,38 @@ async def _load_v1_db_counts(db) -> dict[str, int]:
         )
     ).mappings().all()
     return {str(row["name"]): int(row["value"]) for row in rows}
+
+
+async def _load_v1_url_source_summary(db) -> dict[str, Any]:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                  count(*) FILTER (WHERE origin_type = 'url_html')::int AS url_source_count,
+                  count(*) FILTER (WHERE origin_type = 'url_html' AND metadata ? 'fetch_metadata'
+                    AND metadata->'fetch_metadata' ? 'catalog_key')::int AS catalog_source_count,
+                  count(*) FILTER (WHERE parser_type = 'html')::int AS html_parser_source_count,
+                  count(*) FILTER (WHERE source_grade = 'A')::int AS source_grade_a_count,
+                  count(*) FILTER (WHERE origin_type = 'url_html' AND external_etag IS NOT NULL)::int AS etag_present_count,
+                  count(*) FILTER (WHERE origin_type = 'url_html' AND external_last_modified IS NOT NULL)::int AS last_modified_present_count,
+                  count(*) FILTER (WHERE origin_type = 'url_html' AND next_refresh_at IS NOT NULL)::int AS scheduled_refresh_count,
+                  count(*) FILTER (WHERE origin_type = 'url_html' AND next_refresh_at <= now())::int AS stale_source_count
+                FROM rag_sources
+                """
+            )
+        )
+    ).mappings().one()
+    return {
+        "url_source_count": int(row["url_source_count"]),
+        "catalog_source_count": int(row["catalog_source_count"]),
+        "html_parser_source_count": int(row["html_parser_source_count"]),
+        "source_grade_a_count": int(row["source_grade_a_count"]),
+        "etag_present_count": int(row["etag_present_count"]),
+        "last_modified_present_count": int(row["last_modified_present_count"]),
+        "scheduled_refresh_count": int(row["scheduled_refresh_count"]),
+        "stale_source_count": int(row["stale_source_count"]),
+    }
 
 
 async def _load_v1_decision_summary(db) -> list[dict[str, Any]]:
@@ -358,6 +452,18 @@ def _write_v1_validation_report(report: dict[str, Any], report_path: Path) -> No
     lines.extend(
         [
             "",
+            "## URL Source Summary",
+            "",
+            "| Metric | Count |",
+            "|--------|-------|",
+        ]
+    )
+    for name, count in sorted((report.get("url_source_summary") or {}).items()):
+        lines.append(f"| `{name}` | {count} |")
+
+    lines.extend(
+        [
+            "",
             "## Decision Summary",
             "",
             "| Action | Reason | Count |",
@@ -445,6 +551,10 @@ def build_parser() -> argparse.ArgumentParser:
     preview.add_argument("--file", required=True, help="Document path")
     preview.add_argument("--parser", default="auto", help="auto, markdown, text, pdf_text")
 
+    fetch_preview = subparsers.add_parser("fetch-preview", help="Preview single-page URL acquisition and HTML chunking")
+    fetch_preview.add_argument("--url", required=True, help="Official source URL")
+    fetch_preview.add_argument("--title", default=None, help="Optional title override")
+
     ingest = subparsers.add_parser("ingest", help="Ingest a markdown/text document into RAG v2")
     ingest.add_argument("--file", required=True, help="Document path")
     ingest.add_argument("--title", required=True, help="Source title")
@@ -471,6 +581,22 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--author-or-org", default=None, help="Author or organization")
     register.add_argument("--refresh-policy", default="manual", choices=["manual", "scheduled", "never"], help="Refresh policy")
     register.add_argument("--refresh-interval-hours", type=int, default=None, help="Scheduled refresh interval")
+
+    register_url = subparsers.add_parser("register-url", help="Register and ingest a single official URL source")
+    register_url.add_argument("--url", required=True, help="Official source URL")
+    register_url.add_argument("--title", default=None, help="Source title")
+    register_url.add_argument("--category", required=True, help="RAG category")
+    register_url.add_argument("--tags", default="", help="Comma-separated tags")
+    register_url.add_argument("--source-type", default="official_guideline", help="Source type")
+    register_url.add_argument("--source-grade", default="A", help="Source trust grade")
+    register_url.add_argument("--license", default=None, help="License or usage note")
+    register_url.add_argument("--language", default="en", help="Document language")
+    register_url.add_argument("--author-or-org", default=None, help="Author or organization")
+    register_url.add_argument("--refresh-policy", default="scheduled", choices=["manual", "scheduled", "never"], help="Refresh policy")
+    register_url.add_argument("--refresh-interval-hours", type=int, default=720, help="Scheduled refresh interval")
+
+    ingest_catalog = subparsers.add_parser("ingest-catalog", help="Ingest official URL sources from a catalog JSON file")
+    ingest_catalog.add_argument("--file", required=True, help="Catalog JSON path")
 
     refresh_source = subparsers.add_parser("refresh-source", help="Refresh a registered source by source id")
     refresh_source.add_argument("--source-id", type=int, required=True, help="Source id")
@@ -513,10 +639,16 @@ async def _main() -> None:
         await _delete_index()
     elif args.command == "parse-preview":
         await _parse_preview(args)
+    elif args.command == "fetch-preview":
+        await _fetch_preview(args)
     elif args.command == "ingest":
         await _ingest(args)
     elif args.command == "register-source":
         await _register_source(args)
+    elif args.command == "register-url":
+        await _register_url(args)
+    elif args.command == "ingest-catalog":
+        await _ingest_catalog(args)
     elif args.command == "refresh-source":
         await _refresh_source(args)
     elif args.command == "refresh-due":
