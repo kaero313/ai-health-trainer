@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -8,10 +9,43 @@ from app.models.rag import RagChunk, RagEmbeddingCache, RagIngestJob, RagPipelin
 from app.models.user import User
 from app.services.rag_index_service import RAGIndexError
 from app.services.rag_service import RAGService
+from app.services.rag_source_acquisition import FetchedUrlContent
 
 
 def _embedding(value: float = 0.1) -> list[float]:
     return [value] * 3072
+
+
+class FakeUrlFetcher:
+    def __init__(self, *html_values: str, etag: str | None = '"v1"', last_modified: str | None = "Mon, 01 Jan 2024 00:00:00 GMT"):
+        self.html_values = list(html_values)
+        self.etag = etag
+        self.last_modified = last_modified
+        self.calls: list[str] = []
+
+    async def fetch(self, url: str) -> FetchedUrlContent:
+        self.calls.append(url)
+        if len(self.html_values) > 1:
+            html = self.html_values.pop(0)
+        else:
+            html = self.html_values[0]
+        return FetchedUrlContent(
+            requested_url=url,
+            final_url=url,
+            content_type="text/html; charset=utf-8",
+            etag=self.etag,
+            last_modified=self.last_modified,
+            fetched_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            raw_content=html.encode("utf-8"),
+            text=html,
+        )
+
+
+def _html_source(*section_bodies: str) -> str:
+    sections = []
+    for index, body in enumerate(section_bodies, start=1):
+        sections.append(f"<h2>Section {index}</h2><p>{body}</p>")
+    return "<html><head><title>Official Source</title></head><body><main><h1>Guide</h1>" + "".join(sections) + "</main></body></html>"
 
 
 def _synthetic_text_pdf(text_value: str) -> bytes:
@@ -255,6 +289,125 @@ async def test_refresh_source_skips_when_source_hash_is_unchanged(db_session, tm
     assert jobs[-1].status == "skipped"
     assert jobs[-1].skipped_reason == "SOURCE_HASH_UNCHANGED"
     assert decisions[-1].selected_action == "skip_refresh"
+
+
+@pytest.mark.asyncio
+async def test_fetch_preview_url_returns_html_acquisition_and_hybrid_chunk_metadata(db_session):
+    html = _html_source(
+        "Adults should combine aerobic movement with muscle-strengthening activity for general health.",
+        "Safety guidance should be reviewed when symptoms or medical concerns are present.",
+    )
+    service = RAGService(db_session, get_settings())
+    service.url_fetcher = FakeUrlFetcher(html)
+
+    result = await service.fetch_preview_url("https://example.org/official-guide")
+
+    assert result["final_url"] == "https://example.org/official-guide"
+    assert result["content_type"] == "text/html; charset=utf-8"
+    assert result["parser_type"] == "html"
+    assert result["child_chunks_total"] >= 2
+    assert result["parent_sections_total"] >= 2
+    first_chunk = result["child_chunks"][0]
+    assert first_chunk["chunk_strategy"] == "hybrid_evidence"
+    assert first_chunk["parent_section_hash"]
+
+
+@pytest.mark.asyncio
+async def test_register_url_persists_source_fetch_metadata_and_parent_lineage(db_session):
+    html = _html_source(
+        "A source grade A guideline paragraph long enough to create an evidence chunk for retrieval and tracing.",
+        "A second guideline paragraph keeps parent section lineage visible in chunk metadata.",
+    )
+    service = RAGService(db_session, get_settings())
+    service.url_fetcher = FakeUrlFetcher(html)
+    service.get_embedding = AsyncMock(return_value=_embedding())
+    service.index_service.index_chunk = AsyncMock(return_value=None)
+
+    result = await service.register_url(
+        url="https://example.org/official-guide",
+        title=None,
+        category="exercise",
+        tags=["guideline", "official"],
+        license_value="official-webpage",
+        author_or_org="Example Health Agency",
+        catalog_key="example_official_guide",
+    )
+
+    source = await db_session.get(RagSource, int(result["source_id"]))
+    chunks = (await db_session.execute(select(RagChunk).order_by(RagChunk.id))).scalars().all()
+    decision = (await db_session.execute(select(RagPipelineDecision))).scalar_one()
+
+    assert source is not None
+    assert source.origin_type == "url_html"
+    assert source.parser_type == "html"
+    assert source.chunk_strategy == "hybrid_evidence"
+    assert source.source_grade == "A"
+    assert source.external_etag == '"v1"'
+    assert source.external_last_modified is not None
+    assert source.metadata_["fetch_metadata"]["catalog_key"] == "example_official_guide"
+    assert source.metadata_["parent_section_count"] >= 2
+    assert chunks[0].chunk_strategy == "hybrid_evidence"
+    assert chunks[0].metadata_["chunk_role"] == "child_evidence"
+    assert chunks[0].metadata_["parent_section_hash"]
+    assert decision.context["total_section_count"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_refresh_url_records_skip_and_partial_section_change_context(db_session):
+    original = _html_source(
+        "Stable section one content.",
+        "Stable section two content.",
+        "Stable section three content.",
+        "Stable section four content.",
+    )
+    changed = _html_source(
+        "Changed section one content with updated operational guidance.",
+        "Stable section two content.",
+        "Stable section three content.",
+        "Stable section four content.",
+    )
+    service = RAGService(db_session, get_settings())
+    service.url_fetcher = FakeUrlFetcher(original, original, changed)
+    service.get_embedding = AsyncMock(return_value=_embedding())
+    service.index_service.index_chunk = AsyncMock(return_value=None)
+    service.index_service.delete_chunk = AsyncMock(return_value=None)
+
+    created = await service.register_url(
+        url="https://example.org/refreshable-guide",
+        title="Refreshable Guide",
+        category="exercise",
+        tags=["refresh"],
+        license_value="official-webpage",
+    )
+    skipped = await service.refresh_source(int(created["source_id"]))
+    partial = await service.refresh_source(int(created["source_id"]))
+
+    decisions = (await db_session.execute(select(RagPipelineDecision).order_by(RagPipelineDecision.id))).scalars().all()
+    assert skipped["decision"] == "skip_refresh"
+    assert partial["decision"] == "partial_refresh"
+    assert decisions[-1].context["changed_section_count"] == 1
+    assert decisions[-1].context["total_section_count"] == 4
+    assert decisions[-1].context["section_change_ratio"] == 0.25
+
+
+@pytest.mark.asyncio
+async def test_register_url_requires_manual_review_for_low_quality_html(db_session):
+    service = RAGService(db_session, get_settings())
+    service.url_fetcher = FakeUrlFetcher("<html><body><main><p>too short</p></main></body></html>")
+    service.get_embedding = AsyncMock(return_value=_embedding())
+    service.index_service.index_chunk = AsyncMock(return_value=None)
+
+    result = await service.register_url(
+        url="https://example.org/low-quality",
+        title="Low Quality",
+        category="exercise",
+        tags=["low-quality"],
+    )
+    decisions = (await db_session.execute(select(RagPipelineDecision))).scalars().all()
+
+    assert result["decision"] == "manual_review_required"
+    assert result["source_id"] is None
+    assert decisions[0].reason_code == "LOW_PARSER_CONFIDENCE"
 
 
 @pytest.mark.asyncio

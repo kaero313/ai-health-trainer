@@ -92,6 +92,44 @@ Parser별 v1 정책:
 
 ---
 
+## 3-1. URL HTML Parser And Hybrid Chunking
+
+v1 official URL acquisition is single-page HTML fetch from operator-registered sources. It does not follow links and is not a crawler.
+
+Parser behavior:
+
+- parser type: `html`
+- parser version: `html-parser-v1`
+- extraction priority: `main` -> `article` -> `body`
+- removed elements: `script`, `style`, `nav`, `footer`, `header`, `form`, `svg`
+- parent section boundary: `h1~h3`
+- child evidence unit: paragraph, list item, table row text
+
+Hybrid Chunking shape:
+
+```text
+Document
+  -> Parent Section (heading path)
+  -> Child Evidence Chunk (paragraph/list/table row group)
+```
+
+v1 stores parent lineage inside `rag_chunks.metadata`, not a separate `rag_sections` table.
+
+Required metadata:
+
+| Field | Description |
+|-------|-------------|
+| `parent_heading_path` | Parent heading path from `h1~h3` |
+| `parent_section_hash` | Section-level hash for refresh decisions |
+| `source_anchor` | Logical heading anchor |
+| `source_url` | Final fetched URL |
+| `source_content_type` | HTTP content type |
+| `chunk_role` | `child_evidence` |
+
+Refresh uses document hash, parent section hash, and child chunk hash together. Same document is skipped, small section changes use partial refresh, and large or structural changes use full reindex.
+
+---
+
 ## 4. Chunker Strategy
 
 Chunker는 `ParsedSection`을 embedding 가능한 `rag_chunks`로 변환한다.

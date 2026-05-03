@@ -135,7 +135,7 @@ RAG 데이터는 단순 파일 목록이 아니라 운영 자산으로 등록한
 | 논문/학회 자료 | 후속 | citation metadata, 요약 chunk 중심 |
 | 로컬 text/markdown | CLI ingest | parser preview, refresh |
 | PDF | 텍스트 추출 | page anchor, table extraction |
-| URL 문서 | 후속 | etag/last_modified 기반 refresh |
+| URL 문서 | 공식 단일 페이지 HTML fetch 구현 | catalog, etag/last_modified, Hybrid Chunking 고도화 |
 | 공개 API | 후속 | connector별 schema adapter |
 | 이미지 | 후속 | OCR + vision caption |
 | 영상 | 후속 | transcript + timestamp chunk |
@@ -157,7 +157,7 @@ RAG 데이터는 단순 파일 목록이 아니라 운영 자산으로 등록한
 | Markdown | heading/paragraph parser | section chunk | heading path |
 | Text | paragraph parser | paragraph merge | paragraph range |
 | PDF | page text extraction | page/section chunk | page number |
-| HTML | readability + heading parser | section chunk | heading path + URL fragment |
+| HTML | main/article/body + heading parser | hybrid evidence chunk | heading path + parent_section_hash + URL |
 | Table | structured parser | row group chunk | table id + row range |
 | Image | OCR + vision caption | caption/object chunk | image region |
 | Video | transcript parser | timestamp segment chunk | start/end timestamp |

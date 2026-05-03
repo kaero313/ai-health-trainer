@@ -35,45 +35,59 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 | `alias_exists` | True |
 | `health` | yellow |
 | `status` | open |
-| `docs_count` | 85 |
-| `docs_deleted` | 20 |
-| `store_size` | 5.1mb |
-| `primary_store_size` | 5.1mb |
+| `docs_count` | 296 |
+| `docs_deleted` | 144 |
+| `store_size` | 24.2mb |
+| `primary_store_size` | 24.2mb |
 
 ## DB Counts
 
 | Metric | Count |
 |--------|-------|
-| `rag_chunks` | 96 |
-| `rag_chunks_active` | 85 |
-| `rag_embedding_cache` | 94 |
-| `rag_ingest_jobs` | 19 |
-| `rag_pipeline_decisions` | 19 |
-| `rag_sources` | 15 |
+| `rag_chunks` | 337 |
+| `rag_chunks_active` | 254 |
+| `rag_embedding_cache` | 332 |
+| `rag_ingest_jobs` | 28 |
+| `rag_pipeline_decisions` | 28 |
+| `rag_sources` | 18 |
+
+## URL Source Summary
+
+| Metric | Count |
+|--------|-------|
+| `catalog_source_count` | 3 |
+| `etag_present_count` | 1 |
+| `html_parser_source_count` | 3 |
+| `last_modified_present_count` | 2 |
+| `scheduled_refresh_count` | 3 |
+| `source_grade_a_count` | 3 |
+| `stale_source_count` | 0 |
+| `url_source_count` | 3 |
 
 ## Decision Summary
 
 | Action | Reason | Count |
 |--------|--------|-------|
-| `create_source` | `NEW_SOURCE` | 15 |
-| `full_reindex` | `LARGE_OR_STRUCTURAL_CHANGE` | 2 |
+| `create_source` | `NEW_SOURCE` | 18 |
+| `full_reindex` | `LARGE_OR_STRUCTURAL_CHANGE` | 4 |
+| `manual_review_required` | `LOW_PARSER_CONFIDENCE` | 1 |
 | `partial_refresh` | `SMALL_CONTENT_CHANGE` | 1 |
-| `skip_refresh` | `SOURCE_HASH_UNCHANGED` | 1 |
+| `skip_refresh` | `SOURCE_HASH_UNCHANGED` | 4 |
 
 ## Recent Jobs
 
 | Job | Type | Source | Status | Stage | Change Ratio | Reuse | Reembed | Index Skip |
 |-----|------|--------|--------|-------|--------------|-------|---------|------------|
+| 29 | refresh | 19 | skipped | skip_refresh | 0.0000 | 0 | 0 | 0 |
+| 28 | refresh | 18 | succeeded | finished | 0.8889 | 1 | 3 | 0 |
+| 27 | refresh | 17 | succeeded | finished | 0.9683 | 2 | 14 | 0 |
+| 26 | create | 19 | succeeded | finished | 1.0000 | 0 | 149 | 0 |
+| 25 | refresh | 18 | skipped | skip_refresh | 0.8889 | 0 | 0 | 0 |
+| 24 | refresh | 17 | skipped | skip_refresh | 0.9683 | 0 | 0 | 0 |
+| 23 | create |  | skipped | manual_review_required | 0.0000 | 0 | 0 | 0 |
+| 22 | create | 18 | succeeded | finished | 1.0000 | 0 | 9 | 0 |
+| 21 | create | 17 | succeeded | finished | 1.0000 | 0 | 63 | 0 |
 | 19 | refresh | 15 | succeeded | finished | 0.6000 | 2 | 3 | 0 |
-| 18 | create | 15 | succeeded | finished | 1.0000 | 0 | 5 | 0 |
-| 17 | refresh | 14 | succeeded | finished | 0.2000 | 4 | 1 | 4 |
-| 16 | refresh | 14 | succeeded | finished | 1.0000 | 0 | 5 | 0 |
-| 15 | refresh | 14 | skipped | skip_refresh | 0.0000 | 0 | 0 | 0 |
-| 14 | create | 14 | succeeded | finished | 1.0000 | 0 | 5 | 0 |
-| 13 | create | 13 | succeeded | finished | 1.0000 | 0 | 5 | 0 |
-| 12 | create | 12 | succeeded | finished | 1.0000 | 0 | 5 | 0 |
-| 11 | create | 11 | succeeded | finished | 1.0000 | 0 | 5 | 0 |
-| 10 | create | 10 | succeeded | finished | 1.0000 | 0 | 6 | 0 |
 
 ## Retrieval Cases
 

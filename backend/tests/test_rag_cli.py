@@ -1,4 +1,23 @@
-from app.cli.rag import _write_v1_validation_report
+from app.cli.rag import _write_v1_validation_report, build_parser
+
+
+def test_rag_cli_exposes_url_acquisition_commands():
+    parser = build_parser()
+
+    assert parser.parse_args(["fetch-preview", "--url", "https://example.org"]).command == "fetch-preview"
+    assert (
+        parser.parse_args(
+            [
+                "register-url",
+                "--url",
+                "https://example.org",
+                "--category",
+                "exercise",
+            ]
+        ).command
+        == "register-url"
+    )
+    assert parser.parse_args(["ingest-catalog", "--file", "rag_sources/catalog.json"]).command == "ingest-catalog"
 
 
 def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
@@ -25,6 +44,16 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
             ],
         },
         "db_counts": {"rag_sources": 1, "rag_chunks_active": 1},
+        "url_source_summary": {
+            "url_source_count": 1,
+            "catalog_source_count": 1,
+            "html_parser_source_count": 1,
+            "source_grade_a_count": 1,
+            "etag_present_count": 1,
+            "last_modified_present_count": 1,
+            "scheduled_refresh_count": 1,
+            "stale_source_count": 0,
+        },
         "decision_summary": [
             {"selected_action": "create_source", "reason_code": "NEW_SOURCE", "count": 1}
         ],

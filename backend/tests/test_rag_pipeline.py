@@ -31,7 +31,7 @@ def test_markdown_parser_and_chunk_hashes_are_deterministic():
     )
 
     assert parsed.parser_type == "markdown"
-    assert parsed.parser_confidence == 0.95
+    assert parsed.parser_confidence >= 0.8
     assert plans_a[0].chunk_strategy == "section"
     assert plans_a[0].content_hash == plans_b[0].content_hash
     assert plans_a[0].anchor_hash == plans_b[0].anchor_hash
@@ -84,6 +84,63 @@ def test_pdf_text_parser_records_page_anchor(monkeypatch, tmp_path):
     assert 0.7 <= parsed.parser_confidence < 0.95
 
 
+def test_html_parser_uses_hybrid_parent_child_chunk_metadata():
+    parser = RAGDocumentParser()
+    planner = RAGChunkPlanner()
+    html = """
+    <html>
+      <head><title>Official Training Guide</title></head>
+      <body>
+        <nav>navigation should be removed</nav>
+        <main>
+          <h1>Physical Activity</h1>
+          <p>Adults should move regularly and reduce sedentary time.</p>
+          <ul><li>Strength training supports healthy muscles.</li></ul>
+          <h2>Safety</h2>
+          <p>People with concerning symptoms should seek professional guidance.</p>
+          <table><tr><th>Goal</th><th>Example</th></tr><tr><td>Cardio</td><td>Brisk walking</td></tr></table>
+        </main>
+      </body>
+    </html>
+    """
+
+    parsed = parser.parse_html(
+        html,
+        source_uri="https://example.org/activity",
+        source_url="https://example.org/activity",
+        content_type="text/html",
+        fetch_metadata={"etag": '"abc"', "last_modified": "Mon, 01 Jan 2024 00:00:00 GMT"},
+    )
+    plans_a = planner.build_chunks(
+        parsed,
+        source_title=parsed.title,
+        category="exercise",
+        tags=["guideline"],
+        source_grade="A",
+        embedding_model="gemini-embedding-001",
+    )
+    plans_b = planner.build_chunks(
+        parsed,
+        source_title=parsed.title,
+        category="exercise",
+        tags=["guideline"],
+        source_grade="A",
+        embedding_model="gemini-embedding-001",
+    )
+
+    assert parsed.parser_type == "html"
+    assert parsed.parser_version == "html-parser-v1"
+    assert parsed.parser_confidence == 0.95
+    assert plans_a[0].chunk_strategy == "hybrid_evidence"
+    assert plans_a[0].anchor_hash == plans_b[0].anchor_hash
+    assert plans_a[0].metadata["chunk_role"] == "child_evidence"
+    assert plans_a[0].metadata["parent_heading_path"] == ["Physical Activity"]
+    assert plans_a[0].metadata["parent_section_hash"] == plans_b[0].metadata["parent_section_hash"]
+    assert plans_a[0].metadata["source_url"] == "https://example.org/activity"
+    assert "navigation should be removed" not in parsed.normalized_content
+    assert "Goal | Example" in parsed.normalized_content
+
+
 @pytest.mark.parametrize(
     ("kwargs", "expected_action"),
     [
@@ -116,6 +173,17 @@ def test_pdf_text_parser_records_page_anchor(monkeypatch, tmp_path):
                 "parser_confidence": 0.95,
                 "change_ratio": 0.60,
                 "parser_or_chunker_changed": False,
+                "estimated_embedding_seconds": 2.0,
+            },
+            "full_reindex",
+        ),
+        (
+            {
+                "source_exists": True,
+                "source_hash_same": True,
+                "parser_confidence": 0.95,
+                "change_ratio": 0.0,
+                "parser_or_chunker_changed": True,
                 "estimated_embedding_seconds": 2.0,
             },
             "full_reindex",

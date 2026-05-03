@@ -44,6 +44,30 @@ RAG pipeline decision은 다음 값을 고려한다.
 
 ---
 
+## 2-1. URL/HTML Refresh Inputs
+
+Official URL sources add remote freshness and Hybrid Chunking context to the same decision record.
+
+| Input | Meaning |
+|-------|---------|
+| `final_url` | Redirect 이후 실제 수집 URL |
+| `content_type` | HTML parser 적용 근거 |
+| `etag_changed` | 이전 fetch 대비 ETag 변경 여부 |
+| `last_modified_changed` | 이전 fetch 대비 Last-Modified 변경 여부 |
+| `raw_content_hash` | HTTP body byte hash |
+| `changed_section_count` | parent section hash 기준 변경 section 수 |
+| `total_section_count` | 현재/이전 parent section 수의 최대값 |
+| `section_change_ratio` | section 단위 변경 비율 |
+
+Policy interpretation:
+
+- `etag` 또는 `last_modified`가 바뀌어도 normalized document hash가 같으면 `skip_refresh`가 가능하다.
+- document hash가 바뀌고 `section_change_ratio`가 threshold 미만이면 `partial_refresh`가 우선이다.
+- parser/chunker version 변경, heading 구조 대량 변경, section ratio threshold 초과는 `full_reindex`다.
+- parser confidence가 낮은 HTML은 공식 URL이어도 `manual_review_required`로 멈춘다.
+
+---
+
 ## 3. Default Policy
 
 | Situation | Action | Risk | Reason |
