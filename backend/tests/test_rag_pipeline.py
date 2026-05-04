@@ -141,6 +141,56 @@ def test_html_parser_uses_hybrid_parent_child_chunk_metadata():
     assert "Goal | Example" in parsed.normalized_content
 
 
+def test_html_hash_lineage_separates_anchor_from_content():
+    parser = RAGDocumentParser()
+    planner = RAGChunkPlanner()
+    old_html = """
+    <html><body><main>
+      <h1>Nutrition</h1>
+      <h2>Protein</h2>
+      <p>Protein supports muscle repair after training.</p>
+    </main></body></html>
+    """
+    new_html = """
+    <html><body><main>
+      <h1>Nutrition</h1>
+      <h2>Protein</h2>
+      <p>Protein supports muscle repair after hard training sessions.</p>
+    </main></body></html>
+    """
+
+    old_plan = planner.build_chunks(
+        parser.parse_html(
+            old_html,
+            source_uri="https://example.org/nutrition",
+            source_url="https://example.org/nutrition",
+        ),
+        source_title="Nutrition",
+        category="nutrition",
+        tags=["protein"],
+        source_grade="A",
+        embedding_model="gemini-embedding-001",
+    )[0]
+    new_plan = planner.build_chunks(
+        parser.parse_html(
+            new_html,
+            source_uri="https://example.org/nutrition",
+            source_url="https://example.org/nutrition",
+        ),
+        source_title="Nutrition",
+        category="nutrition",
+        tags=["protein"],
+        source_grade="A",
+        embedding_model="gemini-embedding-001",
+    )[0]
+
+    assert old_plan.metadata["parent_anchor_hash"] == new_plan.metadata["parent_anchor_hash"]
+    assert old_plan.metadata["parent_content_hash"] != new_plan.metadata["parent_content_hash"]
+    assert old_plan.metadata["chunk_anchor_hash"] == new_plan.metadata["chunk_anchor_hash"]
+    assert old_plan.metadata["chunk_content_hash"] != new_plan.metadata["chunk_content_hash"]
+    assert old_plan.anchor_hash == new_plan.anchor_hash
+
+
 @pytest.mark.parametrize(
     ("kwargs", "expected_action"),
     [
