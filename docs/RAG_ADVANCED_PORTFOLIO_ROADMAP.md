@@ -41,6 +41,7 @@
   - `rag_ingest_jobs`: ingest/reindex/archive 작업 기록
   - `rag_retrieval_traces`: 검색된 chunk/source/score/backend trace
   - `ai_generation_traces`: AI 생성 model/prompt/output trace
+  - `rag_catalog_plan_runs`, `rag_catalog_plan_items`: 공식 URL catalog 변경 감지 plan/apply 원장
 
 - OpenSearch
   - `rag_chunks_v1` index
@@ -60,6 +61,9 @@
   - `reindex`
   - `archive`
   - `evaluate`
+  - `fetch-preview`, `register-url`, `ingest-catalog`
+  - `catalog-plan`, `catalog-runs`, `catalog-run`, `catalog-apply`
+  - `validate-v1`
 
 이 baseline 위에 아래 고도화를 계속 쌓는다.
 
@@ -96,6 +100,7 @@ source registry
  -> retrieval/generation trace
  -> evaluation report
  -> 변경 감지와 refresh/reindex
+ -> catalog plan/apply control plane
 ```
 
 ### 3-1. Source Registry
@@ -123,6 +128,7 @@ RAG 데이터는 단순 파일 목록이 아니라 운영 자산으로 등록한
 - 지식 출처의 신뢰도와 갱신 주기를 명시적으로 관리한다.
 - 저작권/라이선스 리스크를 RAG 파이프라인의 일부로 다룬다.
 - RAG source를 삭제하지 않고 version/archive로 관리해 과거 AI 답변의 근거를 보존한다.
+- 공식 URL catalog는 plan DB에 먼저 저장하고 run id 기준으로 apply해 운영자가 변경 범위와 리스크를 검토할 수 있게 한다.
 
 ### 3-2. Data Collection
 
@@ -131,11 +137,11 @@ RAG 데이터는 단순 파일 목록이 아니라 운영 자산으로 등록한
 | Source | 1차 구현 | 고도화 방향 |
 |--------|----------|-------------|
 | 내부 seed Markdown | 구현됨 | source registry 기반 관리 |
-| 공식 가이드라인/문서 | 후속 | source grade A/B, published/reviewed date 관리 |
+| 공식 가이드라인/문서 | URL catalog 3종 구현 | source grade A/B, published/reviewed date 관리 |
 | 논문/학회 자료 | 후속 | citation metadata, 요약 chunk 중심 |
 | 로컬 text/markdown | CLI ingest | parser preview, refresh |
 | PDF | 텍스트 추출 | page anchor, table extraction |
-| URL 문서 | 공식 단일 페이지 HTML fetch 구현 | catalog, etag/last_modified, Hybrid Chunking 고도화 |
+| URL 문서 | 공식 단일 페이지 HTML fetch + catalog plan/apply 구현 | scheduler, crawler가 아닌 source registry control plane 고도화 |
 | 공개 API | 후속 | connector별 schema adapter |
 | 이미지 | 후속 | OCR + vision caption |
 | 영상 | 후속 | transcript + timestamp chunk |

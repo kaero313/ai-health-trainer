@@ -98,6 +98,47 @@ Hash metadata에는 `hash_schema_version`, `normalization_version`, `parser_vers
 
 ---
 
+## 4-1. Catalog Plan/Apply Policy
+
+Official URL source는 refresh를 바로 실행하지 않고 catalog control plane을 거친다.
+
+```text
+catalog-plan
+ -> catalog source와 DB source matching
+ -> live fetch
+ -> HTML parse
+ -> Hybrid Chunking
+ -> section/chunk diff
+ -> planned action 저장
+ -> report 생성
+
+catalog-apply
+ -> 같은 URL 재-fetch
+ -> planned hash와 현재 hash 비교
+ -> stale이면 중단
+ -> action별 create/partial/full 적용
+ -> apply status와 ingest job 연결
+```
+
+Stable hash lineage:
+
+| Hash | Scope | Policy Use |
+|------|-------|------------|
+| `parent_anchor_hash` | source URL + heading path | section 위치 추적 |
+| `parent_content_hash` | parent section normalized text | section 내용 변경 감지 |
+| `chunk_anchor_hash` | parent anchor + child evidence index | child chunk 위치 추적 |
+| `chunk_content_hash` | child evidence normalized text | child chunk 내용 변경 감지 |
+
+Decision policy:
+
+- plan 생성은 RAG 데이터와 OpenSearch를 변경하지 않는다.
+- low confidence HTML은 신규 source라도 `manual_review_required`로 막는다.
+- stable anchor lineage가 없는 기존 chunk는 partial refresh를 시도하지 않고 `full_reindex`로 계획한다.
+- plan 이후 원격 hash가 바뀌면 `PLAN_STALE`로 apply를 중단한다.
+- orphaned source는 자동 archive/delete하지 않는다.
+
+---
+
 ## 5. Refresh Examples
 
 ### Same Document

@@ -248,6 +248,44 @@ Refresh/reindex는 단순히 성공/실패만 기록하지 않는다. 각 작업
 
 ---
 
+## 6-2. Catalog Control Plane
+
+공식 URL catalog는 직접 refresh보다 plan/apply를 기본 운영 흐름으로 둔다.
+
+```text
+catalog-plan
+ -> catalog source load
+ -> DB source matching by catalog_key/origin_uri/source_url
+ -> live fetch
+ -> HTML parser + hybrid chunker
+ -> existing active chunk load
+ -> section/chunk diff
+ -> rag_catalog_plan_runs/items 저장
+ -> Markdown report
+
+catalog-apply
+ -> stored plan item load
+ -> same URL re-fetch
+ -> stale hash guard
+ -> create_source / partial_refresh / full_reindex
+ -> apply status + applied_job_id 저장
+```
+
+Plan table은 RAG 원본과 OpenSearch를 변경하지 않는다. 운영자는 `catalog-run --run-id`와 report를 보고 비용, 변경 범위, parser confidence, orphaned source를 확인한 뒤 apply한다.
+
+Action 기준:
+
+- `create_source`: catalog에는 있으나 DB에 없는 source
+- `skip_refresh`: document hash와 metadata가 동일
+- `partial_refresh`: stable anchor 기준 일부 section/chunk만 변경
+- `full_reindex`: 변경 비율 초과, pipeline version 변경, anchor lineage missing
+- `manual_review_required`: low parser confidence, empty chunks, orphaned source
+- `defer_reembedding`: 예상 embedding 시간이 운영 budget 초과
+
+상세 운영 기준은 `docs/RAG_CATALOG_CONTROL_PLANE.md`를 따른다.
+
+---
+
 ## 7. Retrieval And Evaluation
 
 Retrieval path:

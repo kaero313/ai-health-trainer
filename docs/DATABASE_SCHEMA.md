@@ -243,6 +243,8 @@ RAG v2는 PostgreSQL을 source of truth로 사용하고, OpenSearch `rag_chunks_
 | `rag_sources` | 원문 출처, 신뢰도, category/tag, version, status 관리 |
 | `rag_chunks` | 검색 가능한 chunk, `VECTOR(3072)` embedding, OpenSearch 색인 상태 관리 |
 | `rag_ingest_jobs` | ingest/reindex/archive 작업 상태와 실패 원인 기록 |
+| `rag_catalog_plan_runs` | 공식 URL catalog plan 실행 단위, summary, report path 기록 |
+| `rag_catalog_plan_items` | source별 section/chunk diff, planned action, apply 결과 기록 |
 | `rag_retrieval_traces` | AI 요청별 검색 query, backend, mode, score, chunk/source 기록 |
 | `ai_generation_traces` | prompt version, model, context/output hash, latency 기록 |
 
@@ -399,3 +401,13 @@ RAG v1 고도화부터 RAG 테이블은 단순 검색 저장소가 아니라 운
 - `rag_pipeline_decisions`: refresh/reindex/fallback 상황별 `policy_version`, `selected_action`, `risk_level`, `reason_code`, `context`, `tradeoffs` 기록
 - `rag_chunks`: `anchor_hash`, `embedding_input_hash`, `index_payload_hash`, `chunk_strategy`, `chunk_anchor`, `source_version`, `metadata`로 chunk lineage 추적
 - `rag_ingest_jobs`: `parser_confidence`, `change_ratio`, `embedding_reuse_count`, `reembedding_count`, `index_skip_count`, `estimated_embedding_seconds`, `latency_ms`, `skipped_reason`으로 운영 판단 지표 저장
+
+## RAG Catalog Control Plane Addendum
+
+공식 URL source는 직접 ingest보다 `catalog-plan` -> review -> `catalog-apply`를 기본 운영 경로로 둔다.
+
+- `rag_catalog_plan_runs`: catalog file/version, mode, status, started/finished time, matched/missing/orphaned/action summary, report path 저장
+- `rag_catalog_plan_items`: catalog source metadata, fetch/parser status, old/new hash, ETag/Last-Modified 변화, metadata 변경 필드, section/chunk diff, 예상 embedding 시간, quality warnings, planned action, apply status 저장
+- `rag_catalog_plan_items.applied_job_id`: 실제 적용된 경우 `rag_ingest_jobs.id`와 연결
+- stale plan은 `apply_status=stale`, `apply_error_code=PLAN_STALE`로 남기고 source/chunk/OpenSearch를 변경하지 않는다.
+- orphaned source는 자동 archive/delete하지 않고 `manual_review_required`로 남긴다.

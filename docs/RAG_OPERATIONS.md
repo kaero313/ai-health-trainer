@@ -829,3 +829,30 @@ RAG 품질은 "검색 품질"과 "생성 품질"을 분리해서 평가한다.
 - OpenSearch 장애나 stale index는 trace에 남기고 fallback 정책으로 처리한다.
 - AI 답변은 사용자 기록과 RAG 근거를 함께 사용해야 하며, 둘 중 하나가 부족하면 보수적으로 답한다.
 - 건강/운동 코칭은 생활 습관 안내 범위로 제한하고, 의료 판단은 전문가 상담으로 연결한다.
+
+---
+
+## 17. Catalog Control Plane 운영 경로
+
+공식 URL catalog는 더 이상 곧바로 운영 RAG 데이터에 반영하는 것을 기본값으로 보지 않는다. 기본 경로는 `catalog-plan`으로 변경 감지와 비용/리스크 판단을 DB에 저장하고, 운영자가 run id를 확인한 뒤 `catalog-apply`로 적용하는 방식이다.
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-plan \
+  --file rag_sources/catalog.json \
+  --report-path /workspace/docs/RAG_CATALOG_PLAN_REPORT.md
+
+docker compose exec backend python -m app.cli.rag catalog-runs --limit 20
+docker compose exec backend python -m app.cli.rag catalog-run --run-id <run_id>
+docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id>
+```
+
+운영 원칙:
+
+- plan은 live fetch, HTML parse, Hybrid Chunking, section/chunk diff까지 수행하지만 `rag_sources`, `rag_chunks`, OpenSearch를 변경하지 않는다.
+- apply는 plan 저장 후 원격 문서를 다시 fetch한다. planned hash와 현재 hash가 다르면 `PLAN_STALE`로 중단한다.
+- DB에 없는 catalog source는 `create_source`로 계획한다.
+- catalog에서 빠진 DB source는 자동 삭제하지 않고 `manual_review_required`로 계획한다.
+- parser confidence가 낮거나 chunk가 비어 있으면 신규 source라도 자동 생성하지 않는다.
+- stable anchor lineage가 없는 기존 chunk는 `ANCHOR_LINEAGE_MISSING`으로 보고 full reindex를 계획한다.
+
+상세 기준은 `docs/RAG_CATALOG_CONTROL_PLANE.md`를 따른다.
