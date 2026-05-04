@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
+from app.services.rag_catalog_control_service import RAGCatalogControlService
 from app.services.rag_evaluation import evaluate_retrieval, load_retrieval_cases
 from app.services.rag_service import RAGService
 
@@ -145,6 +146,37 @@ async def _ingest_catalog(args: argparse.Namespace) -> None:
             )
             results.append({"key": source.get("key"), "url": source["url"], **result})
     print(json.dumps({"catalog": str(catalog_path), "results": results}, ensure_ascii=False, indent=2))
+
+
+async def _catalog_plan(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGCatalogControlService(db, settings).create_plan(
+            catalog_file=args.file,
+            report_path=args.report_path,
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _catalog_runs(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGCatalogControlService(db, settings).list_runs(limit=args.limit)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _catalog_run(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGCatalogControlService(db, settings).get_run(args.run_id)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _catalog_apply(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGCatalogControlService(db, settings).apply_run(run_id=args.run_id)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 async def _refresh_source(args: argparse.Namespace) -> None:
@@ -350,6 +382,7 @@ async def _load_v1_recent_jobs(db, *, limit: int) -> list[dict[str, Any]]:
     ]
 
 
+
 def _write_evaluation_report(result: dict[str, Any], report_path: Path) -> None:
     lines = [
         "# RAG Retrieval Evaluation Report",
@@ -460,6 +493,7 @@ def _write_v1_validation_report(report: dict[str, Any], report_path: Path) -> No
     )
     for name, count in sorted((report.get("url_source_summary") or {}).items()):
         lines.append(f"| `{name}` | {count} |")
+
 
     lines.extend(
         [
@@ -598,6 +632,19 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_catalog = subparsers.add_parser("ingest-catalog", help="Ingest official URL sources from a catalog JSON file")
     ingest_catalog.add_argument("--file", required=True, help="Catalog JSON path")
 
+    catalog_plan = subparsers.add_parser("catalog-plan", help="Create a persisted live-fetch catalog refresh plan")
+    catalog_plan.add_argument("--file", required=True, help="Catalog JSON path")
+    catalog_plan.add_argument("--report-path", default=None, help="Optional markdown report output path")
+
+    catalog_runs = subparsers.add_parser("catalog-runs", help="List persisted catalog plan runs")
+    catalog_runs.add_argument("--limit", type=int, default=20, help="Maximum runs to show")
+
+    catalog_run = subparsers.add_parser("catalog-run", help="Show one persisted catalog plan run")
+    catalog_run.add_argument("--run-id", type=int, required=True, help="Catalog plan run id")
+
+    catalog_apply = subparsers.add_parser("catalog-apply", help="Apply a persisted catalog plan run")
+    catalog_apply.add_argument("--run-id", type=int, required=True, help="Catalog plan run id")
+
     refresh_source = subparsers.add_parser("refresh-source", help="Refresh a registered source by source id")
     refresh_source.add_argument("--source-id", type=int, required=True, help="Source id")
     refresh_source.add_argument("--force", action="store_true", help="Refresh even when source hash is unchanged")
@@ -649,6 +696,14 @@ async def _main() -> None:
         await _register_url(args)
     elif args.command == "ingest-catalog":
         await _ingest_catalog(args)
+    elif args.command == "catalog-plan":
+        await _catalog_plan(args)
+    elif args.command == "catalog-runs":
+        await _catalog_runs(args)
+    elif args.command == "catalog-run":
+        await _catalog_run(args)
+    elif args.command == "catalog-apply":
+        await _catalog_apply(args)
     elif args.command == "refresh-source":
         await _refresh_source(args)
     elif args.command == "refresh-due":
