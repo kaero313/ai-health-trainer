@@ -246,6 +246,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         url_source_summary = await _load_v1_url_source_summary(db)
         decision_summary = await _load_v1_decision_summary(db)
         recent_jobs = await _load_v1_recent_jobs(db, limit=args.job_limit)
+        latest_catalog_plan = await _load_latest_catalog_plan(db)
         try:
             index_status = await service.index_status()
         except Exception as exc:  # pragma: no cover - depends on local OpenSearch availability
@@ -263,6 +264,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         "url_source_summary": url_source_summary,
         "decision_summary": decision_summary,
         "recent_jobs": recent_jobs,
+        "latest_catalog_plan": latest_catalog_plan,
         "index_status": index_status,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -283,6 +285,8 @@ async def _load_v1_db_counts(db) -> dict[str, int]:
                 UNION ALL SELECT 'rag_ingest_jobs', count(*)::int FROM rag_ingest_jobs
                 UNION ALL SELECT 'rag_pipeline_decisions', count(*)::int FROM rag_pipeline_decisions
                 UNION ALL SELECT 'rag_embedding_cache', count(*)::int FROM rag_embedding_cache
+                UNION ALL SELECT 'rag_catalog_plan_runs', count(*)::int FROM rag_catalog_plan_runs
+                UNION ALL SELECT 'rag_catalog_plan_items', count(*)::int FROM rag_catalog_plan_items
                 ORDER BY name
                 """
             )
@@ -381,6 +385,28 @@ async def _load_v1_recent_jobs(db, *, limit: int) -> list[dict[str, Any]]:
         for row in rows
     ]
 
+
+async def _load_latest_catalog_plan(db) -> dict[str, Any] | None:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, status, total_sources, planned_create_count, planned_skip_count,
+                       planned_partial_count, planned_full_count, planned_manual_count,
+                       planned_defer_count, created_at
+                FROM rag_catalog_plan_runs
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            )
+        )
+    ).mappings().first()
+    if not row:
+        return None
+    result = dict(row)
+    if result.get("created_at") is not None:
+        result["created_at"] = result["created_at"].isoformat()
+    return result
 
 
 def _write_evaluation_report(result: dict[str, Any], report_path: Path) -> None:
@@ -494,6 +520,19 @@ def _write_v1_validation_report(report: dict[str, Any], report_path: Path) -> No
     for name, count in sorted((report.get("url_source_summary") or {}).items()):
         lines.append(f"| `{name}` | {count} |")
 
+    latest_catalog_plan = report.get("latest_catalog_plan")
+    if latest_catalog_plan:
+        lines.extend(
+            [
+                "",
+                "## Latest Catalog Plan",
+                "",
+                "| Field | Value |",
+                "|-------|-------|",
+            ]
+        )
+        for name, value in latest_catalog_plan.items():
+            lines.append(f"| `{name}` | {_markdown_value(value)} |")
 
     lines.extend(
         [
