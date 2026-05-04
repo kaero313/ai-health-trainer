@@ -48,6 +48,10 @@ class ParsedSection:
     char_range: tuple[int, int] | None = None
     parent_heading_path: list[str] | None = None
     parent_section_hash: str | None = None
+    parent_anchor_hash: str | None = None
+    parent_content_hash: str | None = None
+    chunk_anchor_hash: str | None = None
+    chunk_content_hash: str | None = None
     source_anchor: str | None = None
     source_url: str | None = None
     source_content_type: str | None = None
@@ -81,6 +85,7 @@ class SourceMetadata(BaseModel):
     skipped_sections: int = 0
     parent_section_count: int = 0
     parent_section_hashes: list[str] = Field(default_factory=list)
+    parent_anchor_hashes: list[str] = Field(default_factory=list)
     fetch_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -99,6 +104,10 @@ class ChunkMetadata(BaseModel):
     merge_reason: str | None = None
     parent_heading_path: list[str] | None = None
     parent_section_hash: str | None = None
+    parent_anchor_hash: str | None = None
+    parent_content_hash: str | None = None
+    chunk_anchor_hash: str | None = None
+    chunk_content_hash: str | None = None
     source_anchor: str | None = None
     source_url: str | None = None
     source_content_type: str | None = None
@@ -296,7 +305,6 @@ class RAGDocumentParser:
         current_children: list[str] = []
         current_heading_seen = False
         skip_current_parent = False
-        paragraph_counter = 1
         skipped = 0
 
         def flush_parent() -> None:
@@ -355,34 +363,45 @@ class RAGDocumentParser:
         for parent_index, record in enumerate(parent_records, start=1):
             heading_path = record["heading_path"] or ["Document"]
             parent_text = "\n\n".join(record["children"])
-            parent_hash = hash_json(
+            parent_anchor_hash = hash_json(
                 {
                     "source_uri": source_uri,
                     "source_url": source_url,
                     "heading_path": heading_path,
-                    "parent_text_hash": hash_text(parent_text),
                 }
             )
+            parent_content_hash = hash_text(parent_text)
+            parent_hash = parent_content_hash
             parent_hashes.append(parent_hash)
             parent_anchor = self._html_anchor(heading_path, parent_index)
             heading_label = " > ".join(heading_path)
-            for child in record["children"]:
+            for child_index, child in enumerate(record["children"], start=1):
                 child_text = f"{heading_label}\n\n{child}" if heading_label else child
+                chunk_anchor_hash = hash_json(
+                    {
+                        "parent_anchor_hash": parent_anchor_hash,
+                        "child_index": child_index,
+                    }
+                )
+                chunk_content_hash = hash_text(child_text)
                 sections.append(
                     ParsedSection(
                         title=heading_path[-1] if heading_path else document_title,
                         text=child_text,
                         section_path=list(heading_path),
-                        paragraph_range=(paragraph_counter, paragraph_counter),
+                        paragraph_range=(child_index, child_index),
                         parent_heading_path=list(heading_path),
                         parent_section_hash=parent_hash,
+                        parent_anchor_hash=parent_anchor_hash,
+                        parent_content_hash=parent_content_hash,
+                        chunk_anchor_hash=chunk_anchor_hash,
+                        chunk_content_hash=chunk_content_hash,
                         source_anchor=parent_anchor,
                         source_url=source_url,
                         source_content_type=content_type,
                     )
                 )
                 all_section_texts.append(child_text)
-                paragraph_counter += 1
 
         normalized_content = normalize_text("\n\n".join(all_section_texts))
         parser_confidence = self._html_confidence(
@@ -392,6 +411,9 @@ class RAGDocumentParser:
         )
         metadata = dict(fetch_metadata or {})
         metadata["parent_section_hashes"] = parent_hashes
+        metadata["parent_anchor_hashes"] = list(
+            dict.fromkeys(section.parent_anchor_hash for section in sections if section.parent_anchor_hash)
+        )
         metadata["parent_section_count"] = len(parent_hashes)
 
         return ParsedDocument(
@@ -556,7 +578,8 @@ class RAGChunkPlanner:
                 "chunk_strategy": chunk_strategy,
                 "section_path": section.section_path,
                 "parent_heading_path": section.parent_heading_path,
-                "parent_section_hash": section.parent_section_hash,
+                "parent_anchor_hash": section.parent_anchor_hash,
+                "chunk_anchor_hash": section.chunk_anchor_hash,
                 "source_anchor": section.source_anchor,
                 "source_url": section.source_url,
                 "page_number": section.page_number,
@@ -591,6 +614,10 @@ class RAGChunkPlanner:
                 merge_reason=merge_reason,
                 parent_heading_path=section.parent_heading_path,
                 parent_section_hash=section.parent_section_hash,
+                parent_anchor_hash=section.parent_anchor_hash,
+                parent_content_hash=section.parent_content_hash,
+                chunk_anchor_hash=section.chunk_anchor_hash,
+                chunk_content_hash=section.chunk_content_hash or content_hash,
                 source_anchor=section.source_anchor,
                 source_url=section.source_url,
                 source_content_type=section.source_content_type,
@@ -669,6 +696,8 @@ class RAGChunkPlanner:
 
     @staticmethod
     def _can_merge_sections(left: ParsedSection, right: ParsedSection) -> bool:
+        if left.parent_anchor_hash or right.parent_anchor_hash:
+            return left.parent_anchor_hash == right.parent_anchor_hash
         if left.parent_section_hash or right.parent_section_hash:
             return left.parent_section_hash == right.parent_section_hash
         return left.section_path == right.section_path and left.page_number == right.page_number
@@ -698,6 +727,18 @@ class RAGChunkPlanner:
                 ),
                 parent_heading_path=current_section.parent_heading_path,
                 parent_section_hash=current_section.parent_section_hash,
+                parent_anchor_hash=current_section.parent_anchor_hash,
+                parent_content_hash=current_section.parent_content_hash,
+                chunk_anchor_hash=hash_json(
+                    {
+                        "parent_anchor_hash": current_section.parent_anchor_hash,
+                        "paragraph_range": [
+                            current_start_paragraph or 1,
+                            current_end_paragraph or current_start_paragraph or 1,
+                        ],
+                    }
+                ),
+                chunk_content_hash=hash_text(current_content),
                 source_anchor=current_section.source_anchor,
                 source_url=current_section.source_url,
                 source_content_type=current_section.source_content_type,
@@ -721,7 +762,7 @@ class RAGChunkPlanner:
                     continue
                 same_parent = (
                     current_section is not None
-                    and current_section.parent_section_hash == section.parent_section_hash
+                    and current_section.parent_anchor_hash == section.parent_anchor_hash
                 )
                 candidate = f"{current_content}\n\n{part}" if current_content else part
                 if not same_parent or len(candidate) > max_chars:

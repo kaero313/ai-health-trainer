@@ -299,6 +299,8 @@ class RAGService:
         refresh_interval_hours: int | None = 720,
         catalog_key: str | None = None,
         catalog_file: str | None = None,
+        force: bool = False,
+        force_full_reindex: bool = False,
     ) -> dict[str, object]:
         fetched = await self.url_fetcher.fetch(url)
         parsed = self._parse_fetched_url(
@@ -323,10 +325,17 @@ class RAGService:
             refresh_policy=refresh_policy,
             refresh_interval_hours=refresh_interval_hours,
             existing_source=existing_source,
-            force=False,
+            force=force,
+            force_full_reindex=force_full_reindex,
         )
 
-    async def refresh_source(self, source_id: int, *, force: bool = False) -> dict[str, object]:
+    async def refresh_source(
+        self,
+        source_id: int,
+        *,
+        force: bool = False,
+        force_full_reindex: bool = False,
+    ) -> dict[str, object]:
         source = await self.db.get(RagSource, source_id)
         if source is None:
             return {"status": "not_found", "source_id": source_id}
@@ -357,6 +366,7 @@ class RAGService:
             refresh_interval_hours=source.refresh_interval_hours,
             existing_source=source,
             force=force,
+            force_full_reindex=force_full_reindex,
         )
 
     async def refresh_due(self, *, limit: int = 20) -> list[dict[str, object]]:
@@ -541,6 +551,7 @@ class RAGService:
         existing_source: RagSource | None,
         force: bool,
         refresh_interval_hours: int | None = None,
+        force_full_reindex: bool = False,
     ) -> dict[str, object]:
         started_at = datetime.now(timezone.utc)
         embedding_model = self._embedding_model_name()
@@ -562,6 +573,8 @@ class RAGService:
                 existing_source.parser_version != parsed.parser_version
                 or existing_source.chunker_version != CHUNKER_VERSION
                 or existing_source.normalization_version != NORMALIZATION_VERSION
+                or self._anchor_lineage_missing(old_chunks, plans)
+                or force_full_reindex
             )
         )
         change_ratio = self._change_ratio(old_chunks, plans)
@@ -919,6 +932,7 @@ class RAGService:
             skipped_sections=parsed.skipped_sections,
             parent_section_count=len(self._parent_section_hashes_from_parsed(parsed)),
             parent_section_hashes=self._parent_section_hashes_from_parsed(parsed),
+            parent_anchor_hashes=self._parent_anchor_hashes_from_parsed(parsed),
             fetch_metadata=parsed.fetch_metadata or {},
         ).model_dump()
         fetch_metadata = parsed.fetch_metadata or {}
@@ -1209,21 +1223,35 @@ class RAGService:
         new_plans: list[ChunkPlan],
         parsed: ParsedDocument,
     ) -> dict[str, object]:
-        old_parent_hashes = {
-            str((chunk.metadata_ or {}).get("parent_section_hash"))
+        old_parent_anchors = {
+            str((chunk.metadata_ or {}).get("parent_anchor_hash"))
             for chunk in old_chunks
-            if (chunk.metadata_ or {}).get("parent_section_hash")
+            if (chunk.metadata_ or {}).get("parent_anchor_hash")
         }
-        new_parent_hashes = {
-            str(plan.metadata.get("parent_section_hash"))
+        new_parent_anchors = {
+            str(plan.metadata.get("parent_anchor_hash"))
             for plan in new_plans
-            if plan.metadata.get("parent_section_hash")
+            if plan.metadata.get("parent_anchor_hash")
         }
-        changed_sections = max(
-            len(new_parent_hashes - old_parent_hashes),
-            len(old_parent_hashes - new_parent_hashes),
+        old_parent_content = {
+            str((chunk.metadata_ or {}).get("parent_anchor_hash")): str((chunk.metadata_ or {}).get("parent_content_hash"))
+            for chunk in old_chunks
+            if (chunk.metadata_ or {}).get("parent_anchor_hash")
+        }
+        new_parent_content = {
+            str(plan.metadata.get("parent_anchor_hash")): str(plan.metadata.get("parent_content_hash"))
+            for plan in new_plans
+            if plan.metadata.get("parent_anchor_hash")
+        }
+        common_parent_anchors = old_parent_anchors.intersection(new_parent_anchors)
+        content_changed_sections = sum(
+            1 for anchor in common_parent_anchors if old_parent_content.get(anchor) != new_parent_content.get(anchor)
         )
-        total_sections = max(len(new_parent_hashes), len(old_parent_hashes), 0)
+        changed_sections = max(
+            len(new_parent_anchors - old_parent_anchors) + content_changed_sections,
+            len(old_parent_anchors - new_parent_anchors) + content_changed_sections,
+        )
+        total_sections = max(len(new_parent_anchors), len(old_parent_anchors), 0)
         section_change_ratio = changed_sections / total_sections if total_sections else 0.0
         fetch_metadata = parsed.fetch_metadata or {}
         previous_metadata = existing_source.metadata_ if existing_source else {}
@@ -1235,6 +1263,7 @@ class RAGService:
             "changed_section_count": changed_sections,
             "total_section_count": total_sections,
             "section_change_ratio": round(section_change_ratio, 4),
+            "anchor_lineage_missing": RAGService._anchor_lineage_missing(old_chunks, new_plans),
             "etag_changed": _metadata_changed(previous_fetch.get("etag"), fetch_metadata.get("etag")),
             "last_modified_changed": _metadata_changed(
                 previous_fetch.get("last_modified"),
@@ -1269,6 +1298,34 @@ class RAGService:
                 seen.add(section.parent_section_hash)
                 hashes.append(section.parent_section_hash)
         return hashes
+
+    @staticmethod
+    def _parent_anchor_hashes_from_parsed(parsed: ParsedDocument) -> list[str]:
+        hashes: list[str] = []
+        seen: set[str] = set()
+        for section in parsed.sections:
+            if section.parent_anchor_hash and section.parent_anchor_hash not in seen:
+                seen.add(section.parent_anchor_hash)
+                hashes.append(section.parent_anchor_hash)
+        return hashes
+
+    @staticmethod
+    def _anchor_lineage_missing(old_chunks: list[RagChunk], new_plans: list[ChunkPlan]) -> bool:
+        if not old_chunks or not new_plans:
+            return False
+        if not any(plan.metadata.get("parser_type") == "html" for plan in new_plans):
+            return False
+        old_missing = any(
+            not (chunk.metadata_ or {}).get("parent_anchor_hash")
+            or not (chunk.metadata_ or {}).get("chunk_anchor_hash")
+            for chunk in old_chunks
+        )
+        new_missing = any(
+            not plan.metadata.get("parent_anchor_hash")
+            or not plan.metadata.get("chunk_anchor_hash")
+            for plan in new_plans
+        )
+        return old_missing or new_missing
 
     @staticmethod
     def _optional_str(value: object) -> str | None:
