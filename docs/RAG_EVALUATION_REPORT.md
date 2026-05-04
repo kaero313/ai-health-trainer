@@ -36,19 +36,21 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 | `health` | yellow |
 | `status` | open |
 | `docs_count` | 296 |
-| `docs_deleted` | 144 |
-| `store_size` | 24.2mb |
-| `primary_store_size` | 24.2mb |
+| `docs_deleted` | 169 |
+| `store_size` | 19.1mb |
+| `primary_store_size` | 19.1mb |
 
 ## DB Counts
 
 | Metric | Count |
 |--------|-------|
-| `rag_chunks` | 337 |
+| `rag_catalog_plan_items` | 12 |
+| `rag_catalog_plan_runs` | 4 |
+| `rag_chunks` | 506 |
 | `rag_chunks_active` | 254 |
 | `rag_embedding_cache` | 332 |
-| `rag_ingest_jobs` | 28 |
-| `rag_pipeline_decisions` | 28 |
+| `rag_ingest_jobs` | 31 |
+| `rag_pipeline_decisions` | 31 |
 | `rag_sources` | 18 |
 
 ## URL Source Summary
@@ -64,12 +66,27 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 | `stale_source_count` | 0 |
 | `url_source_count` | 3 |
 
+## Latest Catalog Plan
+
+| Field | Value |
+|-------|-------|
+| `id` | 4 |
+| `status` | succeeded |
+| `total_sources` | 3 |
+| `planned_create_count` | 0 |
+| `planned_skip_count` | 3 |
+| `planned_partial_count` | 0 |
+| `planned_full_count` | 0 |
+| `planned_manual_count` | 0 |
+| `planned_defer_count` | 0 |
+| `created_at` | 2026-05-04T04:09:33.647499+00:00 |
+
 ## Decision Summary
 
 | Action | Reason | Count |
 |--------|--------|-------|
 | `create_source` | `NEW_SOURCE` | 18 |
-| `full_reindex` | `LARGE_OR_STRUCTURAL_CHANGE` | 4 |
+| `full_reindex` | `LARGE_OR_STRUCTURAL_CHANGE` | 7 |
 | `manual_review_required` | `LOW_PARSER_CONFIDENCE` | 1 |
 | `partial_refresh` | `SMALL_CONTENT_CHANGE` | 1 |
 | `skip_refresh` | `SOURCE_HASH_UNCHANGED` | 4 |
@@ -78,6 +95,9 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 
 | Job | Type | Source | Status | Stage | Change Ratio | Reuse | Reembed | Index Skip |
 |-----|------|--------|--------|-------|--------------|-------|---------|------------|
+| 32 | refresh | 19 | succeeded | finished | 0.0000 | 149 | 0 | 0 |
+| 31 | refresh | 18 | succeeded | finished | 0.0000 | 4 | 0 | 0 |
+| 30 | refresh | 17 | succeeded | finished | 0.0000 | 16 | 0 | 0 |
 | 29 | refresh | 19 | skipped | skip_refresh | 0.0000 | 0 | 0 | 0 |
 | 28 | refresh | 18 | succeeded | finished | 0.8889 | 1 | 3 | 0 |
 | 27 | refresh | 17 | succeeded | finished | 0.9683 | 2 | 14 | 0 |
@@ -85,9 +105,6 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 | 25 | refresh | 18 | skipped | skip_refresh | 0.8889 | 0 | 0 | 0 |
 | 24 | refresh | 17 | skipped | skip_refresh | 0.9683 | 0 | 0 | 0 |
 | 23 | create |  | skipped | manual_review_required | 0.0000 | 0 | 0 | 0 |
-| 22 | create | 18 | succeeded | finished | 1.0000 | 0 | 9 | 0 |
-| 21 | create | 17 | succeeded | finished | 1.0000 | 0 | 63 | 0 |
-| 19 | refresh | 15 | succeeded | finished | 0.6000 | 2 | 3 | 0 |
 
 ## Retrieval Cases
 
