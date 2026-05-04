@@ -34,8 +34,9 @@ docker compose exec backend alembic upgrade head
 - PostgreSQL: RAG source/chunk/version/status/trace의 source of truth
 - OpenSearch: keyword + vector hybrid retrieval index
 - pgvector: OpenSearch 장애 시 fallback과 재색인 원장
-- CLI KnowledgeOps: URL fetch, catalog ingest, refresh, reindex, archive, evaluate, validate-v1
+- CLI KnowledgeOps: URL fetch, catalog plan/apply, catalog ingest, refresh, reindex, archive, evaluate, validate-v1
 - Hybrid Chunking: official URL HTML을 Document -> Parent Section -> Child Evidence Chunk로 분해
+- Catalog Control Plane: official source 변경을 plan DB에 저장하고 run id 기준으로 review/apply
 - Traceability: retrieval trace와 generation trace를 저장해 AI 답변 근거를 추적
 
 RAG 운영 명령:
@@ -44,6 +45,10 @@ RAG 운영 명령:
 docker compose exec backend python -m app.cli.rag ensure-index
 docker compose exec backend python backend/scripts/ingest_rag_data.py --dir rag_data
 docker compose exec backend python -m app.cli.rag fetch-preview --url https://www.cdc.gov/nutrition/php/guidelines-recommendations/index.html
+docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/catalog.json --report-path /workspace/docs/RAG_CATALOG_PLAN_REPORT.md
+docker compose exec backend python -m app.cli.rag catalog-runs --limit 20
+docker compose exec backend python -m app.cli.rag catalog-run --run-id <run_id>
+docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id>
 docker compose exec backend python -m app.cli.rag ingest-catalog --file rag_sources/catalog.json
 docker compose exec backend python -m app.cli.rag evaluate
 docker compose exec backend python -m app.cli.rag validate-v1 --report-path /workspace/docs/RAG_EVALUATION_REPORT.md
@@ -59,3 +64,4 @@ docker compose exec backend python -m app.cli.rag decisions --job-id 1
 - `docs/RAG_ADVANCED_PORTFOLIO_ROADMAP.md`
 - `docs/RAG_PIPELINE_ARCHITECTURE.md`
 - `docs/RAG_DECISION_POLICY.md`
+- `docs/RAG_CATALOG_CONTROL_PLANE.md`

@@ -20,6 +20,7 @@
 | `docs/RAG_ADVANCED_PORTFOLIO_ROADMAP.md` | 고급 RAG/AI 백엔드 포트폴리오 고도화 로드맵 |
 | `docs/RAG_PIPELINE_ARCHITECTURE.md` | RAG source registry, parser/chunker, refresh/reindex 파이프라인 기준 |
 | `docs/RAG_DECISION_POLICY.md` | RAG 변경 감지, 재임베딩, fallback 상황별 의사결정 정책 |
+| `docs/RAG_CATALOG_CONTROL_PLANE.md` | 공식 URL catalog 변경 감지, plan/apply, section/chunk diff 운영 기준 |
 | `docs/FLUTTER_UI_DESIGN.md` | Flutter 화면별 UI/UX 상세 설계 |
 | `docs/DEPLOYMENT.md` | Docker/Nginx/배포 상세 |
 | `docs/DEVELOPMENT_GUIDE.md` | 개발 컨벤션과 구현 순서 기록 |
@@ -148,6 +149,8 @@ Core tables:
 | `rag_sources` | RAG 지식 출처/버전/status 원장 |
 | `rag_chunks` | RAG 검색 청크와 3072차원 embedding |
 | `rag_ingest_jobs` | RAG ingest/reindex/archive 작업 이력 |
+| `rag_catalog_plan_runs` | 공식 source catalog plan 실행 단위와 summary |
+| `rag_catalog_plan_items` | source별 diff, planned action, apply 결과 |
 | `rag_retrieval_traces` | AI 답변 생성 시 검색된 chunk trace |
 | `ai_generation_traces` | prompt/model/source 기반 AI 생성 trace |
 
@@ -254,6 +257,8 @@ RAG management:
 ```bash
 docker compose exec backend python scripts/reset_rag_data.py
 docker compose exec backend python scripts/ingest_rag_data.py --dir rag_data/
+docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/catalog.json --report-path /workspace/docs/RAG_CATALOG_PLAN_REPORT.md
+docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id>
 ```
 
 Known AI maintenance item:
