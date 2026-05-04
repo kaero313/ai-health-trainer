@@ -18,6 +18,10 @@ def test_rag_cli_exposes_url_acquisition_commands():
         == "register-url"
     )
     assert parser.parse_args(["ingest-catalog", "--file", "rag_sources/catalog.json"]).command == "ingest-catalog"
+    assert parser.parse_args(["catalog-plan", "--file", "rag_sources/catalog.json"]).command == "catalog-plan"
+    assert parser.parse_args(["catalog-runs", "--limit", "5"]).command == "catalog-runs"
+    assert parser.parse_args(["catalog-run", "--run-id", "1"]).command == "catalog-run"
+    assert parser.parse_args(["catalog-apply", "--run-id", "1"]).command == "catalog-apply"
 
 
 def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
@@ -72,6 +76,18 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
                 "index_skip_count": 0,
             }
         ],
+        "latest_catalog_plan": {
+            "id": 1,
+            "status": "succeeded",
+            "total_sources": 1,
+            "planned_create_count": 0,
+            "planned_skip_count": 1,
+            "planned_partial_count": 0,
+            "planned_full_count": 0,
+            "planned_manual_count": 0,
+            "planned_defer_count": 0,
+            "created_at": "2026-05-04T00:00:00+00:00",
+        },
         "index_status": {
             "index": "rag_chunks_v1",
             "alias": "rag_chunks_current",
@@ -87,3 +103,4 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
     assert b"\r\n" not in data
     assert "단백질 식단 추천".encode("utf-8") in data
     assert "단백질이 부족한 날의 원칙".encode("utf-8") in data
+    assert b"Latest Catalog Plan" in data
