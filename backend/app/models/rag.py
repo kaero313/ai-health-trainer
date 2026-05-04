@@ -217,6 +217,103 @@ class RagPipelineDecision(Base):
     source: Mapped[RagSource | None] = relationship("RagSource")
 
 
+class RagCatalogPlanRun(Base):
+    __tablename__ = "rag_catalog_plan_runs"
+    __table_args__ = (
+        Index("ix_rag_catalog_plan_runs_status", "status"),
+        Index("ix_rag_catalog_plan_runs_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    catalog_file: Mapped[str] = mapped_column(String(1000), nullable=False)
+    catalog_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mode: Mapped[str] = mapped_column(String(30), nullable=False, server_default="live_fetch")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="running")
+    report_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    total_sources: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    missing_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    matched_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    orphaned_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    metadata_changed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    content_changed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    quality_warning_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_create_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_skip_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_partial_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_full_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_manual_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_defer_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    summary: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    items: Mapped[list[RagCatalogPlanItem]] = relationship(
+        "RagCatalogPlanItem",
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class RagCatalogPlanItem(Base):
+    __tablename__ = "rag_catalog_plan_items"
+    __table_args__ = (
+        Index("ix_rag_catalog_plan_items_run_id", "run_id"),
+        Index("ix_rag_catalog_plan_items_source_id", "source_id"),
+        Index("ix_rag_catalog_plan_items_action", "planned_action"),
+        Index("ix_rag_catalog_plan_items_apply_status", "apply_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("rag_catalog_plan_runs.id", ondelete="CASCADE"), nullable=False)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("rag_sources.id", ondelete="SET NULL"), nullable=True)
+    catalog_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    catalog_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    license: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source_grade: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    catalog_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    fetch_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    parser_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    old_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    new_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    etag_changed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_modified_changed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    metadata_changed_fields: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    sections_added: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    sections_removed: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    sections_changed: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    sections_unchanged: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    chunks_added: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    chunks_removed: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    chunks_changed: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    chunks_unchanged: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    section_change_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    chunk_change_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimated_embedding_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    planned_action: Mapped[str] = mapped_column(String(50), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    apply_status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="pending")
+    applied_job_id: Mapped[int | None] = mapped_column(ForeignKey("rag_ingest_jobs.id", ondelete="SET NULL"), nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    apply_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    apply_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    run: Mapped[RagCatalogPlanRun] = relationship("RagCatalogPlanRun", back_populates="items")
+    source: Mapped[RagSource | None] = relationship("RagSource")
+    applied_job: Mapped[RagIngestJob | None] = relationship("RagIngestJob")
+
+
 class RagRetrievalTrace(Base):
     __tablename__ = "rag_retrieval_traces"
     __table_args__ = (

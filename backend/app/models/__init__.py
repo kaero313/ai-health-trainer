@@ -3,6 +3,8 @@ from app.models.diet import DietLog, DietLogItem, FoodCatalogItem, MealTypeEnum
 from app.models.exercise import ExerciseLog, ExerciseSet, MuscleGroupEnum
 from app.models.rag import (
     AIGenerationTrace,
+    RagCatalogPlanItem,
+    RagCatalogPlanRun,
     RagChunk,
     RagEmbeddingCache,
     RagIngestJob,
@@ -28,6 +30,8 @@ __all__ = [
     "MealTypeEnum",
     "MuscleGroupEnum",
     "RagChunk",
+    "RagCatalogPlanItem",
+    "RagCatalogPlanRun",
     "RagEmbeddingCache",
     "RagIngestJob",
     "RagPipelineDecision",
