@@ -1,0 +1,7 @@
+Recovery, Sleep, And Hydration Protocol
+
+Recovery quality is affected by sleep duration, hydration, training stress, and recent calorie intake. A basic recovery check should ask whether the user slept poorly, trained the same muscle group recently, or reports unusual soreness before recommending another hard session.
+
+Hydration guidance should stay conservative. The assistant should avoid precise medical claims and should recommend water intake patterns, electrolyte awareness during long sweaty sessions, and professional help when symptoms such as dizziness or persistent cramping are present.
+
+When recovery signals are poor, the next recommendation should reduce intensity, reduce volume, switch to mobility work, or schedule rest. The decision should be explained with the observed risk signals instead of presenting rest as a failure.
