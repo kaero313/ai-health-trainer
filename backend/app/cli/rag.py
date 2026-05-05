@@ -302,12 +302,20 @@ async def _load_v1_url_source_summary(db) -> dict[str, Any]:
                 """
                 SELECT
                   count(*) FILTER (WHERE origin_type = 'url_html')::int AS url_source_count,
+                  count(*) FILTER (WHERE origin_type IN ('file_markdown', 'file_text', 'file_pdf'))::int AS local_file_source_count,
                   count(*) FILTER (WHERE origin_type = 'url_html' AND metadata ? 'fetch_metadata'
                     AND metadata->'fetch_metadata' ? 'catalog_key')::int AS catalog_source_count,
+                  count(*) FILTER (WHERE origin_type IN ('file_markdown', 'file_text', 'file_pdf') AND metadata ? 'fetch_metadata'
+                    AND metadata->'fetch_metadata' ? 'catalog_key')::int AS catalog_local_file_source_count,
                   count(*) FILTER (WHERE parser_type = 'html')::int AS html_parser_source_count,
+                  count(*) FILTER (WHERE parser_type = 'markdown')::int AS markdown_parser_source_count,
+                  count(*) FILTER (WHERE parser_type = 'text')::int AS text_parser_source_count,
+                  count(*) FILTER (WHERE parser_type = 'pdf_text')::int AS pdf_text_parser_source_count,
                   count(*) FILTER (WHERE source_grade = 'A')::int AS source_grade_a_count,
                   count(*) FILTER (WHERE origin_type = 'url_html' AND external_etag IS NOT NULL)::int AS etag_present_count,
                   count(*) FILTER (WHERE origin_type = 'url_html' AND external_last_modified IS NOT NULL)::int AS last_modified_present_count,
+                  count(*) FILTER (WHERE origin_type IN ('file_markdown', 'file_text', 'file_pdf') AND metadata ? 'fetch_metadata'
+                    AND metadata->'fetch_metadata' ? 'file_size')::int AS local_file_fingerprint_count,
                   count(*) FILTER (WHERE origin_type = 'url_html' AND next_refresh_at IS NOT NULL)::int AS scheduled_refresh_count,
                   count(*) FILTER (WHERE origin_type = 'url_html' AND next_refresh_at <= now())::int AS stale_source_count
                 FROM rag_sources
@@ -317,11 +325,17 @@ async def _load_v1_url_source_summary(db) -> dict[str, Any]:
     ).mappings().one()
     return {
         "url_source_count": int(row["url_source_count"]),
+        "local_file_source_count": int(row["local_file_source_count"]),
         "catalog_source_count": int(row["catalog_source_count"]),
+        "catalog_local_file_source_count": int(row["catalog_local_file_source_count"]),
         "html_parser_source_count": int(row["html_parser_source_count"]),
+        "markdown_parser_source_count": int(row["markdown_parser_source_count"]),
+        "text_parser_source_count": int(row["text_parser_source_count"]),
+        "pdf_text_parser_source_count": int(row["pdf_text_parser_source_count"]),
         "source_grade_a_count": int(row["source_grade_a_count"]),
         "etag_present_count": int(row["etag_present_count"]),
         "last_modified_present_count": int(row["last_modified_present_count"]),
+        "local_file_fingerprint_count": int(row["local_file_fingerprint_count"]),
         "scheduled_refresh_count": int(row["scheduled_refresh_count"]),
         "stale_source_count": int(row["stale_source_count"]),
     }
@@ -511,7 +525,7 @@ def _write_v1_validation_report(report: dict[str, Any], report_path: Path) -> No
     lines.extend(
         [
             "",
-            "## URL Source Summary",
+            "## Source Acquisition Summary",
             "",
             "| Metric | Count |",
             "|--------|-------|",
