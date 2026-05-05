@@ -14,6 +14,16 @@ from app.core.config import Settings
 from app.models.rag import RagCatalogPlanItem, RagCatalogPlanRun, RagChunk, RagSource
 from app.services.rag_pipeline import CHUNKER_VERSION, NORMALIZATION_VERSION, ChunkPlan
 from app.services.rag_service import RAGService
+from app.services.rag_source_adapters import (
+    ACQUISITION_LOCAL_FILE,
+    ACQUISITION_URL_HTML,
+    AcquiredSource,
+    CatalogSource,
+    LocalFileSourceAdapter,
+    UrlHtmlSourceAdapter,
+    load_catalog_sources,
+    resolve_catalog_path,
+)
 
 
 CATALOG_PLAN_MODE = "live_fetch"
@@ -23,22 +33,6 @@ ACTION_PARTIAL = "partial_refresh"
 ACTION_FULL = "full_reindex"
 ACTION_MANUAL = "manual_review_required"
 ACTION_DEFER = "defer_reembedding"
-
-
-@dataclass(frozen=True)
-class CatalogSource:
-    key: str | None
-    url: str
-    title: str | None
-    category: str
-    tags: list[str]
-    source_type: str
-    source_grade: str
-    license_value: str | None
-    language: str
-    author_or_org: str | None
-    refresh_policy: str
-    refresh_interval_hours: int | None
 
 
 @dataclass(frozen=True)
@@ -60,12 +54,14 @@ class RAGCatalogControlService:
         self.db = db
         self.settings = settings
         self.rag_service = RAGService(db, settings)
+        self.url_adapter = UrlHtmlSourceAdapter(self.rag_service)
+        self.local_file_adapter = LocalFileSourceAdapter(self.rag_service.parser)
 
     async def create_plan(self, *, catalog_file: str | Path, report_path: str | Path | None = None) -> dict[str, Any]:
         started_at = datetime.now(timezone.utc)
         catalog_path = Path(catalog_file)
         catalog_payload = json.loads(catalog_path.read_text(encoding="utf-8"))
-        catalog_sources = _load_catalog_sources(catalog_payload)
+        catalog_sources = load_catalog_sources(catalog_payload)
 
         run = RagCatalogPlanRun(
             catalog_file=str(catalog_path),
@@ -78,24 +74,27 @@ class RAGCatalogControlService:
         self.db.add(run)
         await self.db.flush()
 
-        active_url_sources = await self._load_active_url_sources()
+        active_sources = await self._load_active_catalog_sources(_catalog_acquisition_types(catalog_sources))
         matched_source_ids: set[int] = set()
         items: list[RagCatalogPlanItem] = []
         for catalog_source in catalog_sources:
-            existing_source = self._match_catalog_source(catalog_source, active_url_sources)
+            existing_source = self._match_catalog_source(catalog_source, None, active_sources, catalog_path)
             if existing_source:
                 matched_source_ids.add(existing_source.id)
-            item = await self._plan_catalog_source(run.id, catalog_source, existing_source)
+            item = await self._plan_catalog_source(run.id, catalog_source, catalog_path, existing_source)
             self.db.add(item)
             items.append(item)
 
-        catalog_urls = {source.url for source in catalog_sources}
+        catalog_origin_uris = {_catalog_origin_uri(source, catalog_path) for source in catalog_sources}
+        catalog_urls = {source.url for source in catalog_sources if source.url}
         catalog_keys = {source.key for source in catalog_sources if source.key}
-        for source in active_url_sources:
+        for source in active_sources:
             if source.id in matched_source_ids:
                 continue
             source_key = _source_catalog_key(source)
-            if source.origin_uri in catalog_urls or source.source_url in catalog_urls or source_key in catalog_keys:
+            if not source_key:
+                continue
+            if source.origin_uri in catalog_origin_uris or source.source_url in catalog_urls or source_key in catalog_keys:
                 continue
             item = self._plan_orphaned_source(run.id, source)
             self.db.add(item)
@@ -152,7 +151,7 @@ class RAGCatalogControlService:
         failed = 0
         for item in sorted(run.items, key=lambda row: row.id):
             try:
-                item_result = await self._apply_item(item)
+                item_result = await self._apply_item(run, item)
             except Exception as exc:  # pragma: no cover - defensive safety net
                 item.apply_status = "failed"
                 item.apply_error_code = "APPLY_FAILED"
@@ -177,18 +176,17 @@ class RAGCatalogControlService:
         self,
         run_id: int,
         catalog_source: CatalogSource,
+        catalog_path: Path,
         existing_source: RagSource | None,
     ) -> RagCatalogPlanItem:
         try:
-            fetched = await self.rag_service.url_fetcher.fetch(catalog_source.url)
-            parsed = self.rag_service._parse_fetched_url(
-                fetched,
-                title=catalog_source.title,
-                extra_metadata={"catalog_key": catalog_source.key, "catalog_file": None},
-            )
+            acquired = await self._acquire_catalog_source(catalog_source, catalog_path)
+            if existing_source is None:
+                active_sources = await self._load_active_catalog_sources({catalog_source.acquisition_type})
+                existing_source = self._match_catalog_source(catalog_source, acquired, active_sources, catalog_path)
             plans = self.rag_service._build_chunk_plans(
-                parsed,
-                source_title=catalog_source.title or parsed.title,
+                acquired.parsed,
+                source_title=catalog_source.title or acquired.parsed.title,
                 category=catalog_source.category,
                 tags=catalog_source.tags,
                 source_grade=catalog_source.source_grade,
@@ -197,35 +195,39 @@ class RAGCatalogControlService:
             old_chunks = await self.rag_service._load_active_source_chunks(existing_source.id) if existing_source else []
             section_diff = _diff_sections(old_chunks, plans)
             chunk_diff = _diff_chunks(old_chunks, plans)
-            metadata_changed_fields = _metadata_changed_fields(existing_source, catalog_source)
-            quality_warnings = _quality_warnings(parsed.parser_confidence, plans, section_diff, self.settings)
+            metadata_changed_fields = _metadata_changed_fields(existing_source, catalog_source, acquired)
+            quality_warnings = _quality_warnings(acquired.parsed.parser_confidence, plans, section_diff, self.settings)
             estimated_embedding_count = self.rag_service._estimate_new_embedding_count(old_chunks, plans)
             estimated_embedding_seconds = estimated_embedding_count * self.settings.RAG_ESTIMATED_EMBEDDING_SECONDS_PER_CHUNK
             action, reason_code, risk_level = self._choose_action(
                 existing_source=existing_source,
-                parsed_hash=parsed.content_hash,
+                parsed_hash=acquired.parsed.content_hash,
+                parser_version=acquired.parsed.parser_version,
                 metadata_changed_fields=metadata_changed_fields,
                 quality_warnings=quality_warnings,
                 section_diff=section_diff,
                 chunk_diff=chunk_diff,
                 estimated_embedding_seconds=estimated_embedding_seconds,
             )
-            fetch_metadata = parsed.fetch_metadata or {}
+            fetch_metadata = acquired.parsed.fetch_metadata or {}
             return RagCatalogPlanItem(
                 run_id=run_id,
                 source_id=existing_source.id if existing_source else None,
                 catalog_key=catalog_source.key,
                 catalog_url=catalog_source.url,
-                title=catalog_source.title or parsed.title,
+                acquisition_type=catalog_source.acquisition_type,
+                origin_uri=acquired.origin_uri,
+                parser_type=acquired.parsed.parser_type,
+                title=catalog_source.title or acquired.parsed.title,
                 category=catalog_source.category,
                 tags=catalog_source.tags,
                 license=catalog_source.license_value,
                 source_grade=catalog_source.source_grade,
                 catalog_status=_catalog_status(existing_source, metadata_changed_fields),
                 fetch_status="succeeded",
-                parser_confidence=parsed.parser_confidence,
+                parser_confidence=acquired.parsed.parser_confidence,
                 old_content_hash=existing_source.content_hash if existing_source else None,
-                new_content_hash=parsed.content_hash,
+                new_content_hash=acquired.parsed.content_hash,
                 etag_changed=_metadata_changed(existing_source.external_etag if existing_source else None, fetch_metadata.get("etag")),
                 last_modified_changed=_metadata_changed(
                     existing_source.external_last_modified.isoformat() if existing_source and existing_source.external_last_modified else None,
@@ -248,10 +250,17 @@ class RAGCatalogControlService:
                 reason_code=reason_code,
                 risk_level=risk_level,
                 context={
-                    "final_url": fetched.final_url,
-                    "content_type": fetched.content_type,
-                    "raw_content_hash": fetched.raw_content_hash,
-                    "parser_version": parsed.parser_version,
+                    "acquisition_type": catalog_source.acquisition_type,
+                    "origin_type": acquired.origin_type,
+                    "origin_uri": acquired.origin_uri,
+                    "source_url": acquired.source_url,
+                    "reference_urls": catalog_source.reference_urls,
+                    "curation_method": catalog_source.curation_method,
+                    "final_url": fetch_metadata.get("final_url"),
+                    "content_type": fetch_metadata.get("content_type"),
+                    "raw_content_hash": fetch_metadata.get("raw_content_hash"),
+                    "parser_type": acquired.parsed.parser_type,
+                    "parser_version": acquired.parsed.parser_version,
                     "chunker_version": CHUNKER_VERSION,
                     "normalization_version": NORMALIZATION_VERSION,
                     "source_type": catalog_source.source_type,
@@ -268,6 +277,9 @@ class RAGCatalogControlService:
                 source_id=existing_source.id if existing_source else None,
                 catalog_key=catalog_source.key,
                 catalog_url=catalog_source.url,
+                acquisition_type=catalog_source.acquisition_type,
+                origin_uri=_safe_catalog_origin_uri(catalog_source, catalog_path),
+                parser_type=catalog_source.parser_type,
                 title=catalog_source.title,
                 category=catalog_source.category,
                 tags=catalog_source.tags,
@@ -279,7 +291,12 @@ class RAGCatalogControlService:
                 reason_code="FETCH_OR_PARSE_FAILED",
                 risk_level="high",
                 quality_warnings=["fetch_or_parse_failed"],
-                context={"error": str(exc)},
+                context={
+                    "error": str(exc),
+                    "acquisition_type": catalog_source.acquisition_type,
+                    "reference_urls": catalog_source.reference_urls,
+                    "curation_method": catalog_source.curation_method,
+                },
             )
 
     def _plan_orphaned_source(self, run_id: int, source: RagSource) -> RagCatalogPlanItem:
@@ -287,7 +304,10 @@ class RAGCatalogControlService:
             run_id=run_id,
             source_id=source.id,
             catalog_key=_source_catalog_key(source),
-            catalog_url=source.origin_uri or source.source_url,
+            catalog_url=source.source_url if source.origin_type == "url_html" else None,
+            acquisition_type=_acquisition_type_for_source(source),
+            origin_uri=source.origin_uri,
+            parser_type=source.parser_type,
             title=source.title,
             category=source.category,
             tags=list(source.tags or []),
@@ -309,6 +329,7 @@ class RAGCatalogControlService:
         *,
         existing_source: RagSource | None,
         parsed_hash: str,
+        parser_version: str,
         metadata_changed_fields: list[str],
         quality_warnings: list[str],
         section_diff: DiffStats,
@@ -324,7 +345,7 @@ class RAGCatalogControlService:
         if section_diff.missing_lineage or chunk_diff.missing_lineage:
             return ACTION_FULL, "ANCHOR_LINEAGE_MISSING", "medium"
         if (
-            existing_source.parser_version != "html-parser-v1"
+            existing_source.parser_version != parser_version
             or existing_source.chunker_version != CHUNKER_VERSION
             or existing_source.normalization_version != NORMALIZATION_VERSION
         ):
@@ -337,7 +358,7 @@ class RAGCatalogControlService:
             return ACTION_PARTIAL, "METADATA_CHANGED", "low"
         return ACTION_PARTIAL, "SMALL_CONTENT_CHANGE", "low"
 
-    async def _apply_item(self, item: RagCatalogPlanItem) -> dict[str, Any]:
+    async def _apply_item(self, run: RagCatalogPlanRun, item: RagCatalogPlanItem) -> dict[str, Any]:
         if item.planned_action == ACTION_SKIP:
             item.apply_status = "skipped"
             item.applied_at = datetime.now(timezone.utc)
@@ -346,33 +367,30 @@ class RAGCatalogControlService:
             item.apply_status = "blocked"
             item.applied_at = datetime.now(timezone.utc)
             return {"apply_status": item.apply_status}
-        if not item.catalog_url:
+        catalog_source = _catalog_source_from_item(item)
+        if not (catalog_source.url or catalog_source.path):
             item.apply_status = "blocked"
-            item.apply_error_code = "CATALOG_URL_MISSING"
+            item.apply_error_code = "CATALOG_ORIGIN_MISSING"
             item.applied_at = datetime.now(timezone.utc)
             return {"apply_status": item.apply_status}
 
-        fetched = await self.rag_service.url_fetcher.fetch(item.catalog_url)
-        parsed = self.rag_service._parse_fetched_url(
-            fetched,
-            title=item.title,
-            extra_metadata={"catalog_key": item.catalog_key},
-        )
-        if parsed.content_hash != item.new_content_hash:
+        acquired = await self._acquire_catalog_source(catalog_source, Path(run.catalog_file))
+        if acquired.parsed.content_hash != item.new_content_hash:
             item.apply_status = "stale"
             item.apply_error_code = "PLAN_STALE"
-            item.apply_error_message = "Remote content hash differs from the stored plan"
+            item.apply_error_message = "Acquired content hash differs from the stored plan"
             item.applied_at = datetime.now(timezone.utc)
             return {"apply_status": item.apply_status}
 
-        existing_source = await self.rag_service._find_existing_url_source(item.catalog_url, fetched.final_url)
+        active_sources = await self._load_active_catalog_sources({catalog_source.acquisition_type})
+        existing_source = self._match_catalog_source(catalog_source, acquired, active_sources, Path(run.catalog_file))
         result = await self.rag_service._ingest_parsed_document(
-            parsed=parsed,
-            title=item.title or parsed.title,
+            parsed=acquired.parsed,
+            title=item.title or acquired.parsed.title,
             category=item.category or "general",
-            source_url=fetched.final_url,
-            origin_type="url_html",
-            origin_uri=item.catalog_url,
+            source_url=acquired.source_url,
+            origin_type=acquired.origin_type,
+            origin_uri=acquired.origin_uri,
             tags=list(item.tags or []),
             source_type=str(item.context.get("source_type") or "official_guideline"),
             source_grade=item.source_grade or "A",
@@ -391,22 +409,43 @@ class RAGCatalogControlService:
         item.applied_at = datetime.now(timezone.utc)
         return {"apply_status": item.apply_status}
 
-    async def _load_active_url_sources(self) -> list[RagSource]:
+    async def _acquire_catalog_source(self, catalog_source: CatalogSource, catalog_path: Path) -> AcquiredSource:
+        if catalog_source.acquisition_type == ACQUISITION_LOCAL_FILE:
+            return await self.local_file_adapter.acquire(catalog_source, catalog_file=catalog_path)
+        return await self.url_adapter.acquire(catalog_source, catalog_file=catalog_path)
+
+    async def _load_active_catalog_sources(self, acquisition_types: set[str]) -> list[RagSource]:
+        origin_types: set[str] = set()
+        for acquisition_type in acquisition_types:
+            if acquisition_type == ACQUISITION_LOCAL_FILE:
+                origin_types.update({"file_markdown", "file_text", "file_pdf"})
+            else:
+                origin_types.add("url_html")
         return (
             await self.db.execute(
                 select(RagSource)
-                .where(RagSource.status == "active", RagSource.origin_type == "url_html")
+                .where(RagSource.status == "active", RagSource.origin_type.in_(origin_types))
                 .order_by(RagSource.id.asc())
             )
         ).scalars().all()
 
     @staticmethod
-    def _match_catalog_source(catalog_source: CatalogSource, sources: list[RagSource]) -> RagSource | None:
+    def _match_catalog_source(
+        catalog_source: CatalogSource,
+        acquired: AcquiredSource | None,
+        sources: list[RagSource],
+        catalog_path: Path,
+    ) -> RagSource | None:
+        origin_uri = acquired.origin_uri if acquired else _safe_catalog_origin_uri(catalog_source, catalog_path)
         for source in sources:
             if catalog_source.key and _source_catalog_key(source) == catalog_source.key:
                 return source
+        if origin_uri:
+            for source in sources:
+                if source.origin_uri == origin_uri:
+                    return source
         for source in sources:
-            if catalog_source.url in {source.origin_uri, source.source_url}:
+            if catalog_source.url and catalog_source.url in {source.origin_uri, source.source_url}:
                 return source
         return None
 
@@ -473,6 +512,9 @@ class RAGCatalogControlService:
             "source_id": item.source_id,
             "catalog_key": item.catalog_key,
             "catalog_url": item.catalog_url,
+            "acquisition_type": item.acquisition_type,
+            "origin_uri": item.origin_uri,
+            "parser_type": item.parser_type,
             "title": item.title,
             "category": item.category,
             "catalog_status": item.catalog_status,
@@ -526,13 +568,14 @@ class RAGCatalogControlService:
             "",
             "## Items",
             "",
-            "| Source | Status | Action | Reason | Section Ratio | Chunk Ratio | Warnings |",
-            "|--------|--------|--------|--------|---------------|-------------|----------|",
+            "| Source | Acquisition | Status | Action | Reason | Section Ratio | Chunk Ratio | Warnings |",
+            "|--------|-------------|--------|--------|--------|---------------|-------------|----------|",
         ]
         for item in items:
             lines.append(
-                "| {title} | {catalog_status} | {planned_action} | {reason_code} | {section_ratio} | {chunk_ratio} | {warnings} |".format(
+                "| {title} | {acquisition_type} | {catalog_status} | {planned_action} | {reason_code} | {section_ratio} | {chunk_ratio} | {warnings} |".format(
                     title=_escape_pipe(str(item.get("title") or item.get("catalog_key") or "")),
+                    acquisition_type=item.get("acquisition_type"),
                     catalog_status=item.get("catalog_status"),
                     planned_action=item.get("planned_action"),
                     reason_code=item.get("reason_code"),
@@ -545,39 +588,26 @@ class RAGCatalogControlService:
         report_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
-def _load_catalog_sources(payload: Any) -> list[CatalogSource]:
-    raw_sources = payload.get("sources", []) if isinstance(payload, dict) else payload
-    if not isinstance(raw_sources, list):
-        raise ValueError("Catalog file must contain a sources list")
-    return [
-        CatalogSource(
-            key=source.get("key"),
-            url=source["url"],
-            title=source.get("title"),
-            category=source["category"],
-            tags=list(source.get("tags") or []),
-            source_type=source.get("source_type", "official_guideline"),
-            source_grade=source.get("source_grade", "A"),
-            license_value=source.get("license"),
-            language=source.get("language", "en"),
-            author_or_org=source.get("author_or_org"),
-            refresh_policy=source.get("refresh_policy", "scheduled"),
-            refresh_interval_hours=_optional_int(source.get("refresh_interval_hours")),
-        )
-        for source in raw_sources
-    ]
-
-
 def _diff_sections(old_chunks: list[RagChunk], new_plans: list[ChunkPlan]) -> DiffStats:
-    old_map = _hash_map(old_chunks, anchor_key="parent_anchor_hash", content_key="parent_content_hash")
-    new_map = _plan_hash_map(new_plans, anchor_key="parent_anchor_hash", content_key="parent_content_hash")
-    return _diff_hash_maps(old_map, new_map, missing_lineage=_missing_lineage(old_chunks, new_plans, "parent_anchor_hash"))
+    if _lineage_present(old_chunks, new_plans, "parent_anchor_hash"):
+        old_map = _hash_map(old_chunks, anchor_key="parent_anchor_hash", content_key="parent_content_hash")
+        new_map = _plan_hash_map(new_plans, anchor_key="parent_anchor_hash", content_key="parent_content_hash")
+        return _diff_hash_maps(old_map, new_map, missing_lineage=_missing_lineage(old_chunks, new_plans, "parent_anchor_hash"))
+    return _diff_anchor_hashes(old_chunks, new_plans)
 
 
 def _diff_chunks(old_chunks: list[RagChunk], new_plans: list[ChunkPlan]) -> DiffStats:
-    old_map = _hash_map(old_chunks, anchor_key="chunk_anchor_hash", content_key="chunk_content_hash")
-    new_map = _plan_hash_map(new_plans, anchor_key="chunk_anchor_hash", content_key="chunk_content_hash")
-    return _diff_hash_maps(old_map, new_map, missing_lineage=_missing_lineage(old_chunks, new_plans, "chunk_anchor_hash"))
+    if _lineage_present(old_chunks, new_plans, "chunk_anchor_hash"):
+        old_map = _hash_map(old_chunks, anchor_key="chunk_anchor_hash", content_key="chunk_content_hash")
+        new_map = _plan_hash_map(new_plans, anchor_key="chunk_anchor_hash", content_key="chunk_content_hash")
+        return _diff_hash_maps(old_map, new_map, missing_lineage=_missing_lineage(old_chunks, new_plans, "chunk_anchor_hash"))
+    return _diff_anchor_hashes(old_chunks, new_plans)
+
+
+def _diff_anchor_hashes(old_chunks: list[RagChunk], new_plans: list[ChunkPlan]) -> DiffStats:
+    old_map = {chunk.anchor_hash: chunk.content_hash for chunk in old_chunks if chunk.anchor_hash}
+    new_map = {plan.anchor_hash: plan.content_hash for plan in new_plans if plan.anchor_hash}
+    return _diff_hash_maps(old_map, new_map, missing_lineage=False)
 
 
 def _hash_map(chunks: list[RagChunk], *, anchor_key: str, content_key: str) -> dict[str, str]:
@@ -619,14 +649,33 @@ def _diff_hash_maps(old_map: dict[str, str], new_map: dict[str, str], *, missing
 def _missing_lineage(old_chunks: list[RagChunk], new_plans: list[ChunkPlan], key: str) -> bool:
     if not old_chunks or not new_plans:
         return False
+    if not _lineage_present(old_chunks, new_plans, key):
+        return False
     return any(not (chunk.metadata_ or {}).get(key) for chunk in old_chunks) or any(
         not plan.metadata.get(key) for plan in new_plans
     )
 
 
-def _metadata_changed_fields(source: RagSource | None, catalog_source: CatalogSource) -> list[str]:
+def _lineage_present(old_chunks: list[RagChunk], new_plans: list[ChunkPlan], key: str) -> bool:
+    return any((chunk.metadata_ or {}).get(key) for chunk in old_chunks) or any(
+        plan.metadata.get(key) for plan in new_plans
+    )
+
+
+def _metadata_changed_fields(
+    source: RagSource | None,
+    catalog_source: CatalogSource,
+    acquired: AcquiredSource,
+) -> list[str]:
     if source is None:
         return []
+    fetch_metadata = (source.metadata_ or {}).get("fetch_metadata")
+    if not isinstance(fetch_metadata, dict):
+        fetch_metadata = {}
+    previous_acquisition_type = fetch_metadata.get("acquisition_type") or _acquisition_type_for_source(source)
+    previous_reference_urls = list(fetch_metadata.get("reference_urls") or [])
+    if not previous_reference_urls and source.origin_type == "url_html":
+        previous_reference_urls = [source.origin_uri or source.source_url]
     comparisons = {
         "title": (source.title, catalog_source.title),
         "category": (source.category, catalog_source.category),
@@ -638,6 +687,11 @@ def _metadata_changed_fields(source: RagSource | None, catalog_source: CatalogSo
         "author_or_org": (source.author_or_org, catalog_source.author_or_org),
         "refresh_policy": (source.refresh_policy, catalog_source.refresh_policy),
         "refresh_interval_hours": (source.refresh_interval_hours, catalog_source.refresh_interval_hours),
+        "acquisition_type": (previous_acquisition_type, catalog_source.acquisition_type),
+        "origin_uri": (source.origin_uri, acquired.origin_uri),
+        "parser_type": (source.parser_type, acquired.parsed.parser_type),
+        "curation_method": (fetch_metadata.get("curation_method"), catalog_source.curation_method),
+        "reference_urls": (previous_reference_urls, catalog_source.reference_urls),
     }
     return [field for field, (left, right) in comparisons.items() if left != right]
 
@@ -668,6 +722,54 @@ def _source_catalog_key(source: RagSource) -> str | None:
         value = fetch_metadata.get("catalog_key")
         return str(value) if value else None
     return None
+
+
+def _catalog_acquisition_types(catalog_sources: list[CatalogSource]) -> set[str]:
+    return {source.acquisition_type for source in catalog_sources} or {ACQUISITION_URL_HTML}
+
+
+def _catalog_origin_uri(catalog_source: CatalogSource, catalog_path: Path) -> str | None:
+    if catalog_source.acquisition_type == ACQUISITION_LOCAL_FILE and catalog_source.path:
+        return str(resolve_catalog_path(catalog_source.path, catalog_path))
+    return catalog_source.url
+
+
+def _safe_catalog_origin_uri(catalog_source: CatalogSource, catalog_path: Path) -> str | None:
+    try:
+        return _catalog_origin_uri(catalog_source, catalog_path)
+    except (OSError, RuntimeError, ValueError):
+        return catalog_source.path or catalog_source.url
+
+
+def _acquisition_type_for_source(source: RagSource) -> str:
+    if source.origin_type in {"file_markdown", "file_text", "file_pdf"}:
+        return ACQUISITION_LOCAL_FILE
+    return ACQUISITION_URL_HTML if source.origin_type == "url_html" else source.origin_type
+
+
+def _catalog_source_from_item(item: RagCatalogPlanItem) -> CatalogSource:
+    context = item.context or {}
+    acquisition_type = item.acquisition_type or str(context.get("acquisition_type") or ACQUISITION_URL_HTML)
+    origin_uri = item.origin_uri or item.catalog_url
+    return CatalogSource(
+        key=item.catalog_key,
+        acquisition_type=acquisition_type,
+        url=item.catalog_url if acquisition_type == ACQUISITION_URL_HTML else None,
+        path=origin_uri if acquisition_type == ACQUISITION_LOCAL_FILE else None,
+        parser_type=item.parser_type or str(context.get("parser_type") or ("html" if acquisition_type == ACQUISITION_URL_HTML else "auto")),
+        title=item.title,
+        category=item.category or "general",
+        tags=list(item.tags or []),
+        source_type=str(context.get("source_type") or "official_guideline"),
+        source_grade=item.source_grade or "A",
+        license_value=item.license,
+        language=str(context.get("language") or "en"),
+        author_or_org=_optional_str(context.get("author_or_org")),
+        refresh_policy=str(context.get("refresh_policy") or "scheduled"),
+        refresh_interval_hours=_optional_int(context.get("refresh_interval_hours")),
+        curation_method=_optional_str(context.get("curation_method")),
+        reference_urls=list(context.get("reference_urls") or []),
+    )
 
 
 def _metadata_changed(previous: object, current: object) -> bool:
