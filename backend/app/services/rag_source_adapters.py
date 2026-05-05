@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.services.rag_pipeline import ParsedDocument
+from app.services.rag_pipeline import ParsedDocument, RAGDocumentParser, hash_text, origin_type_for_path
 
 
 ACQUISITION_URL_HTML = "url_html"
@@ -65,15 +66,46 @@ class UrlHtmlSourceAdapter:
         )
 
 
-def _catalog_metadata(catalog_source: CatalogSource, catalog_file: Path) -> dict[str, Any]:
-    metadata: dict[str, Any] = {
-        "catalog_key": catalog_source.key,
-        "catalog_file": str(catalog_file),
-        "acquisition_type": catalog_source.acquisition_type,
-        "curation_method": catalog_source.curation_method,
-        "reference_urls": catalog_source.reference_urls,
-    }
-    return {key: value for key, value in metadata.items() if value is not None and value != ""}
+class LocalFileSourceAdapter:
+    def __init__(self, parser: RAGDocumentParser):
+        self.parser = parser
+
+    async def acquire(self, catalog_source: CatalogSource, *, catalog_file: Path) -> AcquiredSource:
+        if not catalog_source.path:
+            raise ValueError("local_file catalog source requires path")
+        resolved_path = resolve_catalog_path(catalog_source.path, catalog_file)
+        stat = resolved_path.stat()
+        raw_content = resolved_path.read_bytes()
+        parser_type = catalog_source.parser_type or "auto"
+        parsed = self.parser.parse_file(resolved_path, parser_type=parser_type)
+        metadata = {
+            **_catalog_metadata(catalog_source, catalog_file),
+            "path": catalog_source.path,
+            "resolved_path": str(resolved_path),
+            "file_name": resolved_path.name,
+            "file_extension": resolved_path.suffix.lower(),
+            "file_size": stat.st_size,
+            "mtime": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+            "raw_content_hash": hash_text(raw_content),
+            "parser_type": parsed.parser_type,
+            "origin_type": origin_type_for_path(resolved_path),
+        }
+        parsed = replace(parsed, fetch_metadata=metadata)
+        return AcquiredSource(
+            catalog_source=catalog_source,
+            parsed=parsed,
+            source_url=catalog_source.reference_urls[0] if catalog_source.reference_urls else None,
+            origin_type=origin_type_for_path(resolved_path),
+            origin_uri=str(resolved_path),
+            acquisition_metadata=metadata,
+        )
+
+
+def resolve_catalog_path(path_value: str, catalog_file: Path) -> Path:
+    path = Path(path_value)
+    if path.is_absolute():
+        return path
+    return (catalog_file.parent / path).resolve()
 
 
 def load_catalog_sources(payload: Any) -> list[CatalogSource]:
@@ -105,6 +137,17 @@ def _load_catalog_source(source: dict[str, Any]) -> CatalogSource:
         curation_method=source.get("curation_method"),
         reference_urls=list(source.get("reference_urls") or ([] if not source.get("url") else [source["url"]])),
     )
+
+
+def _catalog_metadata(catalog_source: CatalogSource, catalog_file: Path) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "catalog_key": catalog_source.key,
+        "catalog_file": str(catalog_file),
+        "acquisition_type": catalog_source.acquisition_type,
+        "curation_method": catalog_source.curation_method,
+        "reference_urls": catalog_source.reference_urls,
+    }
+    return {key: value for key, value in metadata.items() if value is not None and value != ""}
 
 
 def _optional_int(value: object) -> int | None:
