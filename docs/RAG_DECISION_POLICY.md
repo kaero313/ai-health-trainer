@@ -241,3 +241,11 @@ OpenSearch keyword/vector search fails
 - 재임베딩과 재색인을 무조건 수행하지 않고 합리적으로 skip/reuse/defer한다.
 - parser/chunker/hash/model version을 함께 관리해 재현 가능성을 보장한다.
 - 검색 품질 평가와 운영 지표를 분리해 장기 고도화가 가능하게 한다.
+
+---
+
+## 12. Local File Acquisition Decisions
+
+Local file catalog sources use the same decision policy as URL sources, with one additional stale guard: apply must re-read the file and compare the current normalized content hash with the planned hash. A mismatch produces `PLAN_STALE` and does not mutate `rag_sources`, `rag_chunks`, or OpenSearch.
+
+The default policy is conservative: missing files, parser failures, low-confidence text extraction, and unsupported future source types are `manual_review_required` until a dedicated adapter exists.

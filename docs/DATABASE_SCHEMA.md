@@ -411,3 +411,9 @@ RAG v1 고도화부터 RAG 테이블은 단순 검색 저장소가 아니라 운
 - `rag_catalog_plan_items.applied_job_id`: 실제 적용된 경우 `rag_ingest_jobs.id`와 연결
 - stale plan은 `apply_status=stale`, `apply_error_code=PLAN_STALE`로 남기고 source/chunk/OpenSearch를 변경하지 않는다.
 - orphaned source는 자동 archive/delete하지 않고 `manual_review_required`로 남긴다.
+
+---
+
+## Source Adapter Catalog Schema
+
+`rag_catalog_plan_items` now records adapter metadata for each planned source: `acquisition_type`, `origin_uri`, and `parser_type`. URL rows keep `catalog_url` for compatibility; local file rows use `origin_uri` for the resolved file path and keep official references in `context.reference_urls`.

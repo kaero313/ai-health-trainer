@@ -397,3 +397,20 @@ v1 이후 확장:
 - blue-green index evaluation gate
 - admin debug API
 - source freshness dashboard
+
+---
+
+## 9. Local Document Source Adapter Flow
+
+The pipeline now treats source acquisition as an adapter step before parsing and chunking.
+
+```text
+catalog row
+ -> source adapter (`url_html` or `local_file`)
+ -> ParsedDocument
+ -> ChunkPlan
+ -> catalog plan item diff
+ -> explicit catalog apply
+```
+
+For `local_file`, MD/TXT/PDF files are fingerprinted with path, size, mtime, raw hash, parser type, reference URLs, and curation method. The same section/chunk diff and refresh decisions are reused across URL and local file sources.

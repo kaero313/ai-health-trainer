@@ -156,3 +156,18 @@ Report에 남기는 항목:
 - content hash와 anchor hash 분리를 통한 안정적인 lineage 관리
 - embedding 비용, parser confidence, stale plan, orphaned source 같은 운영 리스크 처리
 - DB에 계획과 적용 결과를 남기는 audit 가능한 RAG KnowledgeOps
+
+---
+
+## 9. Source Adapter Extension
+
+The catalog control plane now supports two acquisition families with the same plan/apply lifecycle.
+
+| Acquisition | Source | Parser | Notes |
+|-------------|--------|--------|-------|
+| `url_html` | operator registered official single-page URL | `html` | Backward compatible default when catalog rows omit `acquisition_type` |
+| `local_file` | local MD/TXT/PDF path in `rag_sources/document_catalog.json` | `markdown`, `text`, `pdf_text` | Reproducible internal corpus and parser capability validation |
+
+Local file items store file fingerprint metadata in source `metadata.fetch_metadata`: `file_size`, `mtime`, `raw_content_hash`, `resolved_path`, `reference_urls`, and `curation_method`. Apply re-reads the file and blocks with `PLAN_STALE` when the planned normalized content hash differs from the current file.
+
+Official PDF URL acquisition, API connectors, scheduler workers, OCR, and video transcript adapters remain follow-up work. The current scope keeps persisted/embedded corpus reproducible and low-risk while preserving official references in metadata.

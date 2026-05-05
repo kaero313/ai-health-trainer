@@ -355,7 +355,13 @@ docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
 GitHub Actions:
 
 - `ci.yml`: backend pytest + Flutter analyze
-- `cd.yml`: CI success after main branch workflow triggers SSH deploy
+- `cd.yml`: manual SSH deploy only. Current project operation is local-only, so CD must not run automatically on every push.
+
+Current deployment posture:
+
+- CI runs automatically on push and pull request.
+- CD is intentionally manual via GitHub Actions `Run workflow`.
+- Configure a production server and required SSH secrets before running CD.
 
 Required GitHub secrets:
 

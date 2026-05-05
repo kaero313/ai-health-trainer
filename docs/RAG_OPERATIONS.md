@@ -856,3 +856,22 @@ docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id
 - stable anchor lineage가 없는 기존 chunk는 `ANCHOR_LINEAGE_MISSING`으로 보고 full reindex를 계획한다.
 
 상세 기준은 `docs/RAG_CATALOG_CONTROL_PLANE.md`를 따른다.
+
+---
+
+## 18. Local Document Catalog Control Plane
+
+`rag_sources/document_catalog.json` extends catalog control from official URL HTML to local MD/TXT/PDF sources. The same `catalog-plan` -> review -> `catalog-apply` lifecycle is used for all source adapters.
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-plan \
+  --file rag_sources/document_catalog.json \
+  --report-path /workspace/docs/RAG_DOCUMENT_CATALOG_PLAN_REPORT.md
+```
+
+Operational rules:
+
+- `acquisition_type=local_file` sources store file fingerprints: size, mtime, raw hash, resolved path, parser type, reference URLs, and curation method.
+- Apply re-reads the local file and stops with `PLAN_STALE` if the current normalized content hash differs from the planned hash.
+- The persisted corpus remains internal summary/fixture data; official sources are linked as metadata references to reduce copyright and reproducibility risk.
+- Official PDF URL acquisition, API connectors, OCR, video transcript, and scheduler workers remain the next acquisition backlog.
