@@ -73,6 +73,45 @@ def _catalog_file(tmp_path, *, url: str = "https://example.org/guide", title: st
     return path
 
 
+def _document_catalog_file(tmp_path, *, file_name: str, parser_type: str = "markdown"):
+    path = tmp_path / "document_catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sources": [
+                    {
+                        "key": "local_document",
+                        "acquisition_type": "local_file",
+                        "path": file_name,
+                        "parser_type": parser_type,
+                        "title": "Local Document",
+                        "category": "nutrition",
+                        "tags": ["local", "fixture"],
+                        "source_type": "curated_internal_summary",
+                        "source_grade": "B",
+                        "license": "internal-summary",
+                        "language": "en",
+                        "author_or_org": "AI Health Trainer",
+                        "curation_method": "internal fixture",
+                        "reference_urls": ["https://example.org/reference"],
+                        "refresh_policy": "manual",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _markdown_sections(*bodies: str) -> str:
+    sections = []
+    for index, body in enumerate(bodies, start=1):
+        sections.append(f"## Section {index}\n\n{body}")
+    return "# Local Guide\n\n" + "\n\n".join(sections)
+
+
 @pytest.mark.asyncio
 async def test_catalog_plan_persists_missing_source_and_apply_creates_job(db_session, tmp_path):
     html = _html("Adults should move regularly for health.", "Strength training supports muscles.")
@@ -104,6 +143,114 @@ async def test_catalog_plan_persists_missing_source_and_apply_creates_job(db_ses
     assert stored_item.applied_job_id == job.id
     assert stored_item.source_id == source.id
     assert source.metadata_["fetch_metadata"]["catalog_key"] == "official_guide"
+
+
+@pytest.mark.asyncio
+async def test_document_catalog_plan_persists_local_file_without_mutating_until_apply(db_session, tmp_path):
+    source_file = tmp_path / "local-guide.md"
+    source_file.write_text(
+        _markdown_sections(
+            "Protein guidance long enough to create a stable section chunk for local catalog testing.",
+            "Meal timing guidance long enough to stay independent in the markdown chunker.",
+        ),
+        encoding="utf-8",
+    )
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.get_embedding = AsyncMock(return_value=_embedding())
+    service.rag_service.index_service.index_chunk = AsyncMock(return_value=None)
+
+    plan = await service.create_plan(catalog_file=_document_catalog_file(tmp_path, file_name="local-guide.md"))
+    item = plan["items"][0]
+    source_count = await db_session.scalar(select(func.count()).select_from(RagSource))
+    job_count = await db_session.scalar(select(func.count()).select_from(RagIngestJob))
+
+    assert item["acquisition_type"] == "local_file"
+    assert item["origin_uri"] == str(source_file.resolve())
+    assert item["parser_type"] == "markdown"
+    assert item["planned_action"] == "create_source"
+    assert source_count == 0
+    assert job_count == 0
+
+    apply_result = await service.apply_run(run_id=plan["run"]["id"])
+    source = (await db_session.execute(select(RagSource))).scalar_one()
+    stored_item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
+
+    assert apply_result["applied"] == 1
+    assert source.origin_type == "file_markdown"
+    assert source.parser_type == "markdown"
+    assert source.source_url == "https://example.org/reference"
+    assert source.metadata_["fetch_metadata"]["catalog_key"] == "local_document"
+    assert source.metadata_["fetch_metadata"]["file_size"] == source_file.stat().st_size
+    assert stored_item.applied_job_id is not None
+
+
+@pytest.mark.asyncio
+async def test_document_catalog_apply_blocks_stale_local_file(db_session, tmp_path):
+    source_file = tmp_path / "local-guide.md"
+    source_file.write_text(
+        _markdown_sections("Original local content long enough for the catalog plan."),
+        encoding="utf-8",
+    )
+    service = RAGCatalogControlService(db_session, get_settings())
+    catalog_path = _document_catalog_file(tmp_path, file_name="local-guide.md")
+
+    plan = await service.create_plan(catalog_file=catalog_path)
+    source_file.write_text(
+        _markdown_sections("Changed local content after the plan was saved."),
+        encoding="utf-8",
+    )
+    result = await service.apply_run(run_id=plan["run"]["id"])
+    item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
+    source_count = await db_session.scalar(select(func.count()).select_from(RagSource))
+
+    assert result["stale"] == 1
+    assert item.apply_status == "stale"
+    assert item.apply_error_code == "PLAN_STALE"
+    assert source_count == 0
+
+
+@pytest.mark.asyncio
+async def test_document_catalog_detects_partial_local_file_change(db_session, tmp_path):
+    original = _markdown_sections(
+        "Stable section one content with enough text to remain as its own chunk for diffing.",
+        "Stable section two content with enough text to remain as its own chunk for diffing.",
+        "Stable section three content with enough text to remain as its own chunk for diffing.",
+        "Stable section four content with enough text to remain as its own chunk for diffing.",
+    )
+    changed = _markdown_sections(
+        "Changed section one content with updated guidance and enough text to remain its own chunk.",
+        "Stable section two content with enough text to remain as its own chunk for diffing.",
+        "Stable section three content with enough text to remain as its own chunk for diffing.",
+        "Stable section four content with enough text to remain as its own chunk for diffing.",
+    )
+    source_file = tmp_path / "local-guide.md"
+    source_file.write_text(original, encoding="utf-8")
+    catalog_path = _document_catalog_file(tmp_path, file_name="local-guide.md")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.get_embedding = AsyncMock(return_value=_embedding())
+    service.rag_service.index_service.index_chunk = AsyncMock(return_value=None)
+    await service.apply_run(run_id=(await service.create_plan(catalog_file=catalog_path))["run"]["id"])
+
+    source_file.write_text(changed, encoding="utf-8")
+    plan = await service.create_plan(catalog_file=catalog_path)
+    item = plan["items"][0]
+
+    assert item["catalog_status"] == "matched"
+    assert item["planned_action"] == "partial_refresh"
+    assert item["sections"]["changed"] == 1
+    assert item["sections"]["change_ratio"] == 0.25
+
+
+@pytest.mark.asyncio
+async def test_document_catalog_marks_missing_local_file_for_manual_review(db_session, tmp_path):
+    service = RAGCatalogControlService(db_session, get_settings())
+
+    plan = await service.create_plan(catalog_file=_document_catalog_file(tmp_path, file_name="missing.md"))
+    item = plan["items"][0]
+
+    assert item["fetch_status"] == "failed"
+    assert item["planned_action"] == "manual_review_required"
+    assert item["reason_code"] == "FETCH_OR_PARSE_FAILED"
 
 
 @pytest.mark.asyncio
