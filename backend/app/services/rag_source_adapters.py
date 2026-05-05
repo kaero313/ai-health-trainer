@@ -42,6 +42,40 @@ class AcquiredSource:
     acquisition_metadata: dict[str, Any]
 
 
+class UrlHtmlSourceAdapter:
+    def __init__(self, rag_service: Any):
+        self.rag_service = rag_service
+
+    async def acquire(self, catalog_source: CatalogSource, *, catalog_file: Path) -> AcquiredSource:
+        if not catalog_source.url:
+            raise ValueError("url_html catalog source requires url")
+        fetched = await self.rag_service.url_fetcher.fetch(catalog_source.url)
+        parsed = self.rag_service._parse_fetched_url(
+            fetched,
+            title=catalog_source.title,
+            extra_metadata=_catalog_metadata(catalog_source, catalog_file),
+        )
+        return AcquiredSource(
+            catalog_source=catalog_source,
+            parsed=parsed,
+            source_url=fetched.final_url,
+            origin_type="url_html",
+            origin_uri=catalog_source.url,
+            acquisition_metadata=parsed.fetch_metadata or {},
+        )
+
+
+def _catalog_metadata(catalog_source: CatalogSource, catalog_file: Path) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "catalog_key": catalog_source.key,
+        "catalog_file": str(catalog_file),
+        "acquisition_type": catalog_source.acquisition_type,
+        "curation_method": catalog_source.curation_method,
+        "reference_urls": catalog_source.reference_urls,
+    }
+    return {key: value for key, value in metadata.items() if value is not None and value != ""}
+
+
 def load_catalog_sources(payload: Any) -> list[CatalogSource]:
     raw_sources = payload.get("sources", []) if isinstance(payload, dict) else payload
     if not isinstance(raw_sources, list):
