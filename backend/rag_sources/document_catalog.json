@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "description": "Local document RAG catalog for source adapter and parser control plane validation.",
+  "sources": [
+    {
+      "key": "internal_nutrition_basics_markdown",
+      "acquisition_type": "local_file",
+      "path": "../rag_data/nutrition_basics.md",
+      "parser_type": "markdown",
+      "title": "Internal Nutrition Basics Summary",
+      "category": "nutrition",
+      "tags": ["nutrition", "baseline", "macro", "internal-summary"],
+      "source_type": "curated_internal_summary",
+      "source_grade": "B",
+      "license": "internal-summary",
+      "language": "ko",
+      "author_or_org": "AI Health Trainer",
+      "curation_method": "internal summary derived from public health and sports nutrition guidance",
+      "reference_urls": [
+        "https://www.cdc.gov/nutrition/php/guidelines-recommendations/index.html"
+      ],
+      "refresh_policy": "manual"
+    },
+    {
+      "key": "internal_progressive_overload_markdown",
+      "acquisition_type": "local_file",
+      "path": "../rag_data/exercise_progressive_overload.md",
+      "parser_type": "markdown",
+      "title": "Internal Progressive Overload Summary",
+      "category": "exercise",
+      "tags": ["exercise", "progressive-overload", "programming", "internal-summary"],
+      "source_type": "curated_internal_summary",
+      "source_grade": "B",
+      "license": "internal-summary",
+      "language": "ko",
+      "author_or_org": "AI Health Trainer",
+      "curation_method": "internal summary derived from public physical activity guidance",
+      "reference_urls": [
+        "https://odphp.health.gov/our-work/nutrition-physical-activity/physical-activity-guidelines"
+      ],
+      "refresh_policy": "manual"
+    },
+    {
+      "key": "internal_safety_joint_pain_markdown",
+      "acquisition_type": "local_file",
+      "path": "../rag_data/safety_joint_pain_boundary.md",
+      "parser_type": "markdown",
+      "title": "Internal Joint Pain Safety Boundary",
+      "category": "safety",
+      "tags": ["safety", "pain", "boundary", "internal-summary"],
+      "source_type": "curated_internal_summary",
+      "source_grade": "A",
+      "license": "internal-summary",
+      "language": "ko",
+      "author_or_org": "AI Health Trainer",
+      "curation_method": "internal safety policy summary",
+      "reference_urls": [
+        "https://odphp.health.gov/our-work/nutrition-physical-activity/physical-activity-guidelines"
+      ],
+      "refresh_policy": "manual"
+    },
+    {
+      "key": "internal_recovery_sleep_hydration_text",
+      "acquisition_type": "local_file",
+      "path": "../rag_data/recovery_sleep_hydration_protocol.txt",
+      "parser_type": "text",
+      "title": "Internal Recovery Sleep Hydration Protocol",
+      "category": "recovery",
+      "tags": ["recovery", "sleep", "hydration", "safety", "internal-summary"],
+      "source_type": "curated_internal_summary",
+      "source_grade": "B",
+      "license": "internal-summary",
+      "language": "en",
+      "author_or_org": "AI Health Trainer",
+      "curation_method": "internal operational fixture for paragraph chunking validation",
+      "reference_urls": [
+        "https://odphp.health.gov/our-work/nutrition-physical-activity/physical-activity-guidelines"
+      ],
+      "refresh_policy": "manual"
+    },
+    {
+      "key": "synthetic_protein_pdf_text_fixture",
+      "acquisition_type": "local_file",
+      "path": "../rag_data/synthetic_protein_text_fixture.pdf",
+      "parser_type": "pdf_text",
+      "title": "Synthetic Protein PDF Text Fixture",
+      "category": "nutrition",
+      "tags": ["nutrition", "protein", "pdf", "parser-fixture"],
+      "source_type": "synthetic_parser_fixture",
+      "source_grade": "C",
+      "license": "synthetic-fixture",
+      "language": "en",
+      "author_or_org": "AI Health Trainer",
+      "curation_method": "synthetic text PDF used only to validate PDF parser and control plane behavior",
+      "reference_urls": [
+        "https://ods.od.nih.gov/factsheets/ExerciseAndAthleticPerformance-HealthProfessional/"
+      ],
+      "refresh_policy": "manual"
+    }
+  ]
+}
