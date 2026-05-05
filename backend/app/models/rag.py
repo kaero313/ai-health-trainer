@@ -264,6 +264,7 @@ class RagCatalogPlanItem(Base):
     __table_args__ = (
         Index("ix_rag_catalog_plan_items_run_id", "run_id"),
         Index("ix_rag_catalog_plan_items_source_id", "source_id"),
+        Index("ix_rag_catalog_plan_items_acquisition", "acquisition_type"),
         Index("ix_rag_catalog_plan_items_action", "planned_action"),
         Index("ix_rag_catalog_plan_items_apply_status", "apply_status"),
     )
@@ -273,6 +274,9 @@ class RagCatalogPlanItem(Base):
     source_id: Mapped[int | None] = mapped_column(ForeignKey("rag_sources.id", ondelete="SET NULL"), nullable=True)
     catalog_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     catalog_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    acquisition_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    origin_uri: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    parser_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
