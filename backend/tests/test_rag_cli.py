@@ -50,11 +50,17 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
         "db_counts": {"rag_sources": 1, "rag_chunks_active": 1},
         "url_source_summary": {
             "url_source_count": 1,
+            "local_file_source_count": 1,
             "catalog_source_count": 1,
+            "catalog_local_file_source_count": 1,
             "html_parser_source_count": 1,
+            "markdown_parser_source_count": 1,
+            "text_parser_source_count": 0,
+            "pdf_text_parser_source_count": 0,
             "source_grade_a_count": 1,
             "etag_present_count": 1,
             "last_modified_present_count": 1,
+            "local_file_fingerprint_count": 1,
             "scheduled_refresh_count": 1,
             "stale_source_count": 0,
         },
@@ -101,6 +107,7 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
 
     data = report_path.read_bytes()
     assert b"\r\n" not in data
+    assert b"Source Acquisition Summary" in data
     assert "단백질 식단 추천".encode("utf-8") in data
     assert "단백질이 부족한 날의 원칙".encode("utf-8") in data
     assert b"Latest Catalog Plan" in data

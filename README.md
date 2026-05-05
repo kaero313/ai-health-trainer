@@ -46,6 +46,7 @@ docker compose exec backend python -m app.cli.rag ensure-index
 docker compose exec backend python backend/scripts/ingest_rag_data.py --dir rag_data
 docker compose exec backend python -m app.cli.rag fetch-preview --url https://www.cdc.gov/nutrition/php/guidelines-recommendations/index.html
 docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/catalog.json --report-path /workspace/docs/RAG_CATALOG_PLAN_REPORT.md
+docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/document_catalog.json --report-path /workspace/docs/RAG_DOCUMENT_CATALOG_PLAN_REPORT.md
 docker compose exec backend python -m app.cli.rag catalog-runs --limit 20
 docker compose exec backend python -m app.cli.rag catalog-run --run-id <run_id>
 docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id>
@@ -65,3 +66,11 @@ docker compose exec backend python -m app.cli.rag decisions --job-id 1
 - `docs/RAG_PIPELINE_ARCHITECTURE.md`
 - `docs/RAG_DECISION_POLICY.md`
 - `docs/RAG_CATALOG_CONTROL_PLANE.md`
+
+## RAG v1.5 Local Document Catalog
+
+The catalog control plane also supports local MD/TXT/PDF sources through source adapters. Use `rag_sources/document_catalog.json` for reproducible internal summaries and parser fixtures while official source URLs remain metadata references.
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/document_catalog.json --report-path /workspace/docs/RAG_DOCUMENT_CATALOG_PLAN_REPORT.md
+```
