@@ -22,6 +22,9 @@ def test_rag_cli_exposes_url_acquisition_commands():
     assert parser.parse_args(["catalog-runs", "--limit", "5"]).command == "catalog-runs"
     assert parser.parse_args(["catalog-run", "--run-id", "1"]).command == "catalog-run"
     assert parser.parse_args(["catalog-apply", "--run-id", "1"]).command == "catalog-apply"
+    assert parser.parse_args(["scheduler-run", "--force-plan"]).command == "scheduler-run"
+    assert parser.parse_args(["scheduler-runs", "--limit", "5"]).command == "scheduler-runs"
+    assert parser.parse_args(["scheduler-run-detail", "--run-id", "1"]).command == "scheduler-run-detail"
 
 
 def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
@@ -94,6 +97,18 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
             "planned_defer_count": 0,
             "created_at": "2026-05-04T00:00:00+00:00",
         },
+        "latest_scheduler_run": {
+            "id": 2,
+            "status": "no_change",
+            "mode": "plan_only",
+            "catalog_count": 2,
+            "due_catalog_count": 2,
+            "approval_required_count": 0,
+            "no_change_count": 2,
+            "error_count": 0,
+            "plan_run_ids": [1, 2],
+            "created_at": "2026-05-09T00:00:00+00:00",
+        },
         "index_status": {
             "index": "rag_chunks_v1",
             "alias": "rag_chunks_current",
@@ -111,3 +126,4 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
     assert "단백질 식단 추천".encode("utf-8") in data
     assert "단백질이 부족한 날의 원칙".encode("utf-8") in data
     assert b"Latest Catalog Plan" in data
+    assert b"Latest Scheduler Run" in data

@@ -10,6 +10,8 @@ from app.models.rag import (
     RagIngestJob,
     RagPipelineDecision,
     RagRetrievalTrace,
+    RagSchedulerRun,
+    RagSchedulerRunItem,
     RagSource,
 )
 from app.models.token import RefreshToken
@@ -36,6 +38,8 @@ __all__ = [
     "RagIngestJob",
     "RagPipelineDecision",
     "RagRetrievalTrace",
+    "RagSchedulerRun",
+    "RagSchedulerRunItem",
     "RagSource",
     "RecommendationTypeEnum",
     "RefreshToken",

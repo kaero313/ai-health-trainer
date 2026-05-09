@@ -318,6 +318,78 @@ class RagCatalogPlanItem(Base):
     applied_job: Mapped[RagIngestJob | None] = relationship("RagIngestJob")
 
 
+class RagSchedulerRun(Base):
+    __tablename__ = "rag_scheduler_runs"
+    __table_args__ = (
+        Index("ix_rag_scheduler_runs_status", "status"),
+        Index("ix_rag_scheduler_runs_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, server_default="running")
+    mode: Mapped[str] = mapped_column(String(30), nullable=False, server_default="plan_only")
+    target_catalogs: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    force_plan: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    report_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    catalog_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    due_catalog_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    plan_run_ids: Mapped[list[int]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    approval_required_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    no_change_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    error_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    summary: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    items: Mapped[list[RagSchedulerRunItem]] = relationship(
+        "RagSchedulerRunItem",
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class RagSchedulerRunItem(Base):
+    __tablename__ = "rag_scheduler_run_items"
+    __table_args__ = (
+        Index("ix_rag_scheduler_run_items_run_id", "run_id"),
+        Index("ix_rag_scheduler_run_items_plan_run_id", "plan_run_id"),
+        Index("ix_rag_scheduler_run_items_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("rag_scheduler_runs.id", ondelete="CASCADE"), nullable=False)
+    catalog_file: Mapped[str] = mapped_column(String(1000), nullable=False)
+    catalog_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    due_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    plan_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rag_catalog_plan_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    requires_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    total_sources: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    due_source_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_create_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_skip_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_partial_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_full_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_manual_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    planned_defer_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    run: Mapped[RagSchedulerRun] = relationship("RagSchedulerRun", back_populates="items")
+    plan_run: Mapped[RagCatalogPlanRun | None] = relationship("RagCatalogPlanRun")
+
+
 class RagRetrievalTrace(Base):
     __tablename__ = "rag_retrieval_traces"
     __table_args__ = (

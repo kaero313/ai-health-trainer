@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.services.rag_catalog_control_service import RAGCatalogControlService
 from app.services.rag_evaluation import evaluate_retrieval, load_retrieval_cases
+from app.services.rag_refresh_scheduler import RAGRefreshSchedulerService
 from app.services.rag_service import RAGService
 
 
@@ -179,6 +180,32 @@ async def _catalog_apply(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+async def _scheduler_run(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGRefreshSchedulerService(db, settings).run(
+            catalog_files=args.catalog,
+            report_path=None if args.json_only else args.report_path,
+            force_plan=args.force_plan,
+            limit_catalogs=args.limit_catalogs,
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _scheduler_runs(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGRefreshSchedulerService(db, settings).list_runs(limit=args.limit)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _scheduler_run_detail(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGRefreshSchedulerService(db, settings).get_run(args.run_id)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 async def _refresh_source(args: argparse.Namespace) -> None:
     settings = get_settings()
     async with AsyncSessionLocal() as db:
@@ -247,6 +274,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         decision_summary = await _load_v1_decision_summary(db)
         recent_jobs = await _load_v1_recent_jobs(db, limit=args.job_limit)
         latest_catalog_plan = await _load_latest_catalog_plan(db)
+        latest_scheduler_run = await _load_latest_scheduler_run(db)
         try:
             index_status = await service.index_status()
         except Exception as exc:  # pragma: no cover - depends on local OpenSearch availability
@@ -265,6 +293,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         "decision_summary": decision_summary,
         "recent_jobs": recent_jobs,
         "latest_catalog_plan": latest_catalog_plan,
+        "latest_scheduler_run": latest_scheduler_run,
         "index_status": index_status,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -287,6 +316,8 @@ async def _load_v1_db_counts(db) -> dict[str, int]:
                 UNION ALL SELECT 'rag_embedding_cache', count(*)::int FROM rag_embedding_cache
                 UNION ALL SELECT 'rag_catalog_plan_runs', count(*)::int FROM rag_catalog_plan_runs
                 UNION ALL SELECT 'rag_catalog_plan_items', count(*)::int FROM rag_catalog_plan_items
+                UNION ALL SELECT 'rag_scheduler_runs', count(*)::int FROM rag_scheduler_runs
+                UNION ALL SELECT 'rag_scheduler_run_items', count(*)::int FROM rag_scheduler_run_items
                 ORDER BY name
                 """
             )
@@ -409,6 +440,29 @@ async def _load_latest_catalog_plan(db) -> dict[str, Any] | None:
                        planned_partial_count, planned_full_count, planned_manual_count,
                        planned_defer_count, created_at
                 FROM rag_catalog_plan_runs
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            )
+        )
+    ).mappings().first()
+    if not row:
+        return None
+    result = dict(row)
+    if result.get("created_at") is not None:
+        result["created_at"] = result["created_at"].isoformat()
+    return result
+
+
+async def _load_latest_scheduler_run(db) -> dict[str, Any] | None:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, status, mode, catalog_count, due_catalog_count,
+                       approval_required_count, no_change_count, error_count,
+                       plan_run_ids, created_at
+                FROM rag_scheduler_runs
                 ORDER BY id DESC
                 LIMIT 1
                 """
@@ -546,6 +600,20 @@ def _write_v1_validation_report(report: dict[str, Any], report_path: Path) -> No
             ]
         )
         for name, value in latest_catalog_plan.items():
+            lines.append(f"| `{name}` | {_markdown_value(value)} |")
+
+    latest_scheduler_run = report.get("latest_scheduler_run")
+    if latest_scheduler_run:
+        lines.extend(
+            [
+                "",
+                "## Latest Scheduler Run",
+                "",
+                "| Field | Value |",
+                "|-------|-------|",
+            ]
+        )
+        for name, value in latest_scheduler_run.items():
             lines.append(f"| `{name}` | {_markdown_value(value)} |")
 
     lines.extend(
@@ -698,6 +766,24 @@ def build_parser() -> argparse.ArgumentParser:
     catalog_apply = subparsers.add_parser("catalog-apply", help="Apply a persisted catalog plan run")
     catalog_apply.add_argument("--run-id", type=int, required=True, help="Catalog plan run id")
 
+    scheduler_run = subparsers.add_parser("scheduler-run", help="Run plan-only RAG catalog scheduler")
+    scheduler_run.add_argument(
+        "--catalog",
+        action="append",
+        default=None,
+        help="Catalog JSON path. May be provided multiple times. Defaults to URL and document catalogs.",
+    )
+    scheduler_run.add_argument("--report-path", default=None, help="Optional markdown report output path")
+    scheduler_run.add_argument("--force-plan", action="store_true", help="Create plans even when no source is due")
+    scheduler_run.add_argument("--limit-catalogs", type=int, default=None, help="Limit number of catalogs checked")
+    scheduler_run.add_argument("--json-only", action="store_true", help="Do not write a markdown report")
+
+    scheduler_runs = subparsers.add_parser("scheduler-runs", help="List persisted scheduler runs")
+    scheduler_runs.add_argument("--limit", type=int, default=20, help="Maximum scheduler runs to show")
+
+    scheduler_run_detail = subparsers.add_parser("scheduler-run-detail", help="Show one persisted scheduler run")
+    scheduler_run_detail.add_argument("--run-id", type=int, required=True, help="Scheduler run id")
+
     refresh_source = subparsers.add_parser("refresh-source", help="Refresh a registered source by source id")
     refresh_source.add_argument("--source-id", type=int, required=True, help="Source id")
     refresh_source.add_argument("--force", action="store_true", help="Refresh even when source hash is unchanged")
@@ -757,6 +843,12 @@ async def _main() -> None:
         await _catalog_run(args)
     elif args.command == "catalog-apply":
         await _catalog_apply(args)
+    elif args.command == "scheduler-run":
+        await _scheduler_run(args)
+    elif args.command == "scheduler-runs":
+        await _scheduler_runs(args)
+    elif args.command == "scheduler-run-detail":
+        await _scheduler_run_detail(args)
     elif args.command == "refresh-source":
         await _refresh_source(args)
     elif args.command == "refresh-due":
