@@ -74,3 +74,16 @@ The catalog control plane also supports local MD/TXT/PDF sources through source 
 ```bash
 docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/document_catalog.json --report-path /workspace/docs/RAG_DOCUMENT_CATALOG_PLAN_REPORT.md
 ```
+
+## RAG Scheduler / Plan Automation
+
+Local-only operations now use a plan-only scheduler path. The scheduler checks official URL and local document catalogs, creates catalog plan runs, and writes an operations report. It does not change RAG data or OpenSearch; an operator still approves changes with `catalog-apply`.
+
+```bash
+docker compose exec backend python -m app.cli.rag scheduler-run --force-plan --report-path /workspace/docs/RAG_SCHEDULER_REPORT.md
+docker compose exec backend python -m app.cli.rag scheduler-runs --limit 20
+docker compose exec backend python -m app.cli.rag scheduler-run-detail --run-id <scheduler_run_id>
+docker compose exec backend python -m app.cli.rag catalog-run --run-id <catalog_plan_run_id>
+docker compose exec backend python -m app.cli.rag catalog-apply --run-id <catalog_plan_run_id>
+docker compose exec backend python -m app.cli.rag validate-v1 --report-path /workspace/docs/RAG_EVALUATION_REPORT.md
+```

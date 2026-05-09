@@ -417,3 +417,28 @@ RAG v1 고도화부터 RAG 테이블은 단순 검색 저장소가 아니라 운
 ## Source Adapter Catalog Schema
 
 `rag_catalog_plan_items` now records adapter metadata for each planned source: `acquisition_type`, `origin_uri`, and `parser_type`. URL rows keep `catalog_url` for compatibility; local file rows use `origin_uri` for the resolved file path and keep official references in `context.reference_urls`.
+
+---
+
+## RAG Scheduler Run Schema
+
+`rag_scheduler_runs` records plan-only refresh automation runs.
+
+- `status`: `no_due_sources`, `no_change`, `approval_required`, or `completed_with_errors`
+- `mode`: currently `plan_only`
+- `target_catalogs`: catalog files checked by the run
+- `force_plan`: whether due checks were bypassed
+- `plan_run_ids`: catalog plan runs created by the scheduler
+- `catalog_count`, `due_catalog_count`, `approval_required_count`, `no_change_count`, `error_count`
+- `report_path`, `summary`, `started_at`, `finished_at`, `created_at`
+
+`rag_scheduler_run_items` stores catalog-level outcomes.
+
+- `catalog_file`, `catalog_version`
+- `due_status`, `reason_code`
+- `plan_run_id`
+- planned action counts copied from the catalog plan run
+- `requires_approval`
+- `error_code`, `error_message`, `context`
+
+Scheduler tables are audit/control-plane tables only. They do not replace catalog plan runs and do not mutate RAG source/chunk data.

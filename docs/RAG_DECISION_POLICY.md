@@ -249,3 +249,18 @@ OpenSearch keyword/vector search fails
 Local file catalog sources use the same decision policy as URL sources, with one additional stale guard: apply must re-read the file and compare the current normalized content hash with the planned hash. A mismatch produces `PLAN_STALE` and does not mutate `rag_sources`, `rag_chunks`, or OpenSearch.
 
 The default policy is conservative: missing files, parser failures, low-confidence text extraction, and unsupported future source types are `manual_review_required` until a dedicated adapter exists.
+
+---
+
+## 13. Scheduler Status Policy
+
+The refresh scheduler is a planning automation layer. It reads catalogs, evaluates due/freshness signals, and delegates diff creation to the catalog control plane. It does not apply changes.
+
+| Status | Meaning | Mutation |
+|--------|---------|----------|
+| `no_due_sources` | No catalog source requires a plan and `--force-plan` was not used. | none |
+| `no_change` | Plan runs were created, but every planned item is `skip_refresh`. | none |
+| `approval_required` | At least one plan item requires operator review or apply: create, partial, full, manual review, or defer. | none |
+| `completed_with_errors` | One or more catalogs failed to load, fetch, parse, or plan. | none |
+
+The approval boundary is deliberate: scheduler automation may detect change and produce evidence, but only `catalog-apply --run-id <catalog_plan_run_id>` can mutate the RAG registry, chunks, embeddings, or OpenSearch index.

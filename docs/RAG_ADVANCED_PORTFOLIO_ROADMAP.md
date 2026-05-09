@@ -461,3 +461,21 @@ Implemented v1.5 scope: local MD/TXT/PDF source adapters share the catalog plan/
 - Deferred adapters: official PDF URL download, public API connector, scheduler worker, OCR/image, video transcript, reranker.
 
 This preserves the portfolio signal around acquisition strategy, parser choice, chunk lineage, stale-plan safety, and source governance without prematurely expanding into external connector complexity.
+
+---
+
+## 19. Scheduler Roadmap Update
+
+Implemented local-only plan automation scope:
+
+- `scheduler-run` inspects official URL and local document catalogs.
+- Due/freshness decisions use refresh policy, local file fingerprints, URL metadata, and missing source detection.
+- The scheduler creates catalog plan runs and reports but never applies them.
+- Approval remains explicit through `catalog-run` review and `catalog-apply`.
+
+Deferred production automation:
+
+- cron or GitHub Actions scheduled execution
+- background worker / queue integration
+- notification hooks for `approval_required`
+- low-risk auto-apply policy after operational evidence exists

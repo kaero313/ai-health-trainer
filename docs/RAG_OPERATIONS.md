@@ -875,3 +875,29 @@ Operational rules:
 - Apply re-reads the local file and stops with `PLAN_STALE` if the current normalized content hash differs from the planned hash.
 - The persisted corpus remains internal summary/fixture data; official sources are linked as metadata references to reduce copyright and reproducibility risk.
 - Official PDF URL acquisition, API connectors, OCR, video transcript, and scheduler workers remain the next acquisition backlog.
+
+---
+
+## 19. Refresh Scheduler / Plan Automation
+
+The local development scheduler is CLI-driven and plan-only. It is intentionally not a background worker yet.
+
+```bash
+docker compose exec backend python -m app.cli.rag scheduler-run \
+  --catalog rag_sources/catalog.json \
+  --catalog rag_sources/document_catalog.json \
+  --report-path /workspace/docs/RAG_SCHEDULER_REPORT.md
+
+docker compose exec backend python -m app.cli.rag scheduler-runs --limit 20
+docker compose exec backend python -m app.cli.rag scheduler-run-detail --run-id <scheduler_run_id>
+```
+
+Operational policy:
+
+- `scheduler-run` checks catalog freshness and creates catalog plan runs only when sources are due, missing, changed, or when `--force-plan` is used.
+- Scheduler runs never mutate `rag_sources`, `rag_chunks`, embeddings, or OpenSearch.
+- If every generated catalog plan item is `skip_refresh`, the scheduler run status is `no_change`.
+- If any generated item is `create_source`, `partial_refresh`, `full_reindex`, `manual_review_required`, or `defer_reembedding`, the status is `approval_required`.
+- If no catalog source is due and `--force-plan` is not used, the status is `no_due_sources`.
+- Catalog parse/fetch failures are stored as item-level errors and the run status becomes `completed_with_errors`.
+- Actual mutation remains explicit: inspect `catalog-run`, then approve with `catalog-apply --run-id <catalog_plan_run_id>`.

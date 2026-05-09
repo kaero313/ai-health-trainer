@@ -37,20 +37,22 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 | `status` | open |
 | `docs_count` | 321 |
 | `docs_deleted` | 0 |
-| `store_size` | 39.6mb |
-| `primary_store_size` | 39.6mb |
+| `store_size` | 20.5mb |
+| `primary_store_size` | 20.5mb |
 
 ## DB Counts
 
 | Metric | Count |
 |--------|-------|
-| `rag_catalog_plan_items` | 42 |
-| `rag_catalog_plan_runs` | 7 |
+| `rag_catalog_plan_items` | 60 |
+| `rag_catalog_plan_runs` | 11 |
 | `rag_chunks` | 531 |
 | `rag_chunks_active` | 279 |
 | `rag_embedding_cache` | 337 |
 | `rag_ingest_jobs` | 36 |
 | `rag_pipeline_decisions` | 36 |
+| `rag_scheduler_run_items` | 2 |
+| `rag_scheduler_runs` | 1 |
 | `rag_sources` | 23 |
 
 ## Source Acquisition Summary
@@ -76,7 +78,7 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 
 | Field | Value |
 |-------|-------|
-| `id` | 7 |
+| `id` | 11 |
 | `status` | succeeded |
 | `total_sources` | 5 |
 | `planned_create_count` | 0 |
@@ -85,7 +87,22 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 | `planned_full_count` | 0 |
 | `planned_manual_count` | 0 |
 | `planned_defer_count` | 0 |
-| `created_at` | 2026-05-05T14:08:05.655963+00:00 |
+| `created_at` | 2026-05-09T09:24:22.190718+00:00 |
+
+## Latest Scheduler Run
+
+| Field | Value |
+|-------|-------|
+| `id` | 1 |
+| `status` | approval_required |
+| `mode` | plan_only |
+| `catalog_count` | 2 |
+| `due_catalog_count` | 2 |
+| `approval_required_count` | 1 |
+| `no_change_count` | 1 |
+| `error_count` | 0 |
+| `plan_run_ids` | [10, 11] |
+| `created_at` | 2026-05-09T09:24:18.860884+00:00 |
 
 ## Decision Summary
 

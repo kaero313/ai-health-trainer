@@ -414,3 +414,21 @@ catalog row
 ```
 
 For `local_file`, MD/TXT/PDF files are fingerprinted with path, size, mtime, raw hash, parser type, reference URLs, and curation method. The same section/chunk diff and refresh decisions are reused across URL and local file sources.
+
+---
+
+## 10. Scheduler Plan-Only Automation
+
+`RAGRefreshSchedulerService` is the cron-ready layer above catalog control.
+
+```text
+scheduler-run
+ -> load catalog list
+ -> decide due sources from refresh policy / fingerprints / freshness metadata
+ -> create catalog plan runs when needed
+ -> persist scheduler run + item summaries
+ -> write Markdown report
+ -> stop before apply
+```
+
+This keeps automation and mutation separated. A future cron, GitHub Actions schedule, or worker can invoke `scheduler-run`, but production writes still require an explicit `catalog-apply` approval step.
