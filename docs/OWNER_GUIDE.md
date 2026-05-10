@@ -21,6 +21,8 @@
 | `docs/RAG_PIPELINE_ARCHITECTURE.md` | RAG source registry, parser/chunker, refresh/reindex 파이프라인 기준 |
 | `docs/RAG_DECISION_POLICY.md` | RAG 변경 감지, 재임베딩, fallback 상황별 의사결정 정책 |
 | `docs/RAG_CATALOG_CONTROL_PLANE.md` | 공식 URL catalog 변경 감지, plan/apply, section/chunk diff 운영 기준 |
+| `docs/RAG_SCHEDULER_REVIEW_REPORT.md` | 최신 scheduler review approval report |
+| `docs/RAG_CATALOG_REVIEW_REPORT.md` | 최신 catalog plan review approval report |
 | `docs/FLUTTER_UI_DESIGN.md` | Flutter 화면별 UI/UX 상세 설계 |
 | `docs/DEPLOYMENT.md` | Docker/Nginx/배포 상세 |
 | `docs/DEVELOPMENT_GUIDE.md` | 개발 컨벤션과 구현 순서 기록 |

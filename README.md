@@ -83,7 +83,26 @@ Local-only operations now use a plan-only scheduler path. The scheduler checks o
 docker compose exec backend python -m app.cli.rag scheduler-run --force-plan --report-path /workspace/docs/RAG_SCHEDULER_REPORT.md
 docker compose exec backend python -m app.cli.rag scheduler-runs --limit 20
 docker compose exec backend python -m app.cli.rag scheduler-run-detail --run-id <scheduler_run_id>
+docker compose exec backend python -m app.cli.rag scheduler-review --run-id <scheduler_run_id> --report-path /workspace/docs/RAG_SCHEDULER_REVIEW_REPORT.md
+docker compose exec backend python -m app.cli.rag catalog-review --run-id <catalog_plan_run_id> --report-path /workspace/docs/RAG_CATALOG_REVIEW_REPORT.md
+docker compose exec backend python -m app.cli.rag review-runs --limit 20
+docker compose exec backend python -m app.cli.rag review-run --run-id <review_run_id>
 docker compose exec backend python -m app.cli.rag catalog-run --run-id <catalog_plan_run_id>
 docker compose exec backend python -m app.cli.rag catalog-apply --run-id <catalog_plan_run_id>
 docker compose exec backend python -m app.cli.rag validate-v1 --report-path /workspace/docs/RAG_EVALUATION_REPORT.md
 ```
+
+## RAG Review / Approval Layer
+
+Catalog and scheduler plans are reviewed before apply. The review layer stores an audit record in `rag_review_runs` and `rag_review_items`, writes Markdown approval reports, and maps plan actions into operator-facing decisions such as `approve_partial_refresh`, `manual_confirm_full_reindex`, `blocked_manual_review`, and `fix_source_acquisition`.
+
+Default operation order:
+
+```text
+scheduler-run -> scheduler-review -> catalog-review -> catalog-apply -> validate-v1
+```
+
+Review reports:
+
+- `docs/RAG_SCHEDULER_REVIEW_REPORT.md`
+- `docs/RAG_CATALOG_REVIEW_REPORT.md`

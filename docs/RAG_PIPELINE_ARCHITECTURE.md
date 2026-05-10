@@ -432,3 +432,25 @@ scheduler-run
 ```
 
 This keeps automation and mutation separated. A future cron, GitHub Actions schedule, or worker can invoke `scheduler-run`, but production writes still require an explicit `catalog-apply` approval step.
+
+---
+
+## 11. Review / Approval Flow
+
+The approval layer sits between plan generation and apply.
+
+```text
+scheduler-run
+ -> catalog plan runs
+ -> scheduler-review / catalog-review
+ -> Markdown approval report + review audit rows
+ -> explicit catalog-apply
+ -> validate-v1
+```
+
+`RAGReviewService` supports two review scopes:
+
+- `review_catalog_plan(run_id)`: reviews one catalog plan and maps each plan item to an operator decision.
+- `review_scheduler_run(run_id)`: reviews every catalog plan created by a scheduler run and aggregates the decision/risk summary.
+
+Review runs store immutable audit evidence: planned action, reason code, risk level, parser confidence, section/chunk change ratios, estimated embedding seconds, warnings, and context. They never mutate source/chunk/index data. Apply safety remains in the catalog control plane through stale hash checks and explicit `catalog-apply`.

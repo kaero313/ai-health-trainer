@@ -479,3 +479,27 @@ Deferred production automation:
 - background worker / queue integration
 - notification hooks for `approval_required`
 - low-risk auto-apply policy after operational evidence exists
+
+---
+
+## 20. Review / Approval Roadmap Update
+
+Implemented v1 review/approval layer:
+
+- `catalog-review` creates an audit run and Markdown report for one catalog plan.
+- `scheduler-review` aggregates the catalog plans created by one scheduler run.
+- Review records persist operator-facing decisions without mutating RAG data.
+- Review reports expose source acquisition failures, parser warnings, diff scope, risk level, and embedding cost signals before apply.
+
+Portfolio signal:
+
+- The system separates detection, review, and mutation instead of applying knowledge changes blindly.
+- High-risk paths such as full reindex, low-confidence parser output, deferred embedding, and fetch failures become explicit approval states.
+- Real operation evidence is captured in `docs/RAG_SCHEDULER_REVIEW_REPORT.md` and `docs/RAG_CATALOG_REVIEW_REPORT.md`.
+
+Deferred review extensions:
+
+- Admin UI review queue
+- notification hooks for approval-required runs
+- operator identity and signed approval comments
+- low-risk auto-apply policy after enough no-regression evidence exists

@@ -442,3 +442,28 @@ RAG v1 고도화부터 RAG 테이블은 단순 검색 저장소가 아니라 운
 - `error_code`, `error_message`, `context`
 
 Scheduler tables are audit/control-plane tables only. They do not replace catalog plan runs and do not mutate RAG source/chunk data.
+
+---
+
+## RAG Review / Approval Schema
+
+`rag_review_runs` stores review audit runs for catalog plans and scheduler runs.
+
+- `review_type`: `catalog_plan` or `scheduler_run`
+- `target_run_id`: reviewed catalog plan run id or scheduler run id
+- `catalog_plan_run_id`, `scheduler_run_id`: nullable FK fields for explicit lineage
+- `status`: review generation status, normally `completed`
+- `requires_approval`: whether an operator decision is needed before apply
+- `recommended_action`: `no_action`, `review_then_apply`, `manual_confirm_before_apply`, or `do_not_apply_until_resolved`
+- `risk_level`: aggregate risk level
+- `report_path`, `summary`, `created_at`
+
+`rag_review_items` stores source-level review evidence copied from catalog plan items.
+
+- catalog lineage: `review_run_id`, `catalog_plan_run_id`, `catalog_plan_item_id`, `source_id`
+- source summary: `catalog_key`, `title`, `acquisition_type`, `source_grade`
+- plan summary: `planned_action`, `reason_code`, `risk_level`
+- review summary: `review_decision`, `operator_recommendation`, `blocking_reason`
+- operating signals: `parser_confidence`, `section_change_ratio`, `chunk_change_ratio`, `estimated_embedding_seconds`, `quality_warnings`, `context`
+
+Review tables are audit/report tables only. They do not authorize mutation by themselves; `catalog-apply` still uses catalog plan item state and stale hash guards as the apply source of truth.

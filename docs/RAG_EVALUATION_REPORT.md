@@ -51,6 +51,8 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 | `rag_embedding_cache` | 337 |
 | `rag_ingest_jobs` | 36 |
 | `rag_pipeline_decisions` | 36 |
+| `rag_review_items` | 22 |
+| `rag_review_runs` | 4 |
 | `rag_scheduler_run_items` | 2 |
 | `rag_scheduler_runs` | 1 |
 | `rag_sources` | 23 |
@@ -103,6 +105,19 @@ docker compose exec backend python -m app.cli.rag validate-v1 --report-path /wor
 | `error_count` | 0 |
 | `plan_run_ids` | [10, 11] |
 | `created_at` | 2026-05-09T09:24:18.860884+00:00 |
+
+## Latest Review Run
+
+| Field | Value |
+|-------|-------|
+| `id` | 4 |
+| `review_type` | catalog_plan |
+| `target_run_id` | 10 |
+| `status` | completed |
+| `requires_approval` | True |
+| `recommended_action` | do_not_apply_until_resolved |
+| `risk_level` | high |
+| `created_at` | 2026-05-10T05:33:19.565392+00:00 |
 
 ## Decision Summary
 

@@ -264,3 +264,28 @@ The refresh scheduler is a planning automation layer. It reads catalogs, evaluat
 | `completed_with_errors` | One or more catalogs failed to load, fetch, parse, or plan. | none |
 
 The approval boundary is deliberate: scheduler automation may detect change and produce evidence, but only `catalog-apply --run-id <catalog_plan_run_id>` can mutate the RAG registry, chunks, embeddings, or OpenSearch index.
+
+---
+
+## 14. Review Decision Policy
+
+Review runs are the approval evidence layer above catalog and scheduler plans. They do not change RAG data. They copy the relevant plan item risk, parser, diff, warning, and cost signals into `rag_review_runs` and `rag_review_items`.
+
+| Planned signal | Review decision | Operator meaning |
+|----------------|-----------------|------------------|
+| `skip_refresh` | `no_action` | Source and metadata are unchanged. |
+| `create_source` | `approve_create` | New source may be applied after checking metadata/license. |
+| `partial_refresh` | `approve_partial_refresh` | Limited section/chunk change can be applied after review. |
+| `full_reindex` | `manual_confirm_full_reindex` | High cost/blast-radius path; confirm before apply. |
+| `manual_review_required` | `blocked_manual_review` | Do not apply until source/parser issue is resolved. |
+| `defer_reembedding` | `blocked_defer_reembedding` | Do not apply until embedding budget/timing is acceptable. |
+| fetch or parse failure | `fix_source_acquisition` | URL, file path, adapter, or source replacement must be fixed first. |
+
+Run-level recommendation follows the highest-risk item:
+
+- `no_action`: every item is `no_action`
+- `review_then_apply`: only create/partial changes exist
+- `manual_confirm_before_apply`: full reindex or high-risk apply exists
+- `do_not_apply_until_resolved`: blocked/manual/fetch failures exist
+
+This layer is intentionally separate from `catalog-apply`. A review may be regenerated multiple times as an audit artifact, but the catalog plan item apply state remains the mutation source of truth.

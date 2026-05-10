@@ -901,3 +901,48 @@ Operational policy:
 - If no catalog source is due and `--force-plan` is not used, the status is `no_due_sources`.
 - Catalog parse/fetch failures are stored as item-level errors and the run status becomes `completed_with_errors`.
 - Actual mutation remains explicit: inspect `catalog-run`, then approve with `catalog-apply --run-id <catalog_plan_run_id>`.
+
+---
+
+## 20. Review / Approval Layer
+
+The review layer turns catalog and scheduler plans into operator-facing approval evidence. It is an audit/report layer only and never mutates `rag_sources`, `rag_chunks`, embeddings, or OpenSearch.
+
+Default operation order:
+
+```bash
+docker compose exec backend python -m app.cli.rag scheduler-run \
+  --catalog rag_sources/catalog.json \
+  --catalog rag_sources/document_catalog.json \
+  --report-path /workspace/docs/RAG_SCHEDULER_REPORT.md
+
+docker compose exec backend python -m app.cli.rag scheduler-review \
+  --run-id <scheduler_run_id> \
+  --report-path /workspace/docs/RAG_SCHEDULER_REVIEW_REPORT.md
+
+docker compose exec backend python -m app.cli.rag catalog-review \
+  --run-id <catalog_plan_run_id> \
+  --report-path /workspace/docs/RAG_CATALOG_REVIEW_REPORT.md
+
+docker compose exec backend python -m app.cli.rag catalog-apply --run-id <catalog_plan_run_id>
+docker compose exec backend python -m app.cli.rag validate-v1 --report-path /workspace/docs/RAG_EVALUATION_REPORT.md
+```
+
+Review decision mapping:
+
+- `skip_refresh` -> `no_action`
+- `create_source` -> `approve_create`
+- `partial_refresh` -> `approve_partial_refresh`
+- `full_reindex` -> `manual_confirm_full_reindex`
+- `manual_review_required` -> `blocked_manual_review`
+- `defer_reembedding` -> `blocked_defer_reembedding`
+- fetch/parse failure -> `fix_source_acquisition`
+
+Run-level recommendation:
+
+- all skip -> `no_action`
+- create/partial only -> `review_then_apply`
+- full reindex or high risk -> `manual_confirm_before_apply`
+- blocked/manual/fetch failure -> `do_not_apply_until_resolved`
+
+The current official URL catalog demonstrates the intended behavior: NIH ODS returned a 403 during live fetch, so the generated review reports recommend `fix_source_acquisition` and `do_not_apply_until_resolved` instead of allowing blind apply.

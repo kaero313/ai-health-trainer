@@ -171,3 +171,28 @@ The catalog control plane now supports two acquisition families with the same pl
 Local file items store file fingerprint metadata in source `metadata.fetch_metadata`: `file_size`, `mtime`, `raw_content_hash`, `resolved_path`, `reference_urls`, and `curation_method`. Apply re-reads the file and blocks with `PLAN_STALE` when the planned normalized content hash differs from the current file.
 
 Official PDF URL acquisition, API connectors, scheduler workers, OCR, and video transcript adapters remain follow-up work. The current scope keeps persisted/embedded corpus reproducible and low-risk while preserving official references in metadata.
+
+---
+
+## 10. Review / Approval Layer
+
+Catalog plan review is the operator checkpoint before apply.
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-review \
+  --run-id <catalog_plan_run_id> \
+  --report-path /workspace/docs/RAG_CATALOG_REVIEW_REPORT.md
+```
+
+The review layer reads plan items and writes `rag_review_runs`, `rag_review_items`, and a Markdown report. It does not call ingest, refresh, delete, or OpenSearch indexing.
+
+Review decision examples:
+
+- unchanged official source -> `no_action`
+- new source -> `approve_create`
+- limited section/chunk diff -> `approve_partial_refresh`
+- large structural diff -> `manual_confirm_full_reindex`
+- low confidence or orphaned source -> `blocked_manual_review`
+- fetch or parser failure -> `fix_source_acquisition`
+
+Only after review should an operator execute `catalog-apply --run-id <catalog_plan_run_id>`.
