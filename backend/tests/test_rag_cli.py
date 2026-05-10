@@ -25,6 +25,10 @@ def test_rag_cli_exposes_url_acquisition_commands():
     assert parser.parse_args(["scheduler-run", "--force-plan"]).command == "scheduler-run"
     assert parser.parse_args(["scheduler-runs", "--limit", "5"]).command == "scheduler-runs"
     assert parser.parse_args(["scheduler-run-detail", "--run-id", "1"]).command == "scheduler-run-detail"
+    assert parser.parse_args(["catalog-review", "--run-id", "1"]).command == "catalog-review"
+    assert parser.parse_args(["scheduler-review", "--run-id", "1"]).command == "scheduler-review"
+    assert parser.parse_args(["review-runs", "--limit", "5"]).command == "review-runs"
+    assert parser.parse_args(["review-run", "--run-id", "1"]).command == "review-run"
 
 
 def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
@@ -109,6 +113,16 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
             "plan_run_ids": [1, 2],
             "created_at": "2026-05-09T00:00:00+00:00",
         },
+        "latest_review_run": {
+            "id": 3,
+            "review_type": "scheduler_run",
+            "target_run_id": 2,
+            "status": "completed",
+            "requires_approval": True,
+            "recommended_action": "do_not_apply_until_resolved",
+            "risk_level": "high",
+            "created_at": "2026-05-10T00:00:00+00:00",
+        },
         "index_status": {
             "index": "rag_chunks_v1",
             "alias": "rag_chunks_current",
@@ -127,3 +141,4 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
     assert "단백질이 부족한 날의 원칙".encode("utf-8") in data
     assert b"Latest Catalog Plan" in data
     assert b"Latest Scheduler Run" in data
+    assert b"Latest Review Run" in data

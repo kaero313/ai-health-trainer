@@ -13,6 +13,7 @@ from app.core.database import AsyncSessionLocal
 from app.services.rag_catalog_control_service import RAGCatalogControlService
 from app.services.rag_evaluation import evaluate_retrieval, load_retrieval_cases
 from app.services.rag_refresh_scheduler import RAGRefreshSchedulerService
+from app.services.rag_review_service import RAGReviewService
 from app.services.rag_service import RAGService
 
 
@@ -206,6 +207,40 @@ async def _scheduler_run_detail(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+async def _catalog_review(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGReviewService(db, settings).review_catalog_plan(
+            run_id=args.run_id,
+            report_path=args.report_path,
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _scheduler_review(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGReviewService(db, settings).review_scheduler_run(
+            run_id=args.run_id,
+            report_path=args.report_path,
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _review_runs(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGReviewService(db, settings).list_runs(limit=args.limit)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _review_run(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGReviewService(db, settings).get_run(args.run_id)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 async def _refresh_source(args: argparse.Namespace) -> None:
     settings = get_settings()
     async with AsyncSessionLocal() as db:
@@ -275,6 +310,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         recent_jobs = await _load_v1_recent_jobs(db, limit=args.job_limit)
         latest_catalog_plan = await _load_latest_catalog_plan(db)
         latest_scheduler_run = await _load_latest_scheduler_run(db)
+        latest_review_run = await _load_latest_review_run(db)
         try:
             index_status = await service.index_status()
         except Exception as exc:  # pragma: no cover - depends on local OpenSearch availability
@@ -294,6 +330,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         "recent_jobs": recent_jobs,
         "latest_catalog_plan": latest_catalog_plan,
         "latest_scheduler_run": latest_scheduler_run,
+        "latest_review_run": latest_review_run,
         "index_status": index_status,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -318,6 +355,8 @@ async def _load_v1_db_counts(db) -> dict[str, int]:
                 UNION ALL SELECT 'rag_catalog_plan_items', count(*)::int FROM rag_catalog_plan_items
                 UNION ALL SELECT 'rag_scheduler_runs', count(*)::int FROM rag_scheduler_runs
                 UNION ALL SELECT 'rag_scheduler_run_items', count(*)::int FROM rag_scheduler_run_items
+                UNION ALL SELECT 'rag_review_runs', count(*)::int FROM rag_review_runs
+                UNION ALL SELECT 'rag_review_items', count(*)::int FROM rag_review_items
                 ORDER BY name
                 """
             )
@@ -477,6 +516,28 @@ async def _load_latest_scheduler_run(db) -> dict[str, Any] | None:
     return result
 
 
+async def _load_latest_review_run(db) -> dict[str, Any] | None:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, review_type, target_run_id, status, requires_approval,
+                       recommended_action, risk_level, created_at
+                FROM rag_review_runs
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            )
+        )
+    ).mappings().first()
+    if not row:
+        return None
+    result = dict(row)
+    if result.get("created_at") is not None:
+        result["created_at"] = result["created_at"].isoformat()
+    return result
+
+
 def _write_evaluation_report(result: dict[str, Any], report_path: Path) -> None:
     lines = [
         "# RAG Retrieval Evaluation Report",
@@ -614,6 +675,20 @@ def _write_v1_validation_report(report: dict[str, Any], report_path: Path) -> No
             ]
         )
         for name, value in latest_scheduler_run.items():
+            lines.append(f"| `{name}` | {_markdown_value(value)} |")
+
+    latest_review_run = report.get("latest_review_run")
+    if latest_review_run:
+        lines.extend(
+            [
+                "",
+                "## Latest Review Run",
+                "",
+                "| Field | Value |",
+                "|-------|-------|",
+            ]
+        )
+        for name, value in latest_review_run.items():
             lines.append(f"| `{name}` | {_markdown_value(value)} |")
 
     lines.extend(
@@ -784,6 +859,20 @@ def build_parser() -> argparse.ArgumentParser:
     scheduler_run_detail = subparsers.add_parser("scheduler-run-detail", help="Show one persisted scheduler run")
     scheduler_run_detail.add_argument("--run-id", type=int, required=True, help="Scheduler run id")
 
+    catalog_review = subparsers.add_parser("catalog-review", help="Review one catalog plan run for approval")
+    catalog_review.add_argument("--run-id", type=int, required=True, help="Catalog plan run id")
+    catalog_review.add_argument("--report-path", default=None, help="Optional markdown review report output path")
+
+    scheduler_review = subparsers.add_parser("scheduler-review", help="Review all catalog plans from a scheduler run")
+    scheduler_review.add_argument("--run-id", type=int, required=True, help="Scheduler run id")
+    scheduler_review.add_argument("--report-path", default=None, help="Optional markdown review report output path")
+
+    review_runs = subparsers.add_parser("review-runs", help="List persisted RAG review runs")
+    review_runs.add_argument("--limit", type=int, default=20, help="Maximum review runs to show")
+
+    review_run = subparsers.add_parser("review-run", help="Show one persisted RAG review run")
+    review_run.add_argument("--run-id", type=int, required=True, help="Review run id")
+
     refresh_source = subparsers.add_parser("refresh-source", help="Refresh a registered source by source id")
     refresh_source.add_argument("--source-id", type=int, required=True, help="Source id")
     refresh_source.add_argument("--force", action="store_true", help="Refresh even when source hash is unchanged")
@@ -849,6 +938,14 @@ async def _main() -> None:
         await _scheduler_runs(args)
     elif args.command == "scheduler-run-detail":
         await _scheduler_run_detail(args)
+    elif args.command == "catalog-review":
+        await _catalog_review(args)
+    elif args.command == "scheduler-review":
+        await _scheduler_review(args)
+    elif args.command == "review-runs":
+        await _review_runs(args)
+    elif args.command == "review-run":
+        await _review_run(args)
     elif args.command == "refresh-source":
         await _refresh_source(args)
     elif args.command == "refresh-due":

@@ -390,6 +390,85 @@ class RagSchedulerRunItem(Base):
     plan_run: Mapped[RagCatalogPlanRun | None] = relationship("RagCatalogPlanRun")
 
 
+class RagReviewRun(Base):
+    __tablename__ = "rag_review_runs"
+    __table_args__ = (
+        Index("ix_rag_review_runs_type", "review_type"),
+        Index("ix_rag_review_runs_status", "status"),
+        Index("ix_rag_review_runs_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    review_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_run_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    catalog_plan_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rag_catalog_plan_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    scheduler_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rag_scheduler_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(String(50), nullable=False, server_default="completed")
+    requires_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    recommended_action: Mapped[str] = mapped_column(String(100), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    report_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    summary: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    catalog_plan_run: Mapped[RagCatalogPlanRun | None] = relationship("RagCatalogPlanRun")
+    scheduler_run: Mapped[RagSchedulerRun | None] = relationship("RagSchedulerRun")
+    items: Mapped[list[RagReviewItem]] = relationship(
+        "RagReviewItem",
+        back_populates="review_run",
+        cascade="all, delete-orphan",
+    )
+
+
+class RagReviewItem(Base):
+    __tablename__ = "rag_review_items"
+    __table_args__ = (
+        Index("ix_rag_review_items_review_run_id", "review_run_id"),
+        Index("ix_rag_review_items_catalog_plan_run_id", "catalog_plan_run_id"),
+        Index("ix_rag_review_items_decision", "review_decision"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    review_run_id: Mapped[int] = mapped_column(ForeignKey("rag_review_runs.id", ondelete="CASCADE"), nullable=False)
+    catalog_plan_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rag_catalog_plan_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    catalog_plan_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rag_catalog_plan_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("rag_sources.id", ondelete="SET NULL"), nullable=True)
+    catalog_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    acquisition_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_grade: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    planned_action: Mapped[str] = mapped_column(String(50), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    review_decision: Mapped[str] = mapped_column(String(100), nullable=False)
+    operator_recommendation: Mapped[str] = mapped_column(Text, nullable=False)
+    blocking_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    parser_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    section_change_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    chunk_change_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimated_embedding_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    context: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    review_run: Mapped[RagReviewRun] = relationship("RagReviewRun", back_populates="items")
+    catalog_plan_run: Mapped[RagCatalogPlanRun | None] = relationship("RagCatalogPlanRun")
+    catalog_plan_item: Mapped[RagCatalogPlanItem | None] = relationship("RagCatalogPlanItem")
+    source: Mapped[RagSource | None] = relationship("RagSource")
+
+
 class RagRetrievalTrace(Base):
     __tablename__ = "rag_retrieval_traces"
     __table_args__ = (
