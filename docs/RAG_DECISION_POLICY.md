@@ -263,7 +263,7 @@ The refresh scheduler is a planning automation layer. It reads catalogs, evaluat
 | `approval_required` | At least one plan item requires operator review or apply: create, partial, full, manual review, or defer. | none |
 | `completed_with_errors` | One or more catalogs failed to load, fetch, parse, or plan. | none |
 
-The approval boundary is deliberate: scheduler automation may detect change and produce evidence, but only `catalog-apply --run-id <catalog_plan_run_id>` can mutate the RAG registry, chunks, embeddings, or OpenSearch index.
+The approval boundary is deliberate: scheduler automation may detect change and produce evidence, but only `catalog-apply --run-id <catalog_plan_run_id> --review-run-id <catalog_review_run_id>` can mutate the RAG registry, chunks, embeddings, or OpenSearch index.
 
 ---
 
@@ -289,3 +289,22 @@ Run-level recommendation follows the highest-risk item:
 - `do_not_apply_until_resolved`: blocked/manual/fetch failures exist
 
 This layer is intentionally separate from `catalog-apply`. A review may be regenerated multiple times as an audit artifact, but the catalog plan item apply state remains the mutation source of truth.
+
+---
+
+## 15. Apply Approval Gate Policy
+
+`catalog-apply` must validate a completed `catalog_plan` review before mutation.
+
+| Gate condition | Result |
+|----------------|--------|
+| missing `--review-run-id` | block with `REVIEW_RUN_REQUIRED` |
+| review not found | block with `REVIEW_NOT_FOUND` |
+| scheduler review passed as approval | block with `REVIEW_SCOPE_MISMATCH` |
+| review targets another plan | block with `REVIEW_TARGET_MISMATCH` |
+| review item snapshot differs from plan | block with `REVIEW_STALE` |
+| blocked review decision exists | block with `REVIEW_BLOCKED` |
+| full reindex without confirm flag | block with `FULL_REINDEX_CONFIRMATION_REQUIRED` |
+| review passes and stale hash guard passes | apply and store `approval_status=approved` |
+
+This makes review evidence operationally binding instead of only documentary.

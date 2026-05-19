@@ -62,7 +62,7 @@
   - `archive`
   - `evaluate`
   - `fetch-preview`, `register-url`, `ingest-catalog`
-  - `catalog-plan`, `catalog-runs`, `catalog-run`, `catalog-apply`
+  - `catalog-plan`, `catalog-runs`, `catalog-run`, `catalog-review`, `catalog-apply`
   - `validate-v1`
 
 이 baseline 위에 아래 고도화를 계속 쌓는다.
@@ -471,7 +471,7 @@ Implemented local-only plan automation scope:
 - `scheduler-run` inspects official URL and local document catalogs.
 - Due/freshness decisions use refresh policy, local file fingerprints, URL metadata, and missing source detection.
 - The scheduler creates catalog plan runs and reports but never applies them.
-- Approval remains explicit through `catalog-run` review and `catalog-apply`.
+- Approval remains explicit through `catalog-review` and `catalog-apply --review-run-id`.
 
 Deferred production automation:
 
@@ -490,11 +490,13 @@ Implemented v1 review/approval layer:
 - `scheduler-review` aggregates the catalog plans created by one scheduler run.
 - Review records persist operator-facing decisions without mutating RAG data.
 - Review reports expose source acquisition failures, parser warnings, diff scope, risk level, and embedding cost signals before apply.
+- `catalog-apply` now requires an explicit completed catalog review id and blocks unsafe review results.
 
 Portfolio signal:
 
 - The system separates detection, review, and mutation instead of applying knowledge changes blindly.
 - High-risk paths such as full reindex, low-confidence parser output, deferred embedding, and fetch failures become explicit approval states.
+- Review approval is operationally binding: blocked reviews prevent source/chunk/OpenSearch mutation.
 - Real operation evidence is captured in `docs/RAG_SCHEDULER_REVIEW_REPORT.md` and `docs/RAG_CATALOG_REVIEW_REPORT.md`.
 
 Deferred review extensions:

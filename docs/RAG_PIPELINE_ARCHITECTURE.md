@@ -263,8 +263,13 @@ catalog-plan
  -> rag_catalog_plan_runs/items 저장
  -> Markdown report
 
-catalog-apply
+catalog-review
+ -> review audit rows
+ -> approval report
+
+catalog-apply --review-run-id
  -> stored plan item load
+ -> review approval gate
  -> same URL re-fetch
  -> stale hash guard
  -> create_source / partial_refresh / full_reindex
@@ -444,7 +449,7 @@ scheduler-run
  -> catalog plan runs
  -> scheduler-review / catalog-review
  -> Markdown approval report + review audit rows
- -> explicit catalog-apply
+ -> explicit catalog-apply with catalog review id
  -> validate-v1
 ```
 
@@ -453,4 +458,6 @@ scheduler-run
 - `review_catalog_plan(run_id)`: reviews one catalog plan and maps each plan item to an operator decision.
 - `review_scheduler_run(run_id)`: reviews every catalog plan created by a scheduler run and aggregates the decision/risk summary.
 
-Review runs store immutable audit evidence: planned action, reason code, risk level, parser confidence, section/chunk change ratios, estimated embedding seconds, warnings, and context. They never mutate source/chunk/index data. Apply safety remains in the catalog control plane through stale hash checks and explicit `catalog-apply`.
+Review runs store immutable audit evidence: planned action, reason code, risk level, parser confidence, section/chunk change ratios, estimated embedding seconds, warnings, and context. They never mutate source/chunk/index data. Apply safety remains in the catalog control plane through review-id approval checks, stale hash checks, and explicit `catalog-apply`.
+
+`scheduler-review` is aggregate evidence. Only `catalog-review` can approve a catalog plan apply.

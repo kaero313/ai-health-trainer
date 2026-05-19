@@ -222,6 +222,8 @@ class RagCatalogPlanRun(Base):
     __table_args__ = (
         Index("ix_rag_catalog_plan_runs_status", "status"),
         Index("ix_rag_catalog_plan_runs_created_at", "created_at"),
+        Index("ix_rag_catalog_plan_runs_approved_review", "approved_review_run_id"),
+        Index("ix_rag_catalog_plan_runs_approval_status", "approval_status"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -248,6 +250,19 @@ class RagCatalogPlanRun(Base):
         nullable=False,
         server_default=text("'{}'::jsonb"),
     )
+    approved_review_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "rag_review_runs.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_rag_catalog_plan_runs_approved_review_run_id_rag_review_runs",
+        ),
+        nullable=True,
+    )
+    approval_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    approval_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approval_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    approval_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -256,6 +271,10 @@ class RagCatalogPlanRun(Base):
         "RagCatalogPlanItem",
         back_populates="run",
         cascade="all, delete-orphan",
+    )
+    approved_review_run: Mapped[RagReviewRun | None] = relationship(
+        "RagReviewRun",
+        foreign_keys=[approved_review_run_id],
     )
 
 
@@ -417,7 +436,10 @@ class RagReviewRun(Base):
     summary: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
-    catalog_plan_run: Mapped[RagCatalogPlanRun | None] = relationship("RagCatalogPlanRun")
+    catalog_plan_run: Mapped[RagCatalogPlanRun | None] = relationship(
+        "RagCatalogPlanRun",
+        foreign_keys=[catalog_plan_run_id],
+    )
     scheduler_run: Mapped[RagSchedulerRun | None] = relationship("RagSchedulerRun")
     items: Mapped[list[RagReviewItem]] = relationship(
         "RagReviewItem",
@@ -464,7 +486,10 @@ class RagReviewItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     review_run: Mapped[RagReviewRun] = relationship("RagReviewRun", back_populates="items")
-    catalog_plan_run: Mapped[RagCatalogPlanRun | None] = relationship("RagCatalogPlanRun")
+    catalog_plan_run: Mapped[RagCatalogPlanRun | None] = relationship(
+        "RagCatalogPlanRun",
+        foreign_keys=[catalog_plan_run_id],
+    )
     catalog_plan_item: Mapped[RagCatalogPlanItem | None] = relationship("RagCatalogPlanItem")
     source: Mapped[RagSource | None] = relationship("RagSource")
 

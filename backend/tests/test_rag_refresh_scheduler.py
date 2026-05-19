@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.models.rag import RagCatalogPlanRun, RagChunk, RagSchedulerRun, RagSchedulerRunItem, RagSource
 from app.services.rag_catalog_control_service import RAGCatalogControlService
 from app.services.rag_refresh_scheduler import RAGRefreshSchedulerService
+from app.services.rag_review_service import RAGReviewService
 
 
 def _embedding(value: float = 0.1) -> list[float]:
@@ -66,7 +67,8 @@ async def _apply_local_catalog(db_session, catalog_path):
     catalog_service.rag_service.get_embedding = AsyncMock(return_value=_embedding())
     catalog_service.rag_service.index_service.index_chunk = AsyncMock(return_value=None)
     plan = await catalog_service.create_plan(catalog_file=catalog_path)
-    await catalog_service.apply_run(run_id=plan["run"]["id"])
+    review = await RAGReviewService(db_session, get_settings()).review_catalog_plan(run_id=plan["run"]["id"])
+    await catalog_service.apply_run(run_id=plan["run"]["id"], review_run_id=review["run"]["id"])
 
 
 @pytest.mark.asyncio

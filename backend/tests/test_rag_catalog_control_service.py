@@ -6,9 +6,10 @@ import pytest
 from sqlalchemy import func, select
 
 from app.core.config import get_settings
-from app.models.rag import RagCatalogPlanItem, RagChunk, RagIngestJob, RagSource
+from app.models.rag import RagCatalogPlanItem, RagChunk, RagIngestJob, RagReviewRun, RagSource
 from app.services.rag_catalog_control_service import RAGCatalogControlService
 from app.services.rag_pipeline import CHUNKER_VERSION, NORMALIZATION_VERSION
+from app.services.rag_review_service import RAGReviewService
 from app.services.rag_source_acquisition import FetchedUrlContent
 
 
@@ -112,6 +113,11 @@ def _markdown_sections(*bodies: str) -> str:
     return "# Local Guide\n\n" + "\n\n".join(sections)
 
 
+async def _review_plan(db_session, plan_id: int) -> int:
+    result = await RAGReviewService(db_session, get_settings()).review_catalog_plan(run_id=plan_id)
+    return int(result["run"]["id"])
+
+
 @pytest.mark.asyncio
 async def test_catalog_plan_persists_missing_source_and_apply_creates_job(db_session, tmp_path):
     html = _html("Adults should move regularly for health.", "Strength training supports muscles.")
@@ -133,7 +139,8 @@ async def test_catalog_plan_persists_missing_source_and_apply_creates_job(db_ses
     assert source_count == 0
     assert job_count == 0
 
-    apply_result = await service.apply_run(run_id=plan["run"]["id"])
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+    apply_result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
     stored_item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
     source = (await db_session.execute(select(RagSource))).scalar_one()
     job = (await db_session.execute(select(RagIngestJob))).scalar_one()
@@ -143,6 +150,79 @@ async def test_catalog_plan_persists_missing_source_and_apply_creates_job(db_ses
     assert stored_item.applied_job_id == job.id
     assert stored_item.source_id == source.id
     assert source.metadata_["fetch_metadata"]["catalog_key"] == "official_guide"
+
+
+@pytest.mark.asyncio
+async def test_catalog_apply_requires_explicit_review_run(db_session, tmp_path):
+    html = _html("Adults should move regularly for health.")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher(html)
+    plan = await service.create_plan(catalog_file=_catalog_file(tmp_path))
+    source_count_before = await db_session.scalar(select(func.count()).select_from(RagSource))
+    job_count_before = await db_session.scalar(select(func.count()).select_from(RagIngestJob))
+
+    result = await service.apply_run(run_id=plan["run"]["id"])
+    stored_run = await db_session.get(RagCatalogPlanItem, plan["items"][0]["id"])
+    source_count_after = await db_session.scalar(select(func.count()).select_from(RagSource))
+    job_count_after = await db_session.scalar(select(func.count()).select_from(RagIngestJob))
+
+    assert result["status"] == "approval_blocked"
+    assert result["approval_error_code"] == "REVIEW_RUN_REQUIRED"
+    assert stored_run is not None
+    assert stored_run.apply_status == "pending"
+    assert source_count_after == source_count_before
+    assert job_count_after == job_count_before
+
+
+@pytest.mark.asyncio
+async def test_catalog_apply_blocks_unknown_review_run(db_session, tmp_path):
+    html = _html("Adults should move regularly for health.")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher(html)
+    plan = await service.create_plan(catalog_file=_catalog_file(tmp_path))
+
+    result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=99999)
+
+    assert result["status"] == "approval_blocked"
+    assert result["approval_error_code"] == "REVIEW_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_catalog_apply_rejects_scheduler_review_scope(db_session, tmp_path):
+    html = _html("Adults should move regularly for health.")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher(html)
+    plan = await service.create_plan(catalog_file=_catalog_file(tmp_path))
+    review = RagReviewRun(
+        review_type="scheduler_run",
+        target_run_id=1,
+        status="completed",
+        requires_approval=False,
+        recommended_action="no_action",
+        risk_level="low",
+    )
+    db_session.add(review)
+    await db_session.commit()
+
+    result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review.id)
+
+    assert result["status"] == "approval_blocked"
+    assert result["approval_error_code"] == "REVIEW_SCOPE_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_catalog_apply_rejects_review_for_different_plan(db_session, tmp_path):
+    html = _html("Adults should move regularly for health.")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher(html)
+    first_plan = await service.create_plan(catalog_file=_catalog_file(tmp_path))
+    review_id = await _review_plan(db_session, first_plan["run"]["id"])
+    second_plan = await service.create_plan(catalog_file=_catalog_file(tmp_path))
+
+    result = await service.apply_run(run_id=second_plan["run"]["id"], review_run_id=review_id)
+
+    assert result["status"] == "approval_blocked"
+    assert result["approval_error_code"] == "REVIEW_TARGET_MISMATCH"
 
 
 @pytest.mark.asyncio
@@ -171,7 +251,8 @@ async def test_document_catalog_plan_persists_local_file_without_mutating_until_
     assert source_count == 0
     assert job_count == 0
 
-    apply_result = await service.apply_run(run_id=plan["run"]["id"])
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+    apply_result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
     source = (await db_session.execute(select(RagSource))).scalar_one()
     stored_item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
 
@@ -199,7 +280,8 @@ async def test_document_catalog_apply_blocks_stale_local_file(db_session, tmp_pa
         _markdown_sections("Changed local content after the plan was saved."),
         encoding="utf-8",
     )
-    result = await service.apply_run(run_id=plan["run"]["id"])
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+    result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
     item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
     source_count = await db_session.scalar(select(func.count()).select_from(RagSource))
 
@@ -207,6 +289,26 @@ async def test_document_catalog_apply_blocks_stale_local_file(db_session, tmp_pa
     assert item.apply_status == "stale"
     assert item.apply_error_code == "PLAN_STALE"
     assert source_count == 0
+
+
+@pytest.mark.asyncio
+async def test_catalog_apply_blocks_review_recommendation_without_mutating(db_session, tmp_path):
+    service = RAGCatalogControlService(db_session, get_settings())
+    plan = await service.create_plan(catalog_file=_document_catalog_file(tmp_path, file_name="missing.md"))
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+    source_count_before = await db_session.scalar(select(func.count()).select_from(RagSource))
+    job_count_before = await db_session.scalar(select(func.count()).select_from(RagIngestJob))
+
+    result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
+    item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
+    source_count_after = await db_session.scalar(select(func.count()).select_from(RagSource))
+    job_count_after = await db_session.scalar(select(func.count()).select_from(RagIngestJob))
+
+    assert result["status"] == "approval_blocked"
+    assert result["approval_error_code"] == "REVIEW_BLOCKED"
+    assert item.apply_status == "pending"
+    assert source_count_after == source_count_before
+    assert job_count_after == job_count_before
 
 
 @pytest.mark.asyncio
@@ -229,7 +331,9 @@ async def test_document_catalog_detects_partial_local_file_change(db_session, tm
     service = RAGCatalogControlService(db_session, get_settings())
     service.rag_service.get_embedding = AsyncMock(return_value=_embedding())
     service.rag_service.index_service.index_chunk = AsyncMock(return_value=None)
-    await service.apply_run(run_id=(await service.create_plan(catalog_file=catalog_path))["run"]["id"])
+    initial_plan_id = (await service.create_plan(catalog_file=catalog_path))["run"]["id"]
+    initial_review_id = await _review_plan(db_session, initial_plan_id)
+    await service.apply_run(run_id=initial_plan_id, review_run_id=initial_review_id)
 
     source_file.write_text(changed, encoding="utf-8")
     plan = await service.create_plan(catalog_file=catalog_path)
@@ -239,6 +343,26 @@ async def test_document_catalog_detects_partial_local_file_change(db_session, tm
     assert item["planned_action"] == "partial_refresh"
     assert item["sections"]["changed"] == 1
     assert item["sections"]["change_ratio"] == 0.25
+
+
+@pytest.mark.asyncio
+async def test_catalog_apply_does_not_apply_same_run_twice(db_session, tmp_path):
+    html = _html("Adults should move regularly for health.", "Strength training supports muscles.")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher(html, html)
+    service.rag_service.get_embedding = AsyncMock(return_value=_embedding())
+    service.rag_service.index_service.index_chunk = AsyncMock(return_value=None)
+    plan = await service.create_plan(catalog_file=_catalog_file(tmp_path))
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+    first_result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
+    job_count_after_first = await db_session.scalar(select(func.count()).select_from(RagIngestJob))
+
+    second_result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
+    job_count_after_second = await db_session.scalar(select(func.count()).select_from(RagIngestJob))
+
+    assert first_result["applied"] == 1
+    assert second_result["status"] == "already_applied"
+    assert job_count_after_second == job_count_after_first
 
 
 @pytest.mark.asyncio
@@ -478,6 +602,58 @@ async def test_catalog_plan_requires_full_reindex_when_anchor_lineage_is_missing
 
 
 @pytest.mark.asyncio
+async def test_catalog_apply_requires_confirmation_for_full_reindex(db_session, tmp_path):
+    source_file = tmp_path / "local-guide.md"
+    source_file.write_text(
+        _markdown_sections("Original local content long enough for the catalog plan."),
+        encoding="utf-8",
+    )
+    catalog_path = _document_catalog_file(tmp_path, file_name="local-guide.md")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.get_embedding = AsyncMock(return_value=_embedding())
+    service.rag_service.index_service.index_chunk = AsyncMock(return_value=None)
+    initial_plan = await service.create_plan(catalog_file=catalog_path)
+    initial_review_id = await _review_plan(db_session, initial_plan["run"]["id"])
+    await service.apply_run(run_id=initial_plan["run"]["id"], review_run_id=initial_review_id)
+    source = (await db_session.execute(select(RagSource))).scalar_one()
+    source.parser_version = "legacy-parser-v0"
+    await db_session.commit()
+
+    full_plan = await service.create_plan(catalog_file=catalog_path)
+    item = full_plan["items"][0]
+    review_id = await _review_plan(db_session, full_plan["run"]["id"])
+    blocked = await service.apply_run(run_id=full_plan["run"]["id"], review_run_id=review_id)
+    applied = await service.apply_run(
+        run_id=full_plan["run"]["id"],
+        review_run_id=review_id,
+        confirm_full_reindex=True,
+    )
+
+    assert item["planned_action"] == "full_reindex"
+    assert blocked["status"] == "approval_blocked"
+    assert blocked["approval_error_code"] == "FULL_REINDEX_CONFIRMATION_REQUIRED"
+    assert applied["applied"] == 1
+    assert applied["approval_status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_catalog_apply_blocks_stale_review_item_snapshot(db_session, tmp_path):
+    html = _html("Adults should move regularly for health.")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher(html)
+    plan = await service.create_plan(catalog_file=_catalog_file(tmp_path))
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+    item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
+    item.reason_code = "CHANGED_AFTER_REVIEW"
+    await db_session.commit()
+
+    result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
+
+    assert result["status"] == "approval_blocked"
+    assert result["approval_error_code"] == "REVIEW_STALE"
+
+
+@pytest.mark.asyncio
 async def test_catalog_apply_blocks_stale_plan(db_session, tmp_path):
     planned = _html("Planned content for the official source.")
     stale = _html("Remote content changed after the plan was saved.")
@@ -486,7 +662,8 @@ async def test_catalog_apply_blocks_stale_plan(db_session, tmp_path):
     catalog_path = _catalog_file(tmp_path)
 
     plan = await service.create_plan(catalog_file=catalog_path)
-    result = await service.apply_run(run_id=plan["run"]["id"])
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+    result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
     item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
 
     assert result["stale"] == 1

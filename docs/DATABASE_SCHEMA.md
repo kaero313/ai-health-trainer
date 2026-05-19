@@ -443,6 +443,18 @@ RAG v1 고도화부터 RAG 테이블은 단순 검색 저장소가 아니라 운
 
 Scheduler tables are audit/control-plane tables only. They do not replace catalog plan runs and do not mutate RAG source/chunk data.
 
+### Catalog Apply Approval Fields
+
+`rag_catalog_plan_runs` also stores the result of the approval gate used by `catalog-apply`.
+
+- `approved_review_run_id`: completed `rag_review_runs.id` used as apply evidence
+- `approval_status`: `approved` or `blocked`
+- `approval_checked_at`: when the gate was evaluated
+- `approval_error_code`: machine-readable block reason such as `REVIEW_BLOCKED` or `FULL_REINDEX_CONFIRMATION_REQUIRED`
+- `approval_error_message`: operator-facing block detail
+
+These fields record the gate result at the plan-run level. Item-level mutation results remain in `rag_catalog_plan_items.apply_status`.
+
 ---
 
 ## RAG Review / Approval Schema
@@ -466,4 +478,4 @@ Scheduler tables are audit/control-plane tables only. They do not replace catalo
 - review summary: `review_decision`, `operator_recommendation`, `blocking_reason`
 - operating signals: `parser_confidence`, `section_change_ratio`, `chunk_change_ratio`, `estimated_embedding_seconds`, `quality_warnings`, `context`
 
-Review tables are audit/report tables only. They do not authorize mutation by themselves; `catalog-apply` still uses catalog plan item state and stale hash guards as the apply source of truth.
+Review tables are audit/report tables only. `catalog-apply` must reference a completed catalog review run, then still uses catalog plan item state and stale hash guards as the mutation source of truth.

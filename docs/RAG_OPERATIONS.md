@@ -843,7 +843,13 @@ docker compose exec backend python -m app.cli.rag catalog-plan \
 
 docker compose exec backend python -m app.cli.rag catalog-runs --limit 20
 docker compose exec backend python -m app.cli.rag catalog-run --run-id <run_id>
-docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id>
+docker compose exec backend python -m app.cli.rag catalog-review \
+  --run-id <run_id> \
+  --report-path /workspace/docs/RAG_CATALOG_REVIEW_REPORT.md
+
+docker compose exec backend python -m app.cli.rag catalog-apply \
+  --run-id <run_id> \
+  --review-run-id <review_run_id>
 ```
 
 운영 원칙:
@@ -900,7 +906,7 @@ Operational policy:
 - If any generated item is `create_source`, `partial_refresh`, `full_reindex`, `manual_review_required`, or `defer_reembedding`, the status is `approval_required`.
 - If no catalog source is due and `--force-plan` is not used, the status is `no_due_sources`.
 - Catalog parse/fetch failures are stored as item-level errors and the run status becomes `completed_with_errors`.
-- Actual mutation remains explicit: inspect `catalog-run`, then approve with `catalog-apply --run-id <catalog_plan_run_id>`.
+- Actual mutation remains explicit: inspect `catalog-run`, create `catalog-review`, then apply with `catalog-apply --run-id <catalog_plan_run_id> --review-run-id <catalog_review_run_id>`.
 
 ---
 
@@ -924,7 +930,9 @@ docker compose exec backend python -m app.cli.rag catalog-review \
   --run-id <catalog_plan_run_id> \
   --report-path /workspace/docs/RAG_CATALOG_REVIEW_REPORT.md
 
-docker compose exec backend python -m app.cli.rag catalog-apply --run-id <catalog_plan_run_id>
+docker compose exec backend python -m app.cli.rag catalog-apply \
+  --run-id <catalog_plan_run_id> \
+  --review-run-id <catalog_review_run_id>
 docker compose exec backend python -m app.cli.rag validate-v1 --report-path /workspace/docs/RAG_EVALUATION_REPORT.md
 ```
 
@@ -946,3 +954,14 @@ Run-level recommendation:
 - blocked/manual/fetch failure -> `do_not_apply_until_resolved`
 
 The current official URL catalog demonstrates the intended behavior: NIH ODS returned a 403 during live fetch, so the generated review reports recommend `fix_source_acquisition` and `do_not_apply_until_resolved` instead of allowing blind apply.
+
+### Approval Gate
+
+`catalog-apply` is guarded by the review result:
+
+- `--review-run-id` is required and must point to a completed `catalog_plan` review.
+- `scheduler-review` is aggregate evidence only and cannot approve apply.
+- Review item coverage must match the current catalog plan items.
+- `do_not_apply_until_resolved`, `fix_source_acquisition`, `blocked_manual_review`, and `blocked_defer_reembedding` block the whole apply.
+- `manual_confirm_full_reindex` requires `--confirm-full-reindex`.
+- Approval pass/failure is stored on `rag_catalog_plan_runs` as `approved_review_run_id`, `approval_status`, `approval_checked_at`, `approval_error_code`, and `approval_error_message`.

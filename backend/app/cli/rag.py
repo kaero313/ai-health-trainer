@@ -177,7 +177,11 @@ async def _catalog_run(args: argparse.Namespace) -> None:
 async def _catalog_apply(args: argparse.Namespace) -> None:
     settings = get_settings()
     async with AsyncSessionLocal() as db:
-        result = await RAGCatalogControlService(db, settings).apply_run(run_id=args.run_id)
+        result = await RAGCatalogControlService(db, settings).apply_run(
+            run_id=args.run_id,
+            review_run_id=args.review_run_id,
+            confirm_full_reindex=args.confirm_full_reindex,
+        )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
@@ -311,6 +315,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         latest_catalog_plan = await _load_latest_catalog_plan(db)
         latest_scheduler_run = await _load_latest_scheduler_run(db)
         latest_review_run = await _load_latest_review_run(db)
+        latest_approval_gate = await _load_latest_approval_gate(db)
         try:
             index_status = await service.index_status()
         except Exception as exc:  # pragma: no cover - depends on local OpenSearch availability
@@ -331,6 +336,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         "latest_catalog_plan": latest_catalog_plan,
         "latest_scheduler_run": latest_scheduler_run,
         "latest_review_run": latest_review_run,
+        "latest_approval_gate": latest_approval_gate,
         "index_status": index_status,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -477,7 +483,8 @@ async def _load_latest_catalog_plan(db) -> dict[str, Any] | None:
                 """
                 SELECT id, status, total_sources, planned_create_count, planned_skip_count,
                        planned_partial_count, planned_full_count, planned_manual_count,
-                       planned_defer_count, created_at
+                       planned_defer_count, approved_review_run_id, approval_status,
+                       approval_checked_at, approval_error_code, approval_error_message, created_at
                 FROM rag_catalog_plan_runs
                 ORDER BY id DESC
                 LIMIT 1
@@ -490,6 +497,8 @@ async def _load_latest_catalog_plan(db) -> dict[str, Any] | None:
     result = dict(row)
     if result.get("created_at") is not None:
         result["created_at"] = result["created_at"].isoformat()
+    if result.get("approval_checked_at") is not None:
+        result["approval_checked_at"] = result["approval_checked_at"].isoformat()
     return result
 
 
@@ -535,6 +544,29 @@ async def _load_latest_review_run(db) -> dict[str, Any] | None:
     result = dict(row)
     if result.get("created_at") is not None:
         result["created_at"] = result["created_at"].isoformat()
+    return result
+
+
+async def _load_latest_approval_gate(db) -> dict[str, Any] | None:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, status, approved_review_run_id, approval_status,
+                       approval_checked_at, approval_error_code, approval_error_message
+                FROM rag_catalog_plan_runs
+                WHERE approval_status IS NOT NULL
+                ORDER BY approval_checked_at DESC NULLS LAST, id DESC
+                LIMIT 1
+                """
+            )
+        )
+    ).mappings().first()
+    if not row:
+        return None
+    result = dict(row)
+    if result.get("approval_checked_at") is not None:
+        result["approval_checked_at"] = result["approval_checked_at"].isoformat()
     return result
 
 
@@ -691,6 +723,20 @@ def _write_v1_validation_report(report: dict[str, Any], report_path: Path) -> No
         for name, value in latest_review_run.items():
             lines.append(f"| `{name}` | {_markdown_value(value)} |")
 
+    latest_approval_gate = report.get("latest_approval_gate")
+    if latest_approval_gate:
+        lines.extend(
+            [
+                "",
+                "## Latest Approval Gate",
+                "",
+                "| Field | Value |",
+                "|-------|-------|",
+            ]
+        )
+        for name, value in latest_approval_gate.items():
+            lines.append(f"| `{name}` | {_markdown_value(value)} |")
+
     lines.extend(
         [
             "",
@@ -840,6 +886,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     catalog_apply = subparsers.add_parser("catalog-apply", help="Apply a persisted catalog plan run")
     catalog_apply.add_argument("--run-id", type=int, required=True, help="Catalog plan run id")
+    catalog_apply.add_argument("--review-run-id", type=int, required=True, help="Catalog review run id that approves this apply")
+    catalog_apply.add_argument(
+        "--confirm-full-reindex",
+        action="store_true",
+        help="Required when the approving review contains a full reindex item",
+    )
 
     scheduler_run = subparsers.add_parser("scheduler-run", help="Run plan-only RAG catalog scheduler")
     scheduler_run.add_argument(

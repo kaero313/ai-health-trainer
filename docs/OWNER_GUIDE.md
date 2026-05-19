@@ -260,7 +260,8 @@ RAG management:
 docker compose exec backend python scripts/reset_rag_data.py
 docker compose exec backend python scripts/ingest_rag_data.py --dir rag_data/
 docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/catalog.json --report-path /workspace/docs/RAG_CATALOG_PLAN_REPORT.md
-docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id>
+docker compose exec backend python -m app.cli.rag catalog-review --run-id <run_id> --report-path /workspace/docs/RAG_CATALOG_REVIEW_REPORT.md
+docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id> --review-run-id <review_run_id>
 ```
 
 Known AI maintenance item:

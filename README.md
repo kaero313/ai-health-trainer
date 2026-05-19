@@ -49,7 +49,8 @@ docker compose exec backend python -m app.cli.rag catalog-plan --file rag_source
 docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/document_catalog.json --report-path /workspace/docs/RAG_DOCUMENT_CATALOG_PLAN_REPORT.md
 docker compose exec backend python -m app.cli.rag catalog-runs --limit 20
 docker compose exec backend python -m app.cli.rag catalog-run --run-id <run_id>
-docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id>
+docker compose exec backend python -m app.cli.rag catalog-review --run-id <run_id> --report-path /workspace/docs/RAG_CATALOG_REVIEW_REPORT.md
+docker compose exec backend python -m app.cli.rag catalog-apply --run-id <run_id> --review-run-id <review_run_id>
 docker compose exec backend python -m app.cli.rag ingest-catalog --file rag_sources/catalog.json
 docker compose exec backend python -m app.cli.rag evaluate
 docker compose exec backend python -m app.cli.rag validate-v1 --report-path /workspace/docs/RAG_EVALUATION_REPORT.md
@@ -88,7 +89,7 @@ docker compose exec backend python -m app.cli.rag catalog-review --run-id <catal
 docker compose exec backend python -m app.cli.rag review-runs --limit 20
 docker compose exec backend python -m app.cli.rag review-run --run-id <review_run_id>
 docker compose exec backend python -m app.cli.rag catalog-run --run-id <catalog_plan_run_id>
-docker compose exec backend python -m app.cli.rag catalog-apply --run-id <catalog_plan_run_id>
+docker compose exec backend python -m app.cli.rag catalog-apply --run-id <catalog_plan_run_id> --review-run-id <catalog_review_run_id>
 docker compose exec backend python -m app.cli.rag validate-v1 --report-path /workspace/docs/RAG_EVALUATION_REPORT.md
 ```
 
@@ -99,8 +100,10 @@ Catalog and scheduler plans are reviewed before apply. The review layer stores a
 Default operation order:
 
 ```text
-scheduler-run -> scheduler-review -> catalog-review -> catalog-apply -> validate-v1
+scheduler-run -> scheduler-review -> catalog-review -> catalog-apply --review-run-id -> validate-v1
 ```
+
+`catalog-apply` requires a completed `catalog-review` run. Scheduler reviews are aggregate evidence and cannot approve apply. Full reindex items also require `--confirm-full-reindex`.
 
 Review reports:
 

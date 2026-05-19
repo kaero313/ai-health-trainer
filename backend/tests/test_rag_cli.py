@@ -21,7 +21,12 @@ def test_rag_cli_exposes_url_acquisition_commands():
     assert parser.parse_args(["catalog-plan", "--file", "rag_sources/catalog.json"]).command == "catalog-plan"
     assert parser.parse_args(["catalog-runs", "--limit", "5"]).command == "catalog-runs"
     assert parser.parse_args(["catalog-run", "--run-id", "1"]).command == "catalog-run"
-    assert parser.parse_args(["catalog-apply", "--run-id", "1"]).command == "catalog-apply"
+    catalog_apply = parser.parse_args(["catalog-apply", "--run-id", "1", "--review-run-id", "2"])
+    assert catalog_apply.command == "catalog-apply"
+    assert catalog_apply.review_run_id == 2
+    assert parser.parse_args(
+        ["catalog-apply", "--run-id", "1", "--review-run-id", "2", "--confirm-full-reindex"]
+    ).confirm_full_reindex is True
     assert parser.parse_args(["scheduler-run", "--force-plan"]).command == "scheduler-run"
     assert parser.parse_args(["scheduler-runs", "--limit", "5"]).command == "scheduler-runs"
     assert parser.parse_args(["scheduler-run-detail", "--run-id", "1"]).command == "scheduler-run-detail"
@@ -123,6 +128,15 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
             "risk_level": "high",
             "created_at": "2026-05-10T00:00:00+00:00",
         },
+        "latest_approval_gate": {
+            "id": 4,
+            "status": "approval_blocked",
+            "approved_review_run_id": 3,
+            "approval_status": "blocked",
+            "approval_checked_at": "2026-05-19T00:00:00+00:00",
+            "approval_error_code": "REVIEW_BLOCKED",
+            "approval_error_message": "Review recommendation blocks apply until issues are resolved",
+        },
         "index_status": {
             "index": "rag_chunks_v1",
             "alias": "rag_chunks_current",
@@ -142,3 +156,4 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
     assert b"Latest Catalog Plan" in data
     assert b"Latest Scheduler Run" in data
     assert b"Latest Review Run" in data
+    assert b"Latest Approval Gate" in data
