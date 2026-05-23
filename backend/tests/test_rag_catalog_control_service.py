@@ -18,8 +18,9 @@ def _embedding(value: float = 0.1) -> list[float]:
 
 
 class FakeUrlFetcher:
-    def __init__(self, *html_values: str):
+    def __init__(self, *html_values: str, pdf_values: list[bytes] | None = None):
         self.html_values = list(html_values)
+        self.pdf_values = list(pdf_values or [])
 
     async def fetch(self, url: str) -> FetchedUrlContent:
         if len(self.html_values) > 1:
@@ -35,6 +36,22 @@ class FakeUrlFetcher:
             fetched_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
             raw_content=html.encode("utf-8"),
             text=html,
+        )
+
+    async def fetch_pdf(self, url: str) -> FetchedUrlContent:
+        if len(self.pdf_values) > 1:
+            pdf = self.pdf_values.pop(0)
+        else:
+            pdf = self.pdf_values[0]
+        return FetchedUrlContent(
+            requested_url=url,
+            final_url=url,
+            content_type="application/pdf",
+            etag='"pdf-v1"',
+            last_modified="Mon, 28 Oct 2024 22:44:41 GMT",
+            fetched_at=datetime(2024, 10, 28, tzinfo=timezone.utc),
+            raw_content=pdf,
+            text="",
         )
 
 
@@ -61,6 +78,37 @@ def _catalog_file(tmp_path, *, url: str = "https://example.org/guide", title: st
                         "source_type": "official_guideline",
                         "source_grade": "A",
                         "license": "official-webpage",
+                        "language": "en",
+                        "author_or_org": "Example Org",
+                        "refresh_policy": "scheduled",
+                        "refresh_interval_hours": 720,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _pdf_catalog_file(tmp_path, *, url: str = "https://example.org/guide.pdf"):
+    path = tmp_path / "pdf_catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sources": [
+                    {
+                        "key": "official_pdf",
+                        "acquisition_type": "pdf_url",
+                        "url": url,
+                        "parser_type": "pdf_text",
+                        "title": "Official PDF",
+                        "category": "exercise",
+                        "tags": ["guideline", "pdf"],
+                        "source_type": "official_guideline",
+                        "source_grade": "A",
+                        "license": "official-pdf",
                         "language": "en",
                         "author_or_org": "Example Org",
                         "refresh_policy": "scheduled",
@@ -113,6 +161,35 @@ def _markdown_sections(*bodies: str) -> str:
     return "# Local Guide\n\n" + "\n\n".join(sections)
 
 
+def _synthetic_text_pdf(text_value: str) -> bytes:
+    stream = f"BT\n/F1 12 Tf\n72 720 Td\n({text_value}) Tj\nET\n".encode("ascii")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> "
+        b"/MediaBox [0 0 612 792] /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"endstream",
+    ]
+    chunks = [b"%PDF-1.4\n"]
+    offsets = [0]
+    cursor = len(chunks[0])
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(cursor)
+        part = f"{index} 0 obj\n".encode("ascii") + obj + b"\nendobj\n"
+        chunks.append(part)
+        cursor += len(part)
+    xref_offset = cursor
+    xref = [b"xref\n", f"0 {len(objects) + 1}\n".encode("ascii"), b"0000000000 65535 f \n"]
+    for offset in offsets[1:]:
+        xref.append(f"{offset:010d} 00000 n \n".encode("ascii"))
+    trailer = (
+        f"trailer\n<< /Root 1 0 R /Size {len(objects) + 1} >>\n"
+        f"startxref\n{xref_offset}\n%%EOF\n"
+    ).encode("ascii")
+    return b"".join(chunks + xref + [trailer])
+
+
 async def _review_plan(db_session, plan_id: int) -> int:
     result = await RAGReviewService(db_session, get_settings()).review_catalog_plan(run_id=plan_id)
     return int(result["run"]["id"])
@@ -150,6 +227,41 @@ async def test_catalog_plan_persists_missing_source_and_apply_creates_job(db_ses
     assert stored_item.applied_job_id == job.id
     assert stored_item.source_id == source.id
     assert source.metadata_["fetch_metadata"]["catalog_key"] == "official_guide"
+
+
+@pytest.mark.asyncio
+async def test_pdf_url_catalog_plan_and_apply_create_source(db_session, tmp_path):
+    pdf_bytes = _synthetic_text_pdf("Official PDF URL catalog fixture.")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher(pdf_values=[pdf_bytes, pdf_bytes])
+    service.rag_service.get_embedding = AsyncMock(return_value=_embedding())
+    service.rag_service.index_service.index_chunk = AsyncMock(return_value=None)
+    catalog_path = _pdf_catalog_file(tmp_path)
+
+    plan = await service.create_plan(catalog_file=catalog_path)
+    item = plan["items"][0]
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+    apply_result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
+    source = (await db_session.execute(select(RagSource))).scalar_one()
+    chunk = (await db_session.execute(select(RagChunk))).scalar_one()
+
+    assert item["acquisition_type"] == "pdf_url"
+    assert item["parser_type"] == "pdf_text"
+    assert item["planned_action"] == "create_source"
+    assert item["context"]["origin_type"] == "url_pdf"
+    assert item["context"]["content_length"] == len(pdf_bytes)
+    assert item["context"]["etag"] == '"pdf-v1"'
+    assert item["context"]["last_modified"] == "Mon, 28 Oct 2024 22:44:41 GMT"
+    assert apply_result["applied"] == 1
+    assert source.origin_type == "url_pdf"
+    assert source.origin_uri == "https://example.org/guide.pdf"
+    assert source.parser_type == "pdf_text"
+    assert source.metadata_["fetch_metadata"]["content_type"] == "application/pdf"
+    assert source.metadata_["fetch_metadata"]["content_length"] == len(pdf_bytes)
+    assert chunk.metadata_["parser_type"] == "pdf_text"
+    assert chunk.metadata_["source_url"] == "https://example.org/guide.pdf"
+    assert chunk.title == "Official PDF page 1 (1/1)"
+    assert chunk.chunk_strategy == "page_paragraph"
 
 
 @pytest.mark.asyncio
@@ -669,6 +781,26 @@ async def test_catalog_apply_blocks_stale_plan(db_session, tmp_path):
     assert result["stale"] == 1
     assert item.apply_status == "stale"
     assert item.apply_error_code == "PLAN_STALE"
+
+
+@pytest.mark.asyncio
+async def test_pdf_url_catalog_apply_blocks_stale_plan(db_session, tmp_path):
+    planned_pdf = _synthetic_text_pdf("Planned official PDF content.")
+    changed_pdf = _synthetic_text_pdf("Changed official PDF content.")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher(pdf_values=[planned_pdf, changed_pdf])
+    catalog_path = _pdf_catalog_file(tmp_path)
+
+    plan = await service.create_plan(catalog_file=catalog_path)
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+    result = await service.apply_run(run_id=plan["run"]["id"], review_run_id=review_id)
+    item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
+    source_count = await db_session.scalar(select(func.count()).select_from(RagSource))
+
+    assert result["stale"] == 1
+    assert item.apply_status == "stale"
+    assert item.apply_error_code == "PLAN_STALE"
+    assert source_count == 0
 
 
 def test_catalog_plan_report_writer_preserves_utf8_and_lf(tmp_path):

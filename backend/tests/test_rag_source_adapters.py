@@ -1,13 +1,18 @@
 import json
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
-from app.services.rag_pipeline import RAGDocumentParser
+from app.services.rag_pipeline import RAGDocumentParser, hash_text
+from app.services.rag_source_acquisition import FetchedUrlContent
 from app.services.rag_source_adapters import (
     ACQUISITION_LOCAL_FILE,
+    ACQUISITION_PDF_URL,
     ACQUISITION_URL_HTML,
     CatalogSource,
     LocalFileSourceAdapter,
+    PdfUrlSourceAdapter,
     load_catalog_sources,
 )
 
@@ -32,6 +37,45 @@ def _catalog_source(*, path: str, parser_type: str) -> CatalogSource:
         curation_method="internal fixture",
         reference_urls=["https://example.org/reference"],
     )
+
+
+def _pdf_url_catalog_source() -> CatalogSource:
+    return CatalogSource(
+        key="official_pdf",
+        acquisition_type=ACQUISITION_PDF_URL,
+        url="https://example.org/guide.pdf",
+        path=None,
+        parser_type="pdf_text",
+        title="Official PDF",
+        category="exercise",
+        tags=["pdf", "official"],
+        source_type="official_guideline",
+        source_grade="A",
+        license_value="public-sector-official-pdf",
+        language="en",
+        author_or_org="Example Agency",
+        refresh_policy="scheduled",
+        refresh_interval_hours=720,
+        curation_method=None,
+        reference_urls=["https://example.org/guide.pdf"],
+    )
+
+
+class FakePdfUrlFetcher:
+    def __init__(self, content: bytes):
+        self.content = content
+
+    async def fetch_pdf(self, url: str) -> FetchedUrlContent:
+        return FetchedUrlContent(
+            requested_url=url,
+            final_url=url,
+            content_type="application/pdf",
+            etag='"pdf-etag"',
+            last_modified="Mon, 28 Oct 2024 22:44:41 GMT",
+            fetched_at=datetime.now(timezone.utc),
+            raw_content=self.content,
+            text="",
+        )
 
 
 def _synthetic_text_pdf(text_value: str) -> bytes:
@@ -83,6 +127,29 @@ def test_load_catalog_sources_keeps_url_backward_compatibility():
     assert source.reference_urls == ["https://example.org/guide"]
 
 
+def test_load_catalog_sources_supports_pdf_url_defaults():
+    payload = {
+        "sources": [
+            {
+                "key": "official_pdf",
+                "acquisition_type": "pdf_url",
+                "url": "https://example.org/guide.pdf",
+                "title": "Official PDF",
+                "category": "exercise",
+                "tags": ["pdf"],
+            }
+        ]
+    }
+
+    source = load_catalog_sources(payload)[0]
+
+    assert source.acquisition_type == ACQUISITION_PDF_URL
+    assert source.parser_type == "pdf_text"
+    assert source.source_grade == "A"
+    assert source.refresh_policy == "scheduled"
+    assert source.reference_urls == ["https://example.org/guide.pdf"]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("filename", "parser_type", "content"),
@@ -128,3 +195,30 @@ async def test_local_file_adapter_records_pdf_fingerprint(tmp_path):
     assert acquired.parsed.parser_type == "pdf_text"
     assert acquired.acquisition_metadata["file_extension"] == ".pdf"
     assert acquired.acquisition_metadata["raw_content_hash"] == acquired.parsed.raw_content_hash
+
+
+@pytest.mark.asyncio
+async def test_pdf_url_adapter_records_binary_fetch_metadata(tmp_path):
+    catalog_file = tmp_path / "catalog.json"
+    catalog_file.write_text(json.dumps({"sources": []}), encoding="utf-8")
+    pdf_bytes = _synthetic_text_pdf("Official PDF URL adapter fixture.")
+    rag_service = SimpleNamespace(
+        url_fetcher=FakePdfUrlFetcher(pdf_bytes),
+        parser=RAGDocumentParser(),
+    )
+    adapter = PdfUrlSourceAdapter(rag_service)
+
+    acquired = await adapter.acquire(_pdf_url_catalog_source(), catalog_file=catalog_file)
+
+    assert acquired.origin_type == "url_pdf"
+    assert acquired.origin_uri == "https://example.org/guide.pdf"
+    assert acquired.source_url == "https://example.org/guide.pdf"
+    assert acquired.parsed.parser_type == "pdf_text"
+    assert acquired.parsed.source_uri == "https://example.org/guide.pdf"
+    assert acquired.parsed.sections[0].title == "Official PDF page 1"
+    assert acquired.parsed.sections[0].source_url == "https://example.org/guide.pdf"
+    assert acquired.acquisition_metadata["content_type"] == "application/pdf"
+    assert acquired.acquisition_metadata["content_length"] == len(pdf_bytes)
+    assert acquired.acquisition_metadata["raw_content_hash"] == hash_text(pdf_bytes)
+    assert acquired.acquisition_metadata["parser_type"] == "pdf_text"
+    assert acquired.acquisition_metadata["origin_type"] == "url_pdf"

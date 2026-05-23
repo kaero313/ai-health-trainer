@@ -62,8 +62,10 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
         "db_counts": {"rag_sources": 1, "rag_chunks_active": 1},
         "url_source_summary": {
             "url_source_count": 1,
+            "pdf_url_source_count": 1,
             "local_file_source_count": 1,
             "catalog_source_count": 1,
+            "catalog_pdf_url_source_count": 1,
             "catalog_local_file_source_count": 1,
             "html_parser_source_count": 1,
             "markdown_parser_source_count": 1,
@@ -72,6 +74,7 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
             "source_grade_a_count": 1,
             "etag_present_count": 1,
             "last_modified_present_count": 1,
+            "url_pdf_fingerprint_count": 1,
             "local_file_fingerprint_count": 1,
             "scheduled_refresh_count": 1,
             "stale_source_count": 0,
