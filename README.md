@@ -76,6 +76,14 @@ The catalog control plane also supports local MD/TXT/PDF sources through source 
 docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/document_catalog.json --report-path /workspace/docs/RAG_DOCUMENT_CATALOG_PLAN_REPORT.md
 ```
 
+## RAG Official PDF URL Acquisition
+
+The official source catalog now supports `acquisition_type=pdf_url` for small text-extractable PDF sources. v1 uses the ODPHP Physical Activity Guidelines Executive Summary PDF as an official grade A source. PDF URL items store binary fetch metadata, `etag`/`last_modified`, raw content hash, parser confidence, and page/paragraph chunk lineage; oversized or scanned PDFs stay blocked for manual review/OCR backlog.
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-plan --file rag_sources/catalog.json --report-path /workspace/docs/RAG_CATALOG_PLAN_REPORT.md
+```
+
 ## RAG Scheduler / Plan Automation
 
 Local-only operations now use a plan-only scheduler path. The scheduler checks official URL and local document catalogs, creates catalog plan runs, and writes an operations report. It does not change RAG data or OpenSearch; an operator still approves changes with `catalog-apply`.

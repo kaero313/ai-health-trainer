@@ -880,7 +880,8 @@ Operational rules:
 - `acquisition_type=local_file` sources store file fingerprints: size, mtime, raw hash, resolved path, parser type, reference URLs, and curation method.
 - Apply re-reads the local file and stops with `PLAN_STALE` if the current normalized content hash differs from the planned hash.
 - The persisted corpus remains internal summary/fixture data; official sources are linked as metadata references to reduce copyright and reproducibility risk.
-- Official PDF URL acquisition, API connectors, OCR, video transcript, and scheduler workers remain the next acquisition backlog.
+- `acquisition_type=pdf_url` sources fetch official PDF bytes over HTTP, store `content_length`, `etag`, `last_modified`, and raw content hash, then parse with `pdf_text`.
+- Official PDF URL support is limited to text-extractable PDFs under `RAG_URL_MAX_BYTES`; oversized PDFs, scanned PDFs, OCR, API connectors, video transcript, and scheduler workers remain the next acquisition backlog.
 
 ---
 

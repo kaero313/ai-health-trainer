@@ -68,6 +68,26 @@ Policy interpretation:
 
 ---
 
+## 2-2. PDF URL Refresh Inputs
+
+Official PDF URL sources use the same catalog plan/review/apply decision flow with binary acquisition metadata.
+
+| Input | Meaning |
+|-------|---------|
+| `content_type` | Must indicate a PDF or the bytes must carry a PDF signature. |
+| `content_length` | Used to enforce `RAG_URL_MAX_BYTES` before parser work expands. |
+| `etag` / `last_modified` | Remote freshness signals for scheduled checks. |
+| `raw_content_hash` | Binary PDF fingerprint for stale-plan detection. |
+| `parser_confidence` | `pdf_text` extraction quality signal. |
+
+Policy interpretation:
+
+- Text-extractable PDFs under the byte budget are parsed with `pdf_text` and chunked by page/paragraph.
+- Empty, scanned, or low-confidence PDFs are `manual_review_required`; OCR is a follow-up path.
+- Oversized PDFs fail acquisition and are reviewed as `fix_source_acquisition`, not silently ingested.
+
+---
+
 ## 3. Default Policy
 
 | Situation | Action | Risk | Reason |

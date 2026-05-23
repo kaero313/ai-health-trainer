@@ -162,16 +162,19 @@ Report에 남기는 항목:
 
 ## 9. Source Adapter Extension
 
-The catalog control plane now supports two acquisition families with the same plan/apply lifecycle.
+The catalog control plane now supports three acquisition families with the same plan/apply lifecycle.
 
 | Acquisition | Source | Parser | Notes |
 |-------------|--------|--------|-------|
 | `url_html` | operator registered official single-page URL | `html` | Backward compatible default when catalog rows omit `acquisition_type` |
+| `pdf_url` | operator registered official PDF URL | `pdf_text` | Official binary source acquisition with HTTP freshness metadata and page/paragraph chunks |
 | `local_file` | local MD/TXT/PDF path in `rag_sources/document_catalog.json` | `markdown`, `text`, `pdf_text` | Reproducible internal corpus and parser capability validation |
 
 Local file items store file fingerprint metadata in source `metadata.fetch_metadata`: `file_size`, `mtime`, `raw_content_hash`, `resolved_path`, `reference_urls`, and `curation_method`. Apply re-reads the file and blocks with `PLAN_STALE` when the planned normalized content hash differs from the current file.
 
-Official PDF URL acquisition, API connectors, scheduler workers, OCR, and video transcript adapters remain follow-up work. The current scope keeps persisted/embedded corpus reproducible and low-risk while preserving official references in metadata.
+PDF URL items store `requested_url`, `final_url`, `content_type`, `content_length`, `etag`, `last_modified`, `fetched_at`, and `raw_content_hash`. v1 supports text-extractable PDFs under `RAG_URL_MAX_BYTES`; scanned PDFs and oversized PDFs are routed to manual review or follow-up OCR work.
+
+API connectors, scheduler workers, OCR, and video transcript adapters remain follow-up work. The current scope keeps persisted/embedded corpus reproducible and low-risk while preserving official references in metadata.
 
 ---
 

@@ -455,10 +455,11 @@ P2는 입력 데이터 종류와 검색 품질을 넓히는 단계다.
 
 Implemented v1.5 scope: local MD/TXT/PDF source adapters share the catalog plan/apply control plane with official URL HTML sources.
 
-- Current adapters: `url_html`, `local_file`.
+- Current adapters: `url_html`, `pdf_url`, `local_file`.
 - Current local parsers: `markdown`, `text`, `pdf_text`.
 - Corpus policy: store internal summaries and synthetic parser fixtures, then attach official reference URLs and curation notes in metadata.
-- Deferred adapters: official PDF URL download, public API connector, scheduler worker, OCR/image, video transcript, reranker.
+- Official PDF URL policy: fetch small text-extractable public PDFs directly, parse with `pdf_text`, and record HTTP freshness plus binary hash metadata.
+- Deferred adapters: public API connector, scheduler worker, OCR/image, video transcript, reranker.
 
 This preserves the portfolio signal around acquisition strategy, parser choice, chunk lineage, stale-plan safety, and source governance without prematurely expanding into external connector complexity.
 

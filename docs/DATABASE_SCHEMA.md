@@ -248,6 +248,12 @@ RAG v2는 PostgreSQL을 source of truth로 사용하고, OpenSearch `rag_chunks_
 | `rag_retrieval_traces` | AI 요청별 검색 query, backend, mode, score, chunk/source 기록 |
 | `ai_generation_traces` | prompt version, model, context/output hash, latency 기록 |
 
+Current catalog acquisition types:
+
+- `url_html`: official single-page HTML source, parsed with `html`.
+- `pdf_url`: official PDF URL source, parsed with `pdf_text` and stored as `origin_type=url_pdf`.
+- `local_file`: local MD/TXT/PDF fixture or curated summary, stored as `file_markdown`, `file_text`, or `file_pdf`.
+
 기본 category:
 
 ```
