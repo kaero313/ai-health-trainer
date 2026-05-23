@@ -33,6 +33,7 @@ class FetchedUrlContent:
             "requested_url": self.requested_url,
             "final_url": self.final_url,
             "content_type": self.content_type,
+            "content_length": len(self.raw_content),
             "etag": self.etag,
             "last_modified": self.last_modified,
             "fetched_at": self.fetched_at.isoformat(),
@@ -45,6 +46,18 @@ class RAGUrlFetcher:
         self.settings = settings
 
     async def fetch(self, url: str) -> FetchedUrlContent:
+        return await self._fetch(url, allowed_content_types=("html", "text"), decode_text=True)
+
+    async def fetch_pdf(self, url: str) -> FetchedUrlContent:
+        return await self._fetch(url, allowed_content_types=("pdf",), decode_text=False)
+
+    async def _fetch(
+        self,
+        url: str,
+        *,
+        allowed_content_types: tuple[str, ...],
+        decode_text: bool,
+    ) -> FetchedUrlContent:
         timeout = httpx.Timeout(self.settings.RAG_URL_FETCH_TIMEOUT_SECONDS)
         headers = {"User-Agent": self.settings.RAG_URL_USER_AGENT}
         async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, headers=headers) as client:
@@ -53,11 +66,16 @@ class RAGUrlFetcher:
         if response.status_code < 200 or response.status_code >= 300:
             raise RAGSourceAcquisitionError(f"URL fetch failed with status {response.status_code}: {url}")
 
+        raw_content = response.content
         content_type = response.headers.get("content-type")
-        if content_type and "html" not in content_type.lower() and "text" not in content_type.lower():
+        normalized_content_type = (content_type or "").lower()
+        content_type_allowed = any(value in normalized_content_type for value in allowed_content_types)
+        pdf_signature_allowed = allowed_content_types == ("pdf",) and raw_content.startswith(b"%PDF")
+        if allowed_content_types == ("pdf",) and not (content_type_allowed or pdf_signature_allowed):
+            raise RAGSourceAcquisitionError(f"Unsupported URL content type: {content_type or 'unknown'}")
+        if allowed_content_types != ("pdf",) and content_type and not content_type_allowed:
             raise RAGSourceAcquisitionError(f"Unsupported URL content type: {content_type}")
 
-        raw_content = response.content
         if len(raw_content) > self.settings.RAG_URL_MAX_BYTES:
             raise RAGSourceAcquisitionError(
                 f"URL content exceeds RAG_URL_MAX_BYTES ({len(raw_content)} > {self.settings.RAG_URL_MAX_BYTES})"
@@ -71,5 +89,5 @@ class RAGUrlFetcher:
             last_modified=response.headers.get("last-modified"),
             fetched_at=datetime.now(timezone.utc),
             raw_content=raw_content,
-            text=response.text,
+            text=response.text if decode_text else "",
         )

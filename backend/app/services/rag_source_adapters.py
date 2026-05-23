@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
+import tempfile
 from typing import Any
 
 from app.services.rag_pipeline import ParsedDocument, RAGDocumentParser, hash_text, origin_type_for_path
@@ -10,6 +11,7 @@ from app.services.rag_pipeline import ParsedDocument, RAGDocumentParser, hash_te
 
 ACQUISITION_URL_HTML = "url_html"
 ACQUISITION_LOCAL_FILE = "local_file"
+ACQUISITION_PDF_URL = "pdf_url"
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,56 @@ class LocalFileSourceAdapter:
         )
 
 
+class PdfUrlSourceAdapter:
+    def __init__(self, rag_service: Any):
+        self.rag_service = rag_service
+
+    async def acquire(self, catalog_source: CatalogSource, *, catalog_file: Path) -> AcquiredSource:
+        if not catalog_source.url:
+            raise ValueError("pdf_url catalog source requires url")
+        fetched = await self.rag_service.url_fetcher.fetch_pdf(catalog_source.url)
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_file:
+                temp_file.write(fetched.raw_content)
+                temp_path = Path(temp_file.name)
+            parsed = self.rag_service.parser.parse_file(temp_path, parser_type="pdf_text")
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+
+        metadata = {
+            **_catalog_metadata(catalog_source, catalog_file),
+            **fetched.metadata(),
+            "parser_type": parsed.parser_type,
+            "origin_type": "url_pdf",
+        }
+        title = catalog_source.title or parsed.title
+        parsed = replace(
+            parsed,
+            title=title,
+            source_uri=fetched.final_url,
+            sections=[
+                replace(
+                    section,
+                    title=f"{title} page {section.page_number}" if section.page_number else title,
+                    source_url=fetched.final_url,
+                    source_content_type=fetched.content_type,
+                )
+                for section in parsed.sections
+            ],
+            fetch_metadata=metadata,
+        )
+        return AcquiredSource(
+            catalog_source=catalog_source,
+            parsed=parsed,
+            source_url=fetched.final_url,
+            origin_type="url_pdf",
+            origin_uri=catalog_source.url,
+            acquisition_metadata=metadata,
+        )
+
+
 def resolve_catalog_path(path_value: str, catalog_file: Path) -> Path:
     path = Path(path_value)
     if path.is_absolute():
@@ -117,7 +169,8 @@ def load_catalog_sources(payload: Any) -> list[CatalogSource]:
 
 def _load_catalog_source(source: dict[str, Any]) -> CatalogSource:
     acquisition_type = str(source.get("acquisition_type") or (ACQUISITION_URL_HTML if source.get("url") else ACQUISITION_LOCAL_FILE))
-    parser_type = str(source.get("parser_type") or ("html" if acquisition_type == ACQUISITION_URL_HTML else "auto"))
+    parser_type = str(source.get("parser_type") or _default_parser_type(acquisition_type))
+    is_official_url = acquisition_type in {ACQUISITION_URL_HTML, ACQUISITION_PDF_URL}
     return CatalogSource(
         key=source.get("key"),
         acquisition_type=acquisition_type,
@@ -127,12 +180,12 @@ def _load_catalog_source(source: dict[str, Any]) -> CatalogSource:
         title=source.get("title"),
         category=source["category"],
         tags=list(source.get("tags") or []),
-        source_type=source.get("source_type", "official_guideline" if acquisition_type == ACQUISITION_URL_HTML else "curated_internal_summary"),
-        source_grade=source.get("source_grade", "A" if acquisition_type == ACQUISITION_URL_HTML else "B"),
+        source_type=source.get("source_type", "official_guideline" if is_official_url else "curated_internal_summary"),
+        source_grade=source.get("source_grade", "A" if is_official_url else "B"),
         license_value=source.get("license"),
-        language=source.get("language", "en" if acquisition_type == ACQUISITION_URL_HTML else "ko"),
+        language=source.get("language", "en" if is_official_url else "ko"),
         author_or_org=source.get("author_or_org"),
-        refresh_policy=source.get("refresh_policy", "scheduled" if acquisition_type == ACQUISITION_URL_HTML else "manual"),
+        refresh_policy=source.get("refresh_policy", "scheduled" if is_official_url else "manual"),
         refresh_interval_hours=_optional_int(source.get("refresh_interval_hours")),
         curation_method=source.get("curation_method"),
         reference_urls=list(source.get("reference_urls") or ([] if not source.get("url") else [source["url"]])),
@@ -154,3 +207,11 @@ def _optional_int(value: object) -> int | None:
     if value in {None, ""}:
         return None
     return int(value)
+
+
+def _default_parser_type(acquisition_type: str) -> str:
+    if acquisition_type == ACQUISITION_URL_HTML:
+        return "html"
+    if acquisition_type == ACQUISITION_PDF_URL:
+        return "pdf_text"
+    return "auto"

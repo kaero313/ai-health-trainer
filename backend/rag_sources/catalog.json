@@ -43,6 +43,22 @@
       "author_or_org": "National Institutes of Health Office of Dietary Supplements",
       "refresh_policy": "scheduled",
       "refresh_interval_hours": 720
+    },
+    {
+      "key": "odphp_physical_activity_guidelines_executive_summary_pdf",
+      "acquisition_type": "pdf_url",
+      "url": "https://odphp.health.gov/sites/default/files/2019-09/PAG_ExecutiveSummary.pdf",
+      "parser_type": "pdf_text",
+      "title": "ODPHP Physical Activity Guidelines Executive Summary PDF",
+      "category": "exercise",
+      "tags": ["physical-activity", "guideline", "pdf", "public-health"],
+      "source_type": "official_guideline",
+      "source_grade": "A",
+      "license": "public-sector-official-pdf",
+      "language": "en",
+      "author_or_org": "U.S. Department of Health and Human Services, Office of Disease Prevention and Health Promotion",
+      "refresh_policy": "scheduled",
+      "refresh_interval_hours": 720
     }
   ]
 }
