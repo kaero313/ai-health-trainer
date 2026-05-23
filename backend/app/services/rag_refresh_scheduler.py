@@ -16,6 +16,7 @@ from app.services.rag_catalog_control_service import RAGCatalogControlService
 from app.services.rag_pipeline import hash_text
 from app.services.rag_source_adapters import (
     ACQUISITION_LOCAL_FILE,
+    ACQUISITION_PDF_URL,
     ACQUISITION_URL_HTML,
     CatalogSource,
     load_catalog_sources,
@@ -217,6 +218,8 @@ class RAGRefreshSchedulerService:
         for acquisition_type in acquisition_types:
             if acquisition_type == ACQUISITION_LOCAL_FILE:
                 origin_types.update({"file_markdown", "file_text", "file_pdf"})
+            elif acquisition_type == ACQUISITION_PDF_URL:
+                origin_types.add("url_pdf")
             else:
                 origin_types.add("url_html")
         if not origin_types:
@@ -443,6 +446,8 @@ def _catalog_origin_uri(catalog_source: CatalogSource, catalog_file: Path) -> st
         except OSError:
             return catalog_source.path
     if catalog_source.acquisition_type == ACQUISITION_URL_HTML:
+        return catalog_source.url
+    if catalog_source.acquisition_type == ACQUISITION_PDF_URL:
         return catalog_source.url
     return catalog_source.path or catalog_source.url
 

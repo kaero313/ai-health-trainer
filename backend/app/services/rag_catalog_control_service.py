@@ -16,10 +16,12 @@ from app.services.rag_pipeline import CHUNKER_VERSION, NORMALIZATION_VERSION, Ch
 from app.services.rag_service import RAGService
 from app.services.rag_source_adapters import (
     ACQUISITION_LOCAL_FILE,
+    ACQUISITION_PDF_URL,
     ACQUISITION_URL_HTML,
     AcquiredSource,
     CatalogSource,
     LocalFileSourceAdapter,
+    PdfUrlSourceAdapter,
     UrlHtmlSourceAdapter,
     load_catalog_sources,
     resolve_catalog_path,
@@ -74,6 +76,7 @@ class RAGCatalogControlService:
         self.rag_service = RAGService(db, settings)
         self.url_adapter = UrlHtmlSourceAdapter(self.rag_service)
         self.local_file_adapter = LocalFileSourceAdapter(self.rag_service.parser)
+        self.pdf_url_adapter = PdfUrlSourceAdapter(self.rag_service)
 
     async def create_plan(self, *, catalog_file: str | Path, report_path: str | Path | None = None) -> dict[str, Any]:
         started_at = datetime.now(timezone.utc)
@@ -412,6 +415,9 @@ class RAGCatalogControlService:
                     "curation_method": catalog_source.curation_method,
                     "final_url": fetch_metadata.get("final_url"),
                     "content_type": fetch_metadata.get("content_type"),
+                    "content_length": fetch_metadata.get("content_length"),
+                    "etag": fetch_metadata.get("etag"),
+                    "last_modified": fetch_metadata.get("last_modified"),
                     "raw_content_hash": fetch_metadata.get("raw_content_hash"),
                     "parser_type": acquired.parsed.parser_type,
                     "parser_version": acquired.parsed.parser_version,
@@ -566,6 +572,8 @@ class RAGCatalogControlService:
     async def _acquire_catalog_source(self, catalog_source: CatalogSource, catalog_path: Path) -> AcquiredSource:
         if catalog_source.acquisition_type == ACQUISITION_LOCAL_FILE:
             return await self.local_file_adapter.acquire(catalog_source, catalog_file=catalog_path)
+        if catalog_source.acquisition_type == ACQUISITION_PDF_URL:
+            return await self.pdf_url_adapter.acquire(catalog_source, catalog_file=catalog_path)
         return await self.url_adapter.acquire(catalog_source, catalog_file=catalog_path)
 
     async def _load_active_catalog_sources(self, acquisition_types: set[str]) -> list[RagSource]:
@@ -573,6 +581,8 @@ class RAGCatalogControlService:
         for acquisition_type in acquisition_types:
             if acquisition_type == ACQUISITION_LOCAL_FILE:
                 origin_types.update({"file_markdown", "file_text", "file_pdf"})
+            elif acquisition_type == ACQUISITION_PDF_URL:
+                origin_types.add("url_pdf")
             else:
                 origin_types.add("url_html")
         return (
@@ -851,7 +861,7 @@ def _metadata_changed_fields(
         fetch_metadata = {}
     previous_acquisition_type = fetch_metadata.get("acquisition_type") or _acquisition_type_for_source(source)
     previous_reference_urls = list(fetch_metadata.get("reference_urls") or [])
-    if not previous_reference_urls and source.origin_type == "url_html":
+    if not previous_reference_urls and source.origin_type in {"url_html", "url_pdf"}:
         previous_reference_urls = [source.origin_uri or source.source_url]
     comparisons = {
         "title": (source.title, catalog_source.title),
@@ -921,6 +931,8 @@ def _safe_catalog_origin_uri(catalog_source: CatalogSource, catalog_path: Path) 
 def _acquisition_type_for_source(source: RagSource) -> str:
     if source.origin_type in {"file_markdown", "file_text", "file_pdf"}:
         return ACQUISITION_LOCAL_FILE
+    if source.origin_type == "url_pdf":
+        return ACQUISITION_PDF_URL
     return ACQUISITION_URL_HTML if source.origin_type == "url_html" else source.origin_type
 
 
@@ -928,12 +940,16 @@ def _catalog_source_from_item(item: RagCatalogPlanItem) -> CatalogSource:
     context = item.context or {}
     acquisition_type = item.acquisition_type or str(context.get("acquisition_type") or ACQUISITION_URL_HTML)
     origin_uri = item.origin_uri or item.catalog_url
+    default_parser_type = {
+        ACQUISITION_URL_HTML: "html",
+        ACQUISITION_PDF_URL: "pdf_text",
+    }.get(acquisition_type, "auto")
     return CatalogSource(
         key=item.catalog_key,
         acquisition_type=acquisition_type,
-        url=item.catalog_url if acquisition_type == ACQUISITION_URL_HTML else None,
+        url=item.catalog_url if acquisition_type in {ACQUISITION_URL_HTML, ACQUISITION_PDF_URL} else None,
         path=origin_uri if acquisition_type == ACQUISITION_LOCAL_FILE else None,
-        parser_type=item.parser_type or str(context.get("parser_type") or ("html" if acquisition_type == ACQUISITION_URL_HTML else "auto")),
+        parser_type=item.parser_type or str(context.get("parser_type") or default_parser_type),
         title=item.title,
         category=item.category or "general",
         tags=list(item.tags or []),
