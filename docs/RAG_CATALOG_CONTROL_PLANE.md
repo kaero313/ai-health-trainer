@@ -210,6 +210,7 @@ Only after review should an operator execute `catalog-apply --run-id <catalog_pl
 - A completed `catalog_plan` review run must be passed with `--review-run-id`.
 - The review must target the same catalog plan run.
 - Reviewed item action/reason/risk snapshots must still match the current plan items.
-- Blocked review decisions stop the whole apply before source/chunk/index mutation.
+- Blocked review decisions stop the default apply path before source/chunk/index mutation.
+- `--apply-approved-only` can apply approved source items while recording blocked items as `skipped_blocked`.
 - Full reindex review decisions require `--confirm-full-reindex`.
 - Approval pass/failure is stored on the catalog plan run for audit.

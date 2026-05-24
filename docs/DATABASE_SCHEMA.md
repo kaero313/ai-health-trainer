@@ -459,6 +459,8 @@ Scheduler tables are audit/control-plane tables only. They do not replace catalo
 - `approval_error_code`: machine-readable block reason such as `REVIEW_BLOCKED` or `FULL_REINDEX_CONFIRMATION_REQUIRED`
 - `approval_error_message`: operator-facing block detail
 
+Item-level apply uses the same columns. A mixed review run can be applied with `--apply-approved-only`, which stores `approval_status=partially_applied` and records skipped item states such as `skipped_blocked` or `skipped_unconfirmed` in `rag_catalog_plan_items.apply_status`.
+
 These fields record the gate result at the plan-run level. Item-level mutation results remain in `rag_catalog_plan_items.apply_status`.
 
 ---

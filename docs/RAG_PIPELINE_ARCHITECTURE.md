@@ -460,6 +460,6 @@ scheduler-run
 - `review_catalog_plan(run_id)`: reviews one catalog plan and maps each plan item to an operator decision.
 - `review_scheduler_run(run_id)`: reviews every catalog plan created by a scheduler run and aggregates the decision/risk summary.
 
-Review runs store immutable audit evidence: planned action, reason code, risk level, parser confidence, section/chunk change ratios, estimated embedding seconds, warnings, and context. They never mutate source/chunk/index data. Apply safety remains in the catalog control plane through review-id approval checks, stale hash checks, and explicit `catalog-apply`.
+Review runs store immutable audit evidence: planned action, reason code, risk level, parser confidence, section/chunk change ratios, estimated embedding seconds, warnings, and context. They never mutate source/chunk/index data. Apply safety remains in the catalog control plane through review-id approval checks, stale hash checks, and explicit `catalog-apply`. Mixed plans can use `--apply-approved-only` to apply approved source items while leaving blocked items for a later source fix and new plan.
 
 `scheduler-review` is aggregate evidence. Only `catalog-review` can approve a catalog plan apply.

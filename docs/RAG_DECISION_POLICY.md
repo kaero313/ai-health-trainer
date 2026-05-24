@@ -324,6 +324,7 @@ This layer is intentionally separate from `catalog-apply`. A review may be regen
 | review targets another plan | block with `REVIEW_TARGET_MISMATCH` |
 | review item snapshot differs from plan | block with `REVIEW_STALE` |
 | blocked review decision exists | block with `REVIEW_BLOCKED` |
+| blocked review decision exists with `--apply-approved-only` | apply approved items and mark blocked items `skipped_blocked` |
 | full reindex without confirm flag | block with `FULL_REINDEX_CONFIRMATION_REQUIRED` |
 | review passes and stale hash guard passes | apply and store `approval_status=approved` |
 

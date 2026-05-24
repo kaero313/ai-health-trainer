@@ -963,6 +963,7 @@ The current official URL catalog demonstrates the intended behavior: NIH ODS ret
 - `--review-run-id` is required and must point to a completed `catalog_plan` review.
 - `scheduler-review` is aggregate evidence only and cannot approve apply.
 - Review item coverage must match the current catalog plan items.
-- `do_not_apply_until_resolved`, `fix_source_acquisition`, `blocked_manual_review`, and `blocked_defer_reembedding` block the whole apply.
+- `do_not_apply_until_resolved`, `fix_source_acquisition`, `blocked_manual_review`, and `blocked_defer_reembedding` block the default whole-plan apply.
+- `--apply-approved-only` applies only approved item decisions and records blocked items as `skipped_blocked`; unresolved items require a later source fix and new plan/review.
 - `manual_confirm_full_reindex` requires `--confirm-full-reindex`.
 - Approval pass/failure is stored on `rag_catalog_plan_runs` as `approved_review_run_id`, `approval_status`, `approval_checked_at`, `approval_error_code`, and `approval_error_message`.

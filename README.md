@@ -98,6 +98,7 @@ docker compose exec backend python -m app.cli.rag review-runs --limit 20
 docker compose exec backend python -m app.cli.rag review-run --run-id <review_run_id>
 docker compose exec backend python -m app.cli.rag catalog-run --run-id <catalog_plan_run_id>
 docker compose exec backend python -m app.cli.rag catalog-apply --run-id <catalog_plan_run_id> --review-run-id <catalog_review_run_id>
+docker compose exec backend python -m app.cli.rag catalog-apply --run-id <catalog_plan_run_id> --review-run-id <catalog_review_run_id> --apply-approved-only
 docker compose exec backend python -m app.cli.rag validate-v1 --report-path /workspace/docs/RAG_EVALUATION_REPORT.md
 ```
 
@@ -111,7 +112,7 @@ Default operation order:
 scheduler-run -> scheduler-review -> catalog-review -> catalog-apply --review-run-id -> validate-v1
 ```
 
-`catalog-apply` requires a completed `catalog-review` run. Scheduler reviews are aggregate evidence and cannot approve apply. Full reindex items also require `--confirm-full-reindex`.
+`catalog-apply` requires a completed `catalog-review` run. Scheduler reviews are aggregate evidence and cannot approve apply. Blocked review items stop the default apply path; `--apply-approved-only` explicitly applies only approved items and records blocked items as skipped. Full reindex items also require `--confirm-full-reindex`.
 
 Review reports:
 
