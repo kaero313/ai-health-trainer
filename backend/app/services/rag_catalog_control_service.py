@@ -37,12 +37,16 @@ ACTION_MANUAL = "manual_review_required"
 ACTION_DEFER = "defer_reembedding"
 
 REVIEW_TYPE_CATALOG = "catalog_plan"
+REVIEW_DECISION_NO_ACTION = "no_action"
+REVIEW_DECISION_APPROVE_CREATE = "approve_create"
+REVIEW_DECISION_APPROVE_PARTIAL = "approve_partial_refresh"
 REVIEW_DECISION_CONFIRM_FULL = "manual_confirm_full_reindex"
 REVIEW_BLOCKING_DECISIONS = {
     "blocked_manual_review",
     "blocked_defer_reembedding",
     "fix_source_acquisition",
 }
+REVIEW_APPLY_DECISIONS = {REVIEW_DECISION_APPROVE_CREATE, REVIEW_DECISION_APPROVE_PARTIAL}
 REVIEW_ACTION_DO_NOT_APPLY = "do_not_apply_until_resolved"
 
 
@@ -159,6 +163,7 @@ class RAGCatalogControlService:
         run_id: int,
         review_run_id: int | None = None,
         confirm_full_reindex: bool = False,
+        apply_approved_only: bool = False,
     ) -> dict[str, Any]:
         run = (
             await self.db.execute(
@@ -169,7 +174,7 @@ class RAGCatalogControlService:
         ).scalar_one_or_none()
         if run is None:
             return {"status": "not_found", "run_id": run_id}
-        if run.status in {"applied", "applied_with_warnings"}:
+        if run.status in {"applied", "applied_with_warnings", "partially_applied"}:
             return {
                 "status": "already_applied",
                 "run_id": run.id,
@@ -181,6 +186,7 @@ class RAGCatalogControlService:
             run,
             review_run_id=review_run_id,
             confirm_full_reindex=confirm_full_reindex,
+            apply_approved_only=apply_approved_only,
         )
         now = datetime.now(timezone.utc)
         run.approval_checked_at = now
@@ -212,14 +218,26 @@ class RAGCatalogControlService:
         run.approval_status = "approved"
         run.approval_error_code = None
         run.approval_error_message = None
+        review_items_by_plan_item_id = _review_items_by_plan_item_id(approval.review_run) if approval.review_run else {}
         applied = 0
         skipped = 0
+        skipped_blocked = 0
+        skipped_unconfirmed = 0
         blocked = 0
         stale = 0
         failed = 0
         for item in sorted(run.items, key=lambda row: row.id):
             try:
-                item_result = await self._apply_item(run, item)
+                if apply_approved_only:
+                    item_result = self._skip_unapproved_item(
+                        item,
+                        review_items_by_plan_item_id.get(item.id),
+                        confirm_full_reindex=confirm_full_reindex,
+                    )
+                    if item_result is None:
+                        item_result = await self._apply_item(run, item)
+                else:
+                    item_result = await self._apply_item(run, item)
             except Exception as exc:  # pragma: no cover - defensive safety net
                 item.apply_status = "failed"
                 item.apply_error_code = "APPLY_FAILED"
@@ -230,11 +248,25 @@ class RAGCatalogControlService:
             status = item_result["apply_status"]
             applied += int(status == "applied")
             skipped += int(status == "skipped")
+            skipped_blocked += int(status == "skipped_blocked")
+            skipped_unconfirmed += int(status == "skipped_unconfirmed")
             blocked += int(status == "blocked")
             stale += int(status == "stale")
             failed += int(status == "failed")
 
-        run.status = "applied" if not (failed or stale or blocked) else "applied_with_warnings"
+        no_approved_items = applied == 0 and (skipped_blocked or skipped_unconfirmed or blocked) and not (stale or failed)
+        if no_approved_items:
+            run.status = "approval_blocked"
+            run.approval_status = "blocked"
+            run.approval_error_code = "NO_APPROVED_ITEMS_TO_APPLY"
+            run.approval_error_message = "No review-approved catalog items were eligible for apply"
+        elif apply_approved_only and (skipped_blocked or skipped_unconfirmed or blocked):
+            run.status = "partially_applied"
+            run.approval_status = "partially_applied"
+        elif failed or stale or blocked:
+            run.status = "applied_with_warnings"
+        else:
+            run.status = "applied"
         run.finished_at = datetime.now(timezone.utc)
         run.summary = {
             **(run.summary or {}),
@@ -242,8 +274,19 @@ class RAGCatalogControlService:
                 "status": run.approval_status,
                 "review_run_id": run.approved_review_run_id,
                 "confirm_full_reindex": confirm_full_reindex,
+                "apply_approved_only": apply_approved_only,
+                "error_code": run.approval_error_code,
+                "error_message": run.approval_error_message,
             },
-            "apply": {"applied": applied, "skipped": skipped, "blocked": blocked, "stale": stale, "failed": failed},
+            "apply": {
+                "applied": applied,
+                "skipped": skipped,
+                "skipped_blocked": skipped_blocked,
+                "skipped_unconfirmed": skipped_unconfirmed,
+                "blocked": blocked,
+                "stale": stale,
+                "failed": failed,
+            },
         }
         await self.db.commit()
         return {
@@ -253,9 +296,13 @@ class RAGCatalogControlService:
             "approved_review_run_id": run.approved_review_run_id,
             "applied": applied,
             "skipped": skipped,
+            "skipped_blocked": skipped_blocked,
+            "skipped_unconfirmed": skipped_unconfirmed,
             "blocked": blocked,
             "stale": stale,
             "failed": failed,
+            "approval_error_code": run.approval_error_code,
+            "approval_error_message": run.approval_error_message,
         }
 
     async def _check_apply_approval(
@@ -264,6 +311,7 @@ class RAGCatalogControlService:
         *,
         review_run_id: int | None,
         confirm_full_reindex: bool,
+        apply_approved_only: bool,
     ) -> ApprovalGateResult:
         if review_run_id is None:
             return ApprovalGateResult(
@@ -303,7 +351,7 @@ class RAGCatalogControlService:
         stale_reason = _review_stale_reason(run, review_run)
         if stale_reason:
             return ApprovalGateResult(False, "blocked", "REVIEW_STALE", stale_reason, review_run)
-        if review_run.recommended_action == REVIEW_ACTION_DO_NOT_APPLY:
+        if review_run.recommended_action == REVIEW_ACTION_DO_NOT_APPLY and not apply_approved_only:
             return ApprovalGateResult(
                 False,
                 "blocked",
@@ -311,7 +359,7 @@ class RAGCatalogControlService:
                 "Review recommendation blocks apply until issues are resolved",
                 review_run,
             )
-        if any(item.review_decision in REVIEW_BLOCKING_DECISIONS for item in review_run.items):
+        if any(item.review_decision in REVIEW_BLOCKING_DECISIONS for item in review_run.items) and not apply_approved_only:
             return ApprovalGateResult(
                 False,
                 "blocked",
@@ -319,7 +367,11 @@ class RAGCatalogControlService:
                 "Review contains blocked source items",
                 review_run,
             )
-        if any(item.review_decision == REVIEW_DECISION_CONFIRM_FULL for item in review_run.items) and not confirm_full_reindex:
+        if (
+            any(item.review_decision == REVIEW_DECISION_CONFIRM_FULL for item in review_run.items)
+            and not confirm_full_reindex
+            and not apply_approved_only
+        ):
             return ApprovalGateResult(
                 False,
                 "blocked",
@@ -328,6 +380,40 @@ class RAGCatalogControlService:
                 review_run,
             )
         return ApprovalGateResult(True, "approved", review_run=review_run)
+
+    def _skip_unapproved_item(
+        self,
+        item: RagCatalogPlanItem,
+        review_item: Any | None,
+        *,
+        confirm_full_reindex: bool,
+    ) -> dict[str, Any] | None:
+        if review_item is None:
+            return _mark_item_status(
+                item,
+                "skipped_blocked",
+                code="REVIEW_ITEM_MISSING",
+                message="Review item was not found for this plan item",
+            )
+        if item.planned_action == ACTION_SKIP or review_item.review_decision == REVIEW_DECISION_NO_ACTION:
+            return None
+        if review_item.review_decision in REVIEW_APPLY_DECISIONS:
+            return None
+        if review_item.review_decision == REVIEW_DECISION_CONFIRM_FULL:
+            if confirm_full_reindex:
+                return None
+            return _mark_item_status(
+                item,
+                "skipped_unconfirmed",
+                code="FULL_REINDEX_CONFIRMATION_REQUIRED",
+                message="Full reindex item was not applied because --confirm-full-reindex was not provided",
+            )
+        return _mark_item_status(
+            item,
+            "skipped_blocked",
+            code="REVIEW_BLOCKED_ITEM",
+            message=f"Review decision blocks this item: {review_item.review_decision}",
+        )
 
     async def _plan_catalog_source(
         self,
@@ -781,6 +867,24 @@ def _review_stale_reason(run: RagCatalogPlanRun, review_run: RagReviewRun) -> st
         ):
             return "Review item action, reason, or risk no longer matches the current plan"
     return None
+
+
+def _review_items_by_plan_item_id(review_run: RagReviewRun) -> dict[int, Any]:
+    return {item.catalog_plan_item_id: item for item in review_run.items if item.catalog_plan_item_id is not None}
+
+
+def _mark_item_status(
+    item: RagCatalogPlanItem,
+    status: str,
+    *,
+    code: str | None = None,
+    message: str | None = None,
+) -> dict[str, Any]:
+    item.apply_status = status
+    item.apply_error_code = code
+    item.apply_error_message = message
+    item.applied_at = datetime.now(timezone.utc)
+    return {"apply_status": item.apply_status}
 
 
 def _diff_chunks(old_chunks: list[RagChunk], new_plans: list[ChunkPlan]) -> DiffStats:

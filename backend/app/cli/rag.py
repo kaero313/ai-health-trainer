@@ -181,6 +181,7 @@ async def _catalog_apply(args: argparse.Namespace) -> None:
             run_id=args.run_id,
             review_run_id=args.review_run_id,
             confirm_full_reindex=args.confirm_full_reindex,
+            apply_approved_only=args.apply_approved_only,
         )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
@@ -899,6 +900,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--confirm-full-reindex",
         action="store_true",
         help="Required when the approving review contains a full reindex item",
+    )
+    catalog_apply.add_argument(
+        "--apply-approved-only",
+        action="store_true",
+        help="Apply only review-approved items and skip blocked items in a mixed catalog plan",
     )
 
     scheduler_run = subparsers.add_parser("scheduler-run", help="Run plan-only RAG catalog scheduler")

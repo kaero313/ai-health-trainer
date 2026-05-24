@@ -27,6 +27,9 @@ def test_rag_cli_exposes_url_acquisition_commands():
     assert parser.parse_args(
         ["catalog-apply", "--run-id", "1", "--review-run-id", "2", "--confirm-full-reindex"]
     ).confirm_full_reindex is True
+    assert parser.parse_args(
+        ["catalog-apply", "--run-id", "1", "--review-run-id", "2", "--apply-approved-only"]
+    ).apply_approved_only is True
     assert parser.parse_args(["scheduler-run", "--force-plan"]).command == "scheduler-run"
     assert parser.parse_args(["scheduler-runs", "--limit", "5"]).command == "scheduler-runs"
     assert parser.parse_args(["scheduler-run-detail", "--run-id", "1"]).command == "scheduler-run-detail"

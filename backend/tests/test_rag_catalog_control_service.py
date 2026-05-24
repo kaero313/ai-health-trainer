@@ -122,6 +122,52 @@ def _pdf_catalog_file(tmp_path, *, url: str = "https://example.org/guide.pdf"):
     return path
 
 
+def _mixed_pdf_and_missing_file_catalog(tmp_path, *, url: str = "https://example.org/guide.pdf"):
+    path = tmp_path / "mixed_catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sources": [
+                    {
+                        "key": "official_pdf",
+                        "acquisition_type": "pdf_url",
+                        "url": url,
+                        "parser_type": "pdf_text",
+                        "title": "Official PDF",
+                        "category": "exercise",
+                        "tags": ["guideline", "pdf"],
+                        "source_type": "official_guideline",
+                        "source_grade": "A",
+                        "license": "official-pdf",
+                        "language": "en",
+                        "author_or_org": "Example Org",
+                        "refresh_policy": "scheduled",
+                        "refresh_interval_hours": 720,
+                    },
+                    {
+                        "key": "missing_local_document",
+                        "acquisition_type": "local_file",
+                        "path": "missing.md",
+                        "parser_type": "markdown",
+                        "title": "Missing Local Document",
+                        "category": "exercise",
+                        "tags": ["missing"],
+                        "source_type": "curated_internal_summary",
+                        "source_grade": "B",
+                        "license": "internal-summary",
+                        "language": "ko",
+                        "author_or_org": "AI Health Trainer",
+                        "refresh_policy": "manual",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def _document_catalog_file(tmp_path, *, file_name: str, parser_type: str = "markdown"):
     path = tmp_path / "document_catalog.json"
     path.write_text(
@@ -421,6 +467,69 @@ async def test_catalog_apply_blocks_review_recommendation_without_mutating(db_se
     assert item.apply_status == "pending"
     assert source_count_after == source_count_before
     assert job_count_after == job_count_before
+
+
+@pytest.mark.asyncio
+async def test_catalog_apply_approved_only_applies_safe_pdf_and_skips_blocked_item(db_session, tmp_path):
+    pdf_bytes = _synthetic_text_pdf("Official PDF approved-only fixture.")
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher(pdf_values=[pdf_bytes, pdf_bytes])
+    service.rag_service.get_embedding = AsyncMock(return_value=_embedding())
+    service.rag_service.index_service.index_chunk = AsyncMock(return_value=None)
+    plan = await service.create_plan(catalog_file=_mixed_pdf_and_missing_file_catalog(tmp_path))
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+
+    result = await service.apply_run(
+        run_id=plan["run"]["id"],
+        review_run_id=review_id,
+        apply_approved_only=True,
+    )
+    items = (
+        await db_session.execute(select(RagCatalogPlanItem).order_by(RagCatalogPlanItem.catalog_key.asc()))
+    ).scalars().all()
+    source = (await db_session.execute(select(RagSource))).scalar_one()
+    job_count = await db_session.scalar(select(func.count()).select_from(RagIngestJob))
+
+    assert result["status"] == "partially_applied"
+    assert result["approval_status"] == "partially_applied"
+    assert result["applied"] == 1
+    assert result["skipped_blocked"] == 1
+    assert source.origin_type == "url_pdf"
+    assert job_count == 1
+    assert {item.catalog_key: item.apply_status for item in items} == {
+        "missing_local_document": "skipped_blocked",
+        "official_pdf": "applied",
+    }
+    assert items[0].apply_error_code == "REVIEW_BLOCKED_ITEM"
+
+    second_result = await service.apply_run(
+        run_id=plan["run"]["id"],
+        review_run_id=review_id,
+        apply_approved_only=True,
+    )
+
+    assert second_result["status"] == "already_applied"
+
+
+@pytest.mark.asyncio
+async def test_catalog_apply_approved_only_blocks_when_no_items_are_eligible(db_session, tmp_path):
+    service = RAGCatalogControlService(db_session, get_settings())
+    plan = await service.create_plan(catalog_file=_document_catalog_file(tmp_path, file_name="missing.md"))
+    review_id = await _review_plan(db_session, plan["run"]["id"])
+
+    result = await service.apply_run(
+        run_id=plan["run"]["id"],
+        review_run_id=review_id,
+        apply_approved_only=True,
+    )
+    item = (await db_session.execute(select(RagCatalogPlanItem))).scalar_one()
+    source_count = await db_session.scalar(select(func.count()).select_from(RagSource))
+
+    assert result["status"] == "approval_blocked"
+    assert result["approval_error_code"] == "NO_APPROVED_ITEMS_TO_APPLY"
+    assert result["skipped_blocked"] == 1
+    assert item.apply_status == "skipped_blocked"
+    assert source_count == 0
 
 
 @pytest.mark.asyncio
@@ -735,15 +844,24 @@ async def test_catalog_apply_requires_confirmation_for_full_reindex(db_session, 
     item = full_plan["items"][0]
     review_id = await _review_plan(db_session, full_plan["run"]["id"])
     blocked = await service.apply_run(run_id=full_plan["run"]["id"], review_run_id=review_id)
+    unconfirmed = await service.apply_run(
+        run_id=full_plan["run"]["id"],
+        review_run_id=review_id,
+        apply_approved_only=True,
+    )
     applied = await service.apply_run(
         run_id=full_plan["run"]["id"],
         review_run_id=review_id,
         confirm_full_reindex=True,
+        apply_approved_only=True,
     )
 
     assert item["planned_action"] == "full_reindex"
     assert blocked["status"] == "approval_blocked"
     assert blocked["approval_error_code"] == "FULL_REINDEX_CONFIRMATION_REQUIRED"
+    assert unconfirmed["status"] == "approval_blocked"
+    assert unconfirmed["approval_error_code"] == "NO_APPROVED_ITEMS_TO_APPLY"
+    assert unconfirmed["skipped_unconfirmed"] == 1
     assert applied["applied"] == 1
     assert applied["approval_status"] == "approved"
 
