@@ -506,3 +506,21 @@ Deferred review extensions:
 - notification hooks for approval-required runs
 - operator identity and signed approval comments
 - low-risk auto-apply policy after enough no-regression evidence exists
+
+---
+
+## 21. Source Failure Lifecycle Roadmap Update
+
+Implemented v1 failure lifecycle scope:
+
+- Catalog sources can be disabled with an operator-visible reason.
+- Repeated acquisition failures are counted from persisted plan items.
+- Threshold breaches can escalate to `REPLACEMENT_REQUIRED` or `SOURCE_DISABLED_PENDING_REVIEW`.
+- Replacement candidates are catalog metadata until a new plan/review/apply approves the change.
+- `validate-v1` reports latest catalog failure counts alongside source acquisition and approval gate state.
+
+Portfolio signal:
+
+- External source instability is treated as an operational risk, not just an exception.
+- Existing indexed knowledge remains versioned and queryable while replacement work is reviewed.
+- The system records why a source is blocked, what replacement/fallback is expected, and which apply gate prevented mutation.

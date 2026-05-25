@@ -329,3 +329,19 @@ This layer is intentionally separate from `catalog-apply`. A review may be regen
 | review passes and stale hash guard passes | apply and store `approval_status=approved` |
 
 This makes review evidence operationally binding instead of only documentary.
+
+---
+
+## 16. Source Failure Lifecycle Policy
+
+Catalog acquisition failures are first-class operating signals. The system distinguishes transient fetch/parser failures from a source that should be disabled or replaced.
+
+| Catalog/plan signal | Planned result | Operator meaning |
+|---------------------|----------------|------------------|
+| `enabled=false` | `fetch_status=skipped`, `SOURCE_DISABLED` | Do not fetch this source until an operator re-enables or replaces it. |
+| first fetch/parser failures | `FETCH_OR_PARSE_FAILED` | Inspect URL access, file path, parser support, or runtime network behavior. |
+| failures reach `max_consecutive_failures` and `failure_policy=replacement_required` | `REPLACEMENT_REQUIRED` | Find an accessible official replacement or use a reviewed manual fallback. |
+| failures reach threshold and `failure_policy=disable_after_threshold` | `SOURCE_DISABLED_PENDING_REVIEW` | Disable or replace the source before the next operational run. |
+| replacement URL registered but not activated | no mutation | Candidate is metadata only until catalog is updated and a new plan/review/apply succeeds. |
+
+This policy keeps existing active RAG chunks available while preventing broken sources from causing repeated blind retries or unsafe apply.

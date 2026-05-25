@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -131,6 +132,20 @@ async def _ingest_catalog(args: argparse.Namespace) -> None:
     async with AsyncSessionLocal() as db:
         service = RAGService(db, settings)
         for source in sources:
+            acquisition_type = source.get("acquisition_type") or "url_html"
+            if source.get("enabled", True) is False:
+                results.append({"key": source.get("key"), "url": source.get("url"), "status": "skipped_disabled"})
+                continue
+            if acquisition_type != "url_html":
+                results.append(
+                    {
+                        "key": source.get("key"),
+                        "url": source.get("url"),
+                        "status": "skipped_use_catalog_control",
+                        "acquisition_type": acquisition_type,
+                    }
+                )
+                continue
             result = await service.register_url(
                 url=source["url"],
                 title=source.get("title"),
@@ -183,6 +198,59 @@ async def _catalog_apply(args: argparse.Namespace) -> None:
             confirm_full_reindex=args.confirm_full_reindex,
             apply_approved_only=args.apply_approved_only,
         )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _catalog_disable_source(args: argparse.Namespace) -> None:
+    result = _update_catalog_source_failure_state(
+        Path(args.file),
+        key=args.key,
+        updates={
+            "enabled": False,
+            "disabled_reason": args.reason,
+            "disabled_at": _now_utc(),
+            "failure_policy": args.failure_policy,
+        },
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _catalog_enable_source(args: argparse.Namespace) -> None:
+    result = _update_catalog_source_failure_state(
+        Path(args.file),
+        key=args.key,
+        updates={
+            "enabled": True,
+            "disabled_reason": None,
+            "disabled_at": None,
+            "reenabled_at": _now_utc(),
+        },
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _catalog_replace_source(args: argparse.Namespace) -> None:
+    updates: dict[str, Any] = {
+        "replacement_url": args.replacement_url,
+        "failure_policy": "replacement_required",
+        "replacement_registered_at": _now_utc(),
+    }
+    if args.activate:
+        updates.update(
+            {
+                "url": args.replacement_url,
+                "enabled": True,
+                "disabled_reason": None,
+                "disabled_at": None,
+                "replacement_activated_at": _now_utc(),
+            }
+        )
+    result = _update_catalog_source_failure_state(
+        Path(args.file),
+        key=args.key,
+        updates=updates,
+        activate_replacement=args.activate,
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
@@ -314,6 +382,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         decision_summary = await _load_v1_decision_summary(db)
         recent_jobs = await _load_v1_recent_jobs(db, limit=args.job_limit)
         latest_catalog_plan = await _load_latest_catalog_plan(db)
+        catalog_failure_summary = await _load_v1_catalog_failure_summary(db)
         latest_scheduler_run = await _load_latest_scheduler_run(db)
         latest_review_run = await _load_latest_review_run(db)
         latest_approval_gate = await _load_latest_approval_gate(db)
@@ -335,6 +404,7 @@ async def _validate_v1(args: argparse.Namespace) -> None:
         "decision_summary": decision_summary,
         "recent_jobs": recent_jobs,
         "latest_catalog_plan": latest_catalog_plan,
+        "catalog_failure_summary": catalog_failure_summary,
         "latest_scheduler_run": latest_scheduler_run,
         "latest_review_run": latest_review_run,
         "latest_approval_gate": latest_approval_gate,
@@ -447,6 +517,44 @@ async def _load_v1_decision_summary(db) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+async def _load_v1_catalog_failure_summary(db) -> dict[str, Any] | None:
+    row = (
+        await db.execute(
+            text(
+                """
+                WITH latest AS (
+                  SELECT id
+                  FROM rag_catalog_plan_runs
+                  ORDER BY id DESC
+                  LIMIT 1
+                )
+                SELECT
+                  (SELECT id FROM latest) AS latest_plan_id,
+                  count(*) FILTER (WHERE fetch_status = 'failed')::int AS failed_item_count,
+                  count(*) FILTER (WHERE fetch_status = 'skipped' AND reason_code = 'SOURCE_DISABLED')::int AS disabled_item_count,
+                  count(*) FILTER (WHERE reason_code = 'REPLACEMENT_REQUIRED')::int AS replacement_required_count,
+                  count(*) FILTER (WHERE reason_code = 'SOURCE_DISABLED_PENDING_REVIEW')::int AS disabled_pending_review_count,
+                  count(*) FILTER (WHERE planned_action = 'manual_review_required')::int AS manual_review_item_count,
+                  count(*) FILTER (WHERE apply_status = 'skipped_blocked')::int AS skipped_blocked_count
+                FROM rag_catalog_plan_items
+                WHERE run_id = (SELECT id FROM latest)
+                """
+            )
+        )
+    ).mappings().first()
+    if not row or row["latest_plan_id"] is None:
+        return None
+    return {
+        "latest_plan_id": int(row["latest_plan_id"]),
+        "failed_item_count": int(row["failed_item_count"]),
+        "disabled_item_count": int(row["disabled_item_count"]),
+        "replacement_required_count": int(row["replacement_required_count"]),
+        "disabled_pending_review_count": int(row["disabled_pending_review_count"]),
+        "manual_review_item_count": int(row["manual_review_item_count"]),
+        "skipped_blocked_count": int(row["skipped_blocked_count"]),
+    }
 
 
 async def _load_v1_recent_jobs(db, *, limit: int) -> list[dict[str, Any]]:
@@ -690,6 +798,20 @@ def _write_v1_validation_report(report: dict[str, Any], report_path: Path) -> No
     for name, count in sorted((report.get("url_source_summary") or {}).items()):
         lines.append(f"| `{name}` | {count} |")
 
+    catalog_failure_summary = report.get("catalog_failure_summary")
+    if catalog_failure_summary:
+        lines.extend(
+            [
+                "",
+                "## Catalog Failure Lifecycle Summary",
+                "",
+                "| Metric | Count |",
+                "|--------|-------|",
+            ]
+        )
+        for name, count in sorted(catalog_failure_summary.items()):
+            lines.append(f"| `{name}` | {count} |")
+
     latest_catalog_plan = report.get("latest_catalog_plan")
     if latest_catalog_plan:
         lines.extend(
@@ -825,6 +947,44 @@ def _escape_table_value(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
 
 
+def _update_catalog_source_failure_state(
+    catalog_path: Path,
+    *,
+    key: str,
+    updates: dict[str, Any],
+    activate_replacement: bool = False,
+) -> dict[str, Any]:
+    payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+    sources = payload.get("sources", []) if isinstance(payload, dict) else payload
+    if not isinstance(sources, list):
+        raise SystemExit("Catalog file must contain a sources list")
+    source = next((item for item in sources if item.get("key") == key), None)
+    if source is None:
+        raise SystemExit(f"Catalog source not found: {key}")
+    previous_url = source.get("url")
+    if activate_replacement and previous_url and previous_url != updates.get("url"):
+        reference_urls = list(source.get("reference_urls") or [])
+        if previous_url not in reference_urls:
+            reference_urls.append(previous_url)
+        source["reference_urls"] = reference_urls
+    for field, value in updates.items():
+        if value is None:
+            source.pop(field, None)
+        else:
+            source[field] = value
+    catalog_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return {
+        "catalog": str(catalog_path),
+        "key": key,
+        "updated": True,
+        "source": source,
+    }
+
+
+def _now_utc() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="RAG KnowledgeOps CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -905,6 +1065,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply-approved-only",
         action="store_true",
         help="Apply only review-approved items and skip blocked items in a mixed catalog plan",
+    )
+
+    catalog_disable = subparsers.add_parser(
+        "catalog-disable-source",
+        help="Disable a catalog source after repeated acquisition failures",
+    )
+    catalog_disable.add_argument("--file", required=True, help="Catalog JSON path")
+    catalog_disable.add_argument("--key", required=True, help="Catalog source key")
+    catalog_disable.add_argument("--reason", required=True, help="Operator-visible disabled reason")
+    catalog_disable.add_argument(
+        "--failure-policy",
+        default="manual_review",
+        choices=["manual_review", "replacement_required", "disable_after_threshold"],
+        help="Failure policy to store with this disabled source",
+    )
+
+    catalog_enable = subparsers.add_parser("catalog-enable-source", help="Re-enable a disabled catalog source")
+    catalog_enable.add_argument("--file", required=True, help="Catalog JSON path")
+    catalog_enable.add_argument("--key", required=True, help="Catalog source key")
+
+    catalog_replace = subparsers.add_parser(
+        "catalog-replace-source",
+        help="Register or activate a replacement URL for a failing catalog source",
+    )
+    catalog_replace.add_argument("--file", required=True, help="Catalog JSON path")
+    catalog_replace.add_argument("--key", required=True, help="Catalog source key")
+    catalog_replace.add_argument("--replacement-url", required=True, help="Replacement URL candidate")
+    catalog_replace.add_argument(
+        "--activate",
+        action="store_true",
+        help="Replace the active source URL immediately and preserve the previous URL as a reference",
     )
 
     scheduler_run = subparsers.add_parser("scheduler-run", help="Run plan-only RAG catalog scheduler")
@@ -998,6 +1189,12 @@ async def _main() -> None:
         await _catalog_run(args)
     elif args.command == "catalog-apply":
         await _catalog_apply(args)
+    elif args.command == "catalog-disable-source":
+        await _catalog_disable_source(args)
+    elif args.command == "catalog-enable-source":
+        await _catalog_enable_source(args)
+    elif args.command == "catalog-replace-source":
+        await _catalog_replace_source(args)
     elif args.command == "scheduler-run":
         await _scheduler_run(args)
     elif args.command == "scheduler-runs":

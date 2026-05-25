@@ -42,7 +42,12 @@
       "language": "en",
       "author_or_org": "National Institutes of Health Office of Dietary Supplements",
       "refresh_policy": "scheduled",
-      "refresh_interval_hours": 720
+      "refresh_interval_hours": 720,
+      "enabled": false,
+      "failure_policy": "replacement_required",
+      "max_consecutive_failures": 2,
+      "disabled_reason": "Backend runtime receives HTTP 403 from this NIH ODS page; keep existing indexed content until an accessible official replacement is approved.",
+      "manual_curation_fallback": "Use only reviewed, internally summarized content based on official NIH ODS references until a replacement URL is selected."
     },
     {
       "key": "odphp_physical_activity_guidelines_executive_summary_pdf",

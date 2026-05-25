@@ -55,6 +55,14 @@ class FakeUrlFetcher:
         )
 
 
+class FailingUrlFetcher:
+    async def fetch(self, url: str) -> FetchedUrlContent:
+        raise RuntimeError("HTTP 403")
+
+    async def fetch_pdf(self, url: str) -> FetchedUrlContent:
+        raise RuntimeError("HTTP 403")
+
+
 def _html(*section_bodies: str) -> str:
     sections = []
     for index, body in enumerate(section_bodies, start=1):
@@ -82,6 +90,71 @@ def _catalog_file(tmp_path, *, url: str = "https://example.org/guide", title: st
                         "author_or_org": "Example Org",
                         "refresh_policy": "scheduled",
                         "refresh_interval_hours": 720,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _disabled_catalog_file(tmp_path):
+    path = tmp_path / "disabled_catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sources": [
+                    {
+                        "key": "blocked_source",
+                        "url": "https://example.org/blocked",
+                        "title": "Blocked Source",
+                        "category": "supplement",
+                        "tags": ["blocked"],
+                        "source_type": "official_guideline",
+                        "source_grade": "A",
+                        "license": "official-webpage",
+                        "language": "en",
+                        "author_or_org": "Example Org",
+                        "refresh_policy": "scheduled",
+                        "refresh_interval_hours": 720,
+                        "enabled": False,
+                        "failure_policy": "replacement_required",
+                        "max_consecutive_failures": 2,
+                        "disabled_reason": "HTTP 403 in backend runtime",
+                        "manual_curation_fallback": "Use reviewed internal summary until replacement is active.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _failure_policy_catalog_file(tmp_path):
+    path = tmp_path / "failure_policy_catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sources": [
+                    {
+                        "key": "blocked_source",
+                        "url": "https://example.org/blocked",
+                        "title": "Blocked Source",
+                        "category": "supplement",
+                        "tags": ["blocked"],
+                        "source_type": "official_guideline",
+                        "source_grade": "A",
+                        "license": "official-webpage",
+                        "language": "en",
+                        "author_or_org": "Example Org",
+                        "refresh_policy": "scheduled",
+                        "refresh_interval_hours": 720,
+                        "failure_policy": "replacement_required",
+                        "max_consecutive_failures": 2,
                     }
                 ],
             }
@@ -273,6 +346,42 @@ async def test_catalog_plan_persists_missing_source_and_apply_creates_job(db_ses
     assert stored_item.applied_job_id == job.id
     assert stored_item.source_id == source.id
     assert source.metadata_["fetch_metadata"]["catalog_key"] == "official_guide"
+
+
+@pytest.mark.asyncio
+async def test_catalog_plan_skips_disabled_source_without_fetching(db_session, tmp_path):
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FakeUrlFetcher()
+
+    plan = await service.create_plan(catalog_file=_disabled_catalog_file(tmp_path))
+    item = plan["items"][0]
+
+    assert item["fetch_status"] == "skipped"
+    assert item["planned_action"] == "manual_review_required"
+    assert item["reason_code"] == "SOURCE_DISABLED"
+    assert item["quality_warnings"] == ["source_disabled"]
+    assert item["context"]["failure_lifecycle"]["enabled"] is False
+    assert item["context"]["failure_lifecycle"]["disabled_reason"] == "HTTP 403 in backend runtime"
+
+
+@pytest.mark.asyncio
+async def test_catalog_plan_escalates_repeated_fetch_failures_to_replacement_required(db_session, tmp_path):
+    service = RAGCatalogControlService(db_session, get_settings())
+    service.rag_service.url_fetcher = FailingUrlFetcher()
+    catalog_path = _failure_policy_catalog_file(tmp_path)
+
+    first_plan = await service.create_plan(catalog_file=catalog_path)
+    first_item = first_plan["items"][0]
+    second_plan = await service.create_plan(catalog_file=catalog_path)
+    second_item = second_plan["items"][0]
+
+    assert first_item["reason_code"] == "FETCH_OR_PARSE_FAILED"
+    assert first_item["context"]["failure_lifecycle"]["consecutive_failure_count"] == 1
+    assert second_item["reason_code"] == "REPLACEMENT_REQUIRED"
+    assert "replacement_required" in second_item["quality_warnings"]
+    assert second_item["context"]["failure_lifecycle"]["previous_failure_count"] == 1
+    assert second_item["context"]["failure_lifecycle"]["consecutive_failure_count"] == 2
+    assert second_item["context"]["failure_lifecycle"]["threshold_reached"] is True
 
 
 @pytest.mark.asyncio

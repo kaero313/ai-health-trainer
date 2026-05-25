@@ -1,4 +1,6 @@
-from app.cli.rag import _write_v1_validation_report, build_parser
+import json
+
+from app.cli.rag import _update_catalog_source_failure_state, _write_v1_validation_report, build_parser
 
 
 def test_rag_cli_exposes_url_acquisition_commands():
@@ -30,6 +32,38 @@ def test_rag_cli_exposes_url_acquisition_commands():
     assert parser.parse_args(
         ["catalog-apply", "--run-id", "1", "--review-run-id", "2", "--apply-approved-only"]
     ).apply_approved_only is True
+    assert (
+        parser.parse_args(
+            [
+                "catalog-disable-source",
+                "--file",
+                "rag_sources/catalog.json",
+                "--key",
+                "nih",
+                "--reason",
+                "HTTP 403",
+            ]
+        ).command
+        == "catalog-disable-source"
+    )
+    assert (
+        parser.parse_args(["catalog-enable-source", "--file", "rag_sources/catalog.json", "--key", "nih"]).command
+        == "catalog-enable-source"
+    )
+    replace_source = parser.parse_args(
+        [
+            "catalog-replace-source",
+            "--file",
+            "rag_sources/catalog.json",
+            "--key",
+            "nih",
+            "--replacement-url",
+            "https://example.org/replacement",
+            "--activate",
+        ]
+    )
+    assert replace_source.command == "catalog-replace-source"
+    assert replace_source.activate is True
     assert parser.parse_args(["scheduler-run", "--force-plan"]).command == "scheduler-run"
     assert parser.parse_args(["scheduler-runs", "--limit", "5"]).command == "scheduler-runs"
     assert parser.parse_args(["scheduler-run-detail", "--run-id", "1"]).command == "scheduler-run-detail"
@@ -37,6 +71,39 @@ def test_rag_cli_exposes_url_acquisition_commands():
     assert parser.parse_args(["scheduler-review", "--run-id", "1"]).command == "scheduler-review"
     assert parser.parse_args(["review-runs", "--limit", "5"]).command == "review-runs"
     assert parser.parse_args(["review-run", "--run-id", "1"]).command == "review-run"
+
+
+def test_catalog_source_failure_state_update_preserves_previous_url_on_activation(tmp_path):
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "sources": [
+                    {
+                        "key": "nih",
+                        "url": "https://example.org/old",
+                        "category": "supplement",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _update_catalog_source_failure_state(
+        catalog_path,
+        key="nih",
+        updates={
+            "url": "https://example.org/new",
+            "replacement_url": "https://example.org/new",
+            "enabled": True,
+        },
+        activate_replacement=True,
+    )
+
+    source = result["source"]
+    assert source["url"] == "https://example.org/new"
+    assert source["reference_urls"] == ["https://example.org/old"]
 
 
 def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
@@ -81,6 +148,15 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
             "local_file_fingerprint_count": 1,
             "scheduled_refresh_count": 1,
             "stale_source_count": 0,
+        },
+        "catalog_failure_summary": {
+            "latest_plan_id": 1,
+            "failed_item_count": 1,
+            "disabled_item_count": 1,
+            "replacement_required_count": 1,
+            "disabled_pending_review_count": 0,
+            "manual_review_item_count": 1,
+            "skipped_blocked_count": 1,
         },
         "decision_summary": [
             {"selected_action": "create_source", "reason_code": "NEW_SOURCE", "count": 1}
@@ -157,6 +233,7 @@ def test_v1_validation_report_writer_preserves_utf8_and_lf(tmp_path):
     data = report_path.read_bytes()
     assert b"\r\n" not in data
     assert b"Source Acquisition Summary" in data
+    assert b"Catalog Failure Lifecycle Summary" in data
     assert "단백질 식단 추천".encode("utf-8") in data
     assert "단백질이 부족한 날의 원칙".encode("utf-8") in data
     assert b"Latest Catalog Plan" in data

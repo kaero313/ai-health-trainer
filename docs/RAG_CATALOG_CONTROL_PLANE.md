@@ -214,3 +214,30 @@ Only after review should an operator execute `catalog-apply --run-id <catalog_pl
 - `--apply-approved-only` can apply approved source items while recording blocked items as `skipped_blocked`.
 - Full reindex review decisions require `--confirm-full-reindex`.
 - Approval pass/failure is stored on the catalog plan run for audit.
+
+---
+
+## 12. Source Failure Lifecycle
+
+Catalog sources can now carry failure lifecycle metadata so repeated acquisition failures are explicit operational states.
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-disable-source \
+  --file rag_sources/catalog.json \
+  --key <catalog_key> \
+  --reason "HTTP 403 from backend runtime"
+
+docker compose exec backend python -m app.cli.rag catalog-replace-source \
+  --file rag_sources/catalog.json \
+  --key <catalog_key> \
+  --replacement-url <official_replacement_url>
+```
+
+Plan behavior:
+
+- `enabled=false` skips acquisition and emits `SOURCE_DISABLED`.
+- Consecutive fetch/parser failures are counted from previous plan items for the same catalog source.
+- When `max_consecutive_failures` is reached, `failure_policy=replacement_required` escalates to `REPLACEMENT_REQUIRED`.
+- Existing active source/chunk data remains untouched until a new replacement plan is reviewed and applied.
+
+This avoids retry noise and shows the operator exactly which source needs replacement, manual curation, or re-enable approval.

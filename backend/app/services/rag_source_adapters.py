@@ -33,6 +33,12 @@ class CatalogSource:
     refresh_interval_hours: int | None
     curation_method: str | None
     reference_urls: list[str]
+    enabled: bool = True
+    failure_policy: str = "manual_review"
+    replacement_url: str | None = None
+    manual_curation_fallback: str | None = None
+    max_consecutive_failures: int = 3
+    disabled_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -189,6 +195,12 @@ def _load_catalog_source(source: dict[str, Any]) -> CatalogSource:
         refresh_interval_hours=_optional_int(source.get("refresh_interval_hours")),
         curation_method=source.get("curation_method"),
         reference_urls=list(source.get("reference_urls") or ([] if not source.get("url") else [source["url"]])),
+        enabled=_optional_bool(source.get("enabled"), default=True),
+        failure_policy=str(source.get("failure_policy") or "manual_review"),
+        replacement_url=source.get("replacement_url"),
+        manual_curation_fallback=source.get("manual_curation_fallback"),
+        max_consecutive_failures=_optional_int(source.get("max_consecutive_failures")) or 3,
+        disabled_reason=source.get("disabled_reason"),
     )
 
 
@@ -199,8 +211,24 @@ def _catalog_metadata(catalog_source: CatalogSource, catalog_file: Path) -> dict
         "acquisition_type": catalog_source.acquisition_type,
         "curation_method": catalog_source.curation_method,
         "reference_urls": catalog_source.reference_urls,
+        "source_enabled": catalog_source.enabled,
+        "failure_policy": catalog_source.failure_policy,
+        "replacement_url": catalog_source.replacement_url,
+        "manual_curation_fallback": catalog_source.manual_curation_fallback,
+        "max_consecutive_failures": catalog_source.max_consecutive_failures,
+        "disabled_reason": catalog_source.disabled_reason,
     }
     return {key: value for key, value in metadata.items() if value is not None and value != ""}
+
+
+def _optional_bool(value: object, *, default: bool) -> bool:
+    if value in {None, ""}:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
 
 
 def _optional_int(value: object) -> int | None:

@@ -463,3 +463,22 @@ scheduler-run
 Review runs store immutable audit evidence: planned action, reason code, risk level, parser confidence, section/chunk change ratios, estimated embedding seconds, warnings, and context. They never mutate source/chunk/index data. Apply safety remains in the catalog control plane through review-id approval checks, stale hash checks, and explicit `catalog-apply`. Mixed plans can use `--apply-approved-only` to apply approved source items while leaving blocked items for a later source fix and new plan.
 
 `scheduler-review` is aggregate evidence. Only `catalog-review` can approve a catalog plan apply.
+
+---
+
+## 12. Source Failure Lifecycle Flow
+
+Acquisition failure handling is part of the control plane.
+
+```text
+catalog source
+ -> enabled/failure policy check
+ -> source adapter acquisition
+ -> failure history lookup
+ -> plan reason code (`SOURCE_DISABLED`, `FETCH_OR_PARSE_FAILED`, `REPLACEMENT_REQUIRED`)
+ -> review decision (`blocked_manual_review` or `fix_source_acquisition`)
+ -> optional catalog replacement command
+ -> new plan/review/apply
+```
+
+The active RAG corpus is not deleted when a source starts failing. Failure lifecycle metadata controls future acquisition attempts while existing versioned chunks remain queryable until a replacement is reviewed and applied.

@@ -463,6 +463,18 @@ Item-level apply uses the same columns. A mixed review run can be applied with `
 
 These fields record the gate result at the plan-run level. Item-level mutation results remain in `rag_catalog_plan_items.apply_status`.
 
+### Catalog Source Failure Lifecycle Fields
+
+No new tables are required for v1 failure lifecycle. The catalog JSON stores operator intent and `rag_catalog_plan_items` stores each observed failure as audit evidence.
+
+- catalog JSON fields: `enabled`, `failure_policy`, `replacement_url`, `manual_curation_fallback`, `max_consecutive_failures`, `disabled_reason`
+- `rag_catalog_plan_items.fetch_status`: `failed` or `skipped` distinguishes adapter failure from disabled source state
+- `rag_catalog_plan_items.reason_code`: `SOURCE_DISABLED`, `FETCH_OR_PARSE_FAILED`, `REPLACEMENT_REQUIRED`, `SOURCE_DISABLED_PENDING_REVIEW`
+- `rag_catalog_plan_items.quality_warnings`: includes `source_disabled`, `fetch_or_parse_failed`, `replacement_required`, or `source_disabled_pending_review`
+- `rag_catalog_plan_items.context.failure_lifecycle`: stores threshold, previous/consecutive failure counts, replacement/fallback metadata, and disabled reason
+
+This keeps source failure management in the control plane while avoiding schema churn for policy-only metadata.
+
 ---
 
 ## RAG Review / Approval Schema

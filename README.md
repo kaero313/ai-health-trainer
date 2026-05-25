@@ -102,6 +102,16 @@ docker compose exec backend python -m app.cli.rag catalog-apply --run-id <catalo
 docker compose exec backend python -m app.cli.rag validate-v1 --report-path /workspace/docs/RAG_EVALUATION_REPORT.md
 ```
 
+## RAG Source Failure Lifecycle
+
+Official sources that repeatedly fail acquisition are managed as catalog state instead of blind retries. A failed source can be disabled, marked as requiring replacement, or linked to a manually curated fallback while the existing indexed source remains protected by review and apply gates.
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-disable-source --file rag_sources/catalog.json --key <catalog_key> --reason "HTTP 403"
+docker compose exec backend python -m app.cli.rag catalog-replace-source --file rag_sources/catalog.json --key <catalog_key> --replacement-url <url>
+docker compose exec backend python -m app.cli.rag catalog-enable-source --file rag_sources/catalog.json --key <catalog_key>
+```
+
 ## RAG Review / Approval Layer
 
 Catalog and scheduler plans are reviewed before apply. The review layer stores an audit record in `rag_review_runs` and `rag_review_items`, writes Markdown approval reports, and maps plan actions into operator-facing decisions such as `approve_partial_refresh`, `manual_confirm_full_reindex`, `blocked_manual_review`, and `fix_source_acquisition`.

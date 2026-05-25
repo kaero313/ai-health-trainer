@@ -967,3 +967,44 @@ The current official URL catalog demonstrates the intended behavior: NIH ODS ret
 - `--apply-approved-only` applies only approved item decisions and records blocked items as `skipped_blocked`; unresolved items require a later source fix and new plan/review.
 - `manual_confirm_full_reindex` requires `--confirm-full-reindex`.
 - Approval pass/failure is stored on `rag_catalog_plan_runs` as `approved_review_run_id`, `approval_status`, `approval_checked_at`, `approval_error_code`, and `approval_error_message`.
+
+---
+
+## 21. Source Failure Lifecycle
+
+Acquisition failures are managed as catalog state. A source that repeatedly fails is not retried forever and is not silently removed from the active RAG corpus.
+
+Catalog fields:
+
+- `enabled`: false means plan skips network/file acquisition and records `SOURCE_DISABLED`.
+- `failure_policy`: `manual_review`, `replacement_required`, or `disable_after_threshold`.
+- `max_consecutive_failures`: threshold for escalating repeated `FETCH_OR_PARSE_FAILED` plan items.
+- `replacement_url`: candidate official replacement source, not activated until an operator changes the catalog.
+- `manual_curation_fallback`: operator note for a reviewed internal fallback while a replacement is pending.
+- `disabled_reason`: reason visible in plan/review context.
+
+Commands:
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-disable-source \
+  --file rag_sources/catalog.json \
+  --key <catalog_key> \
+  --reason "HTTP 403 from backend runtime"
+
+docker compose exec backend python -m app.cli.rag catalog-replace-source \
+  --file rag_sources/catalog.json \
+  --key <catalog_key> \
+  --replacement-url <official_replacement_url>
+
+docker compose exec backend python -m app.cli.rag catalog-enable-source \
+  --file rag_sources/catalog.json \
+  --key <catalog_key>
+```
+
+Planning behavior:
+
+- Disabled source -> `fetch_status=skipped`, `planned_action=manual_review_required`, `reason_code=SOURCE_DISABLED`.
+- First fetch/parser failures -> `FETCH_OR_PARSE_FAILED`.
+- Consecutive failures over threshold with `replacement_required` policy -> `REPLACEMENT_REQUIRED`.
+- Consecutive failures over threshold with `disable_after_threshold` policy -> `SOURCE_DISABLED_PENDING_REVIEW`.
+- Existing active chunks remain available until an approved replacement plan is applied.

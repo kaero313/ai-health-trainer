@@ -35,6 +35,10 @@ ACTION_PARTIAL = "partial_refresh"
 ACTION_FULL = "full_reindex"
 ACTION_MANUAL = "manual_review_required"
 ACTION_DEFER = "defer_reembedding"
+REASON_SOURCE_DISABLED = "SOURCE_DISABLED"
+REASON_FETCH_OR_PARSE_FAILED = "FETCH_OR_PARSE_FAILED"
+REASON_REPLACEMENT_REQUIRED = "REPLACEMENT_REQUIRED"
+REASON_SOURCE_DISABLED_PENDING_REVIEW = "SOURCE_DISABLED_PENDING_REVIEW"
 
 REVIEW_TYPE_CATALOG = "catalog_plan"
 REVIEW_DECISION_NO_ACTION = "no_action"
@@ -422,6 +426,33 @@ class RAGCatalogControlService:
         catalog_path: Path,
         existing_source: RagSource | None,
     ) -> RagCatalogPlanItem:
+        if not catalog_source.enabled:
+            return RagCatalogPlanItem(
+                run_id=run_id,
+                source_id=existing_source.id if existing_source else None,
+                catalog_key=catalog_source.key,
+                catalog_url=catalog_source.url,
+                acquisition_type=catalog_source.acquisition_type,
+                origin_uri=_safe_catalog_origin_uri(catalog_source, catalog_path),
+                parser_type=catalog_source.parser_type,
+                title=catalog_source.title,
+                category=catalog_source.category,
+                tags=catalog_source.tags,
+                license=catalog_source.license_value,
+                source_grade=catalog_source.source_grade,
+                catalog_status=_catalog_status(existing_source, []),
+                fetch_status="skipped",
+                planned_action=ACTION_MANUAL,
+                reason_code=REASON_SOURCE_DISABLED,
+                risk_level="medium",
+                quality_warnings=["source_disabled"],
+                context={
+                    "acquisition_type": catalog_source.acquisition_type,
+                    "reference_urls": catalog_source.reference_urls,
+                    "curation_method": catalog_source.curation_method,
+                    "failure_lifecycle": _failure_lifecycle_context(catalog_source, disabled=True),
+                },
+            )
         try:
             acquired = await self._acquire_catalog_source(catalog_source, catalog_path)
             if existing_source is None:
@@ -515,9 +546,25 @@ class RAGCatalogControlService:
                     "refresh_policy": catalog_source.refresh_policy,
                     "refresh_interval_hours": catalog_source.refresh_interval_hours,
                     "anchor_lineage_missing": section_diff.missing_lineage or chunk_diff.missing_lineage,
+                    "failure_lifecycle": _failure_lifecycle_context(catalog_source),
                 },
             )
         except Exception as exc:
+            failure_history = await self._source_failure_history(catalog_source)
+            consecutive_failure_count = failure_history["previous_failure_count"] + 1
+            threshold_reached = consecutive_failure_count >= catalog_source.max_consecutive_failures
+            replacement_required = threshold_reached and (
+                catalog_source.failure_policy == "replacement_required" or bool(catalog_source.replacement_url)
+            )
+            disable_pending_review = threshold_reached and catalog_source.failure_policy == "disable_after_threshold"
+            reason_code = REASON_FETCH_OR_PARSE_FAILED
+            warnings = ["fetch_or_parse_failed"]
+            if replacement_required:
+                reason_code = REASON_REPLACEMENT_REQUIRED
+                warnings.append("replacement_required")
+            elif disable_pending_review:
+                reason_code = REASON_SOURCE_DISABLED_PENDING_REVIEW
+                warnings.append("source_disabled_pending_review")
             return RagCatalogPlanItem(
                 run_id=run_id,
                 source_id=existing_source.id if existing_source else None,
@@ -534,16 +581,50 @@ class RAGCatalogControlService:
                 catalog_status=_catalog_status(existing_source, []),
                 fetch_status="failed",
                 planned_action=ACTION_MANUAL,
-                reason_code="FETCH_OR_PARSE_FAILED",
+                reason_code=reason_code,
                 risk_level="high",
-                quality_warnings=["fetch_or_parse_failed"],
+                quality_warnings=warnings,
                 context={
                     "error": str(exc),
                     "acquisition_type": catalog_source.acquisition_type,
                     "reference_urls": catalog_source.reference_urls,
                     "curation_method": catalog_source.curation_method,
+                    "failure_lifecycle": _failure_lifecycle_context(
+                        catalog_source,
+                        previous_failure_count=failure_history["previous_failure_count"],
+                        consecutive_failure_count=consecutive_failure_count,
+                        recent_plan_item_count=failure_history["recent_plan_item_count"],
+                        threshold_reached=threshold_reached,
+                        replacement_required=replacement_required,
+                    ),
                 },
             )
+
+    async def _source_failure_history(self, catalog_source: CatalogSource) -> dict[str, int]:
+        conditions = [RagCatalogPlanItem.acquisition_type == catalog_source.acquisition_type]
+        if catalog_source.key:
+            conditions.append(RagCatalogPlanItem.catalog_key == catalog_source.key)
+        elif catalog_source.url:
+            conditions.append(RagCatalogPlanItem.catalog_url == catalog_source.url)
+        else:
+            conditions.append(RagCatalogPlanItem.origin_uri == catalog_source.path)
+        rows = (
+            await self.db.execute(
+                select(RagCatalogPlanItem)
+                .where(*conditions)
+                .order_by(RagCatalogPlanItem.id.desc())
+                .limit(20)
+            )
+        ).scalars().all()
+        consecutive_failure_count = 0
+        for row in rows:
+            if not _is_acquisition_failure(row):
+                break
+            consecutive_failure_count += 1
+        return {
+            "previous_failure_count": consecutive_failure_count,
+            "recent_plan_item_count": len(rows),
+        }
 
     def _plan_orphaned_source(self, run_id: int, source: RagSource) -> RagCatalogPlanItem:
         return RagCatalogPlanItem(
@@ -983,6 +1064,18 @@ def _metadata_changed_fields(
         "parser_type": (source.parser_type, acquired.parsed.parser_type),
         "curation_method": (fetch_metadata.get("curation_method"), catalog_source.curation_method),
         "reference_urls": (previous_reference_urls, catalog_source.reference_urls),
+        "source_enabled": (fetch_metadata.get("source_enabled", True), catalog_source.enabled),
+        "failure_policy": (fetch_metadata.get("failure_policy", "manual_review"), catalog_source.failure_policy),
+        "replacement_url": (fetch_metadata.get("replacement_url"), catalog_source.replacement_url),
+        "manual_curation_fallback": (
+            fetch_metadata.get("manual_curation_fallback"),
+            catalog_source.manual_curation_fallback,
+        ),
+        "max_consecutive_failures": (
+            fetch_metadata.get("max_consecutive_failures", 3),
+            catalog_source.max_consecutive_failures,
+        ),
+        "disabled_reason": (fetch_metadata.get("disabled_reason"), catalog_source.disabled_reason),
     }
     return [field for field, (left, right) in comparisons.items() if left != right]
 
@@ -1042,6 +1135,7 @@ def _acquisition_type_for_source(source: RagSource) -> str:
 
 def _catalog_source_from_item(item: RagCatalogPlanItem) -> CatalogSource:
     context = item.context or {}
+    failure_lifecycle = context.get("failure_lifecycle") if isinstance(context.get("failure_lifecycle"), dict) else {}
     acquisition_type = item.acquisition_type or str(context.get("acquisition_type") or ACQUISITION_URL_HTML)
     origin_uri = item.origin_uri or item.catalog_url
     default_parser_type = {
@@ -1066,7 +1160,49 @@ def _catalog_source_from_item(item: RagCatalogPlanItem) -> CatalogSource:
         refresh_interval_hours=_optional_int(context.get("refresh_interval_hours")),
         curation_method=_optional_str(context.get("curation_method")),
         reference_urls=list(context.get("reference_urls") or []),
+        enabled=bool(failure_lifecycle.get("enabled", True)),
+        failure_policy=str(failure_lifecycle.get("failure_policy") or "manual_review"),
+        replacement_url=_optional_str(failure_lifecycle.get("replacement_url")),
+        manual_curation_fallback=_optional_str(failure_lifecycle.get("manual_curation_fallback")),
+        max_consecutive_failures=_optional_int(failure_lifecycle.get("max_consecutive_failures")) or 3,
+        disabled_reason=_optional_str(failure_lifecycle.get("disabled_reason")),
     )
+
+
+def _failure_lifecycle_context(
+    catalog_source: CatalogSource,
+    *,
+    disabled: bool = False,
+    previous_failure_count: int = 0,
+    consecutive_failure_count: int = 0,
+    recent_plan_item_count: int = 0,
+    threshold_reached: bool = False,
+    replacement_required: bool = False,
+) -> dict[str, Any]:
+    return {
+        "enabled": catalog_source.enabled,
+        "disabled": disabled,
+        "disabled_reason": catalog_source.disabled_reason,
+        "failure_policy": catalog_source.failure_policy,
+        "replacement_url": catalog_source.replacement_url,
+        "manual_curation_fallback": catalog_source.manual_curation_fallback,
+        "max_consecutive_failures": catalog_source.max_consecutive_failures,
+        "previous_failure_count": previous_failure_count,
+        "consecutive_failure_count": consecutive_failure_count,
+        "recent_plan_item_count": recent_plan_item_count,
+        "threshold_reached": threshold_reached,
+        "replacement_required": replacement_required,
+    }
+
+
+def _is_acquisition_failure(item: RagCatalogPlanItem) -> bool:
+    if item.fetch_status == "failed":
+        return True
+    return item.reason_code in {
+        REASON_FETCH_OR_PARSE_FAILED,
+        REASON_REPLACEMENT_REQUIRED,
+        REASON_SOURCE_DISABLED_PENDING_REVIEW,
+    }
 
 
 def _metadata_changed(previous: object, current: object) -> bool:

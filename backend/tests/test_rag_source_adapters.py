@@ -150,6 +150,34 @@ def test_load_catalog_sources_supports_pdf_url_defaults():
     assert source.reference_urls == ["https://example.org/guide.pdf"]
 
 
+def test_load_catalog_sources_supports_failure_lifecycle_metadata():
+    payload = {
+        "sources": [
+            {
+                "key": "blocked_official_source",
+                "url": "https://example.org/blocked",
+                "title": "Blocked Official Source",
+                "category": "supplement",
+                "enabled": False,
+                "failure_policy": "replacement_required",
+                "replacement_url": "https://example.org/replacement",
+                "manual_curation_fallback": "Use reviewed internal summary until replacement is active.",
+                "max_consecutive_failures": 2,
+                "disabled_reason": "HTTP 403 in backend runtime",
+            }
+        ]
+    }
+
+    source = load_catalog_sources(payload)[0]
+
+    assert source.enabled is False
+    assert source.failure_policy == "replacement_required"
+    assert source.replacement_url == "https://example.org/replacement"
+    assert source.manual_curation_fallback == "Use reviewed internal summary until replacement is active."
+    assert source.max_consecutive_failures == 2
+    assert source.disabled_reason == "HTTP 403 in backend runtime"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("filename", "parser_type", "content"),
