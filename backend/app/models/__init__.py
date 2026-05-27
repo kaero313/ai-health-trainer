@@ -14,6 +14,7 @@ from app.models.rag import (
     RagReviewRun,
     RagSchedulerRun,
     RagSchedulerRunItem,
+    RagSourceReplacementCandidate,
     RagSource,
 )
 from app.models.token import RefreshToken
@@ -45,6 +46,7 @@ __all__ = [
     "RagSchedulerRun",
     "RagSchedulerRunItem",
     "RagSource",
+    "RagSourceReplacementCandidate",
     "RecommendationTypeEnum",
     "RefreshToken",
     "User",

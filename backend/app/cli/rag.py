@@ -14,6 +14,7 @@ from app.core.database import AsyncSessionLocal
 from app.services.rag_catalog_control_service import RAGCatalogControlService
 from app.services.rag_evaluation import evaluate_retrieval, load_retrieval_cases
 from app.services.rag_refresh_scheduler import RAGRefreshSchedulerService
+from app.services.rag_replacement_candidate_service import RAGReplacementCandidateService
 from app.services.rag_review_service import RAGReviewService
 from app.services.rag_service import RAGService
 
@@ -251,6 +252,23 @@ async def _catalog_replace_source(args: argparse.Namespace) -> None:
         updates=updates,
         activate_replacement=args.activate,
     )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _replacement_preview(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGReplacementCandidateService(db, settings).preview(
+            catalog_file=args.file,
+            key=args.key,
+            candidate_url=args.candidate_url,
+            acquisition_type=args.acquisition_type,
+            title=args.title,
+            source_grade=args.source_grade,
+            license_value=args.license,
+            author_or_org=args.author_or_org,
+            report_path=args.report_path,
+        )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
@@ -1098,6 +1116,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replace the active source URL immediately and preserve the previous URL as a reference",
     )
 
+    replacement_preview = subparsers.add_parser(
+        "replacement-preview",
+        help="Fetch, parse, chunk, and audit a replacement candidate URL without mutating RAG data",
+    )
+    replacement_preview.add_argument("--file", required=True, help="Catalog JSON path")
+    replacement_preview.add_argument("--key", required=True, help="Catalog source key being replaced")
+    replacement_preview.add_argument("--candidate-url", required=True, help="Replacement candidate URL")
+    replacement_preview.add_argument(
+        "--acquisition-type",
+        default="auto",
+        choices=["auto", "url_html", "pdf_url"],
+        help="Candidate acquisition type. auto uses pdf_url for .pdf paths, otherwise url_html",
+    )
+    replacement_preview.add_argument("--title", default=None, help="Optional title override")
+    replacement_preview.add_argument("--source-grade", default=None, help="Optional source grade override")
+    replacement_preview.add_argument("--license", default=None, help="Optional license override")
+    replacement_preview.add_argument("--author-or-org", default=None, help="Optional author/organization override")
+    replacement_preview.add_argument("--report-path", default=None, help="Optional markdown preview report output path")
+
     scheduler_run = subparsers.add_parser("scheduler-run", help="Run plan-only RAG catalog scheduler")
     scheduler_run.add_argument(
         "--catalog",
@@ -1195,6 +1232,8 @@ async def _main() -> None:
         await _catalog_enable_source(args)
     elif args.command == "catalog-replace-source":
         await _catalog_replace_source(args)
+    elif args.command == "replacement-preview":
+        await _replacement_preview(args)
     elif args.command == "scheduler-run":
         await _scheduler_run(args)
     elif args.command == "scheduler-runs":

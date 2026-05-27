@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -491,6 +491,47 @@ class RagReviewItem(Base):
         foreign_keys=[catalog_plan_run_id],
     )
     catalog_plan_item: Mapped[RagCatalogPlanItem | None] = relationship("RagCatalogPlanItem")
+    source: Mapped[RagSource | None] = relationship("RagSource")
+
+
+class RagSourceReplacementCandidate(Base):
+    __tablename__ = "rag_source_replacement_candidates"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('preview_succeeded', 'fetch_failed', 'parse_failed', 'manual_review_required')",
+            name="ck_rag_source_replacement_candidates_status",
+        ),
+        Index("ix_rag_source_replacement_candidates_source_id", "source_id"),
+        Index("ix_rag_source_replacement_candidates_catalog_key", "catalog_key"),
+        Index("ix_rag_source_replacement_candidates_status", "status"),
+        Index("ix_rag_source_replacement_candidates_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("rag_sources.id", ondelete="SET NULL"), nullable=True)
+    catalog_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    original_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    candidate_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    acquisition_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    parser_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    parser_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    raw_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    content_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    etag: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_modified: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    section_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    source_grade: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    license: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    author_or_org: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    quality_warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    context: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    report_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
     source: Mapped[RagSource | None] = relationship("RagSource")
 
 

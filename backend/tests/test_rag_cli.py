@@ -64,6 +64,23 @@ def test_rag_cli_exposes_url_acquisition_commands():
     )
     assert replace_source.command == "catalog-replace-source"
     assert replace_source.activate is True
+    replacement_preview = parser.parse_args(
+        [
+            "replacement-preview",
+            "--file",
+            "rag_sources/catalog.json",
+            "--key",
+            "nih",
+            "--candidate-url",
+            "https://example.org/replacement",
+            "--acquisition-type",
+            "url_html",
+            "--report-path",
+            "replacement.md",
+        ]
+    )
+    assert replacement_preview.command == "replacement-preview"
+    assert replacement_preview.acquisition_type == "url_html"
     assert parser.parse_args(["scheduler-run", "--force-plan"]).command == "scheduler-run"
     assert parser.parse_args(["scheduler-runs", "--limit", "5"]).command == "scheduler-runs"
     assert parser.parse_args(["scheduler-run-detail", "--run-id", "1"]).command == "scheduler-run-detail"
