@@ -345,3 +345,18 @@ Catalog acquisition failures are first-class operating signals. The system disti
 | replacement URL registered but not activated | no mutation | Candidate is metadata only until catalog is updated and a new plan/review/apply succeeds. |
 
 This policy keeps existing active RAG chunks available while preventing broken sources from causing repeated blind retries or unsafe apply.
+
+---
+
+## 17. Replacement Candidate Preview Policy
+
+Replacement candidate preview is audit-only.
+
+| Candidate signal | Candidate status | Mutation |
+|------------------|------------------|----------|
+| fetch succeeds, parser confidence passes, chunk count > 0 | `preview_succeeded` | none |
+| URL fetch/content-type/size failure | `fetch_failed` | none |
+| parser or chunk planning exception | `parse_failed` | none |
+| low parser confidence or empty chunks | `manual_review_required` | none |
+
+The candidate row is evidence for later coverage comparison and activation. It is not sufficient by itself to modify the catalog, source registry, chunks, embeddings, or OpenSearch index.

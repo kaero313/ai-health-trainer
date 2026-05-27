@@ -1008,3 +1008,17 @@ Planning behavior:
 - Consecutive failures over threshold with `replacement_required` policy -> `REPLACEMENT_REQUIRED`.
 - Consecutive failures over threshold with `disable_after_threshold` policy -> `SOURCE_DISABLED_PENDING_REVIEW`.
 - Existing active chunks remain available until an approved replacement plan is applied.
+
+### Replacement Candidate Preview
+
+Before activating a replacement URL, preview and audit it:
+
+```bash
+docker compose exec backend python -m app.cli.rag replacement-preview \
+  --file rag_sources/catalog.json \
+  --key <catalog_key> \
+  --candidate-url <official_candidate_url> \
+  --report-path /tmp/RAG_REPLACEMENT_CANDIDATE_PREVIEW.md
+```
+
+The preview fetches, parses, and chunks the candidate URL, then stores a `rag_source_replacement_candidates` audit row. It records parser confidence, content hashes, HTTP metadata, section/chunk count, and quality warnings. It never mutates `rag_sources`, `rag_chunks`, embeddings, OpenSearch, or the catalog JSON.

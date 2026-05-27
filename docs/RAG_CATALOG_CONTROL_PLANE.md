@@ -241,3 +241,17 @@ Plan behavior:
 - Existing active source/chunk data remains untouched until a new replacement plan is reviewed and applied.
 
 This avoids retry noise and shows the operator exactly which source needs replacement, manual curation, or re-enable approval.
+
+### Replacement Candidate Audit
+
+`replacement-preview` is the first recovery step for a disabled or replacement-required source.
+
+```bash
+docker compose exec backend python -m app.cli.rag replacement-preview \
+  --file rag_sources/catalog.json \
+  --key <catalog_key> \
+  --candidate-url <official_candidate_url> \
+  --report-path /tmp/RAG_REPLACEMENT_CANDIDATE_PREVIEW.md
+```
+
+It persists `rag_source_replacement_candidates` with candidate fetch metadata, parser confidence, content hash, raw hash, section count, chunk count, and warnings. It does not activate the replacement or mutate the RAG corpus. Coverage comparison and activation are handled in later recovery steps.

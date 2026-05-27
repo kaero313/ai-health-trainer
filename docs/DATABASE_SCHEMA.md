@@ -499,3 +499,16 @@ This keeps source failure management in the control plane while avoiding schema 
 - operating signals: `parser_confidence`, `section_change_ratio`, `chunk_change_ratio`, `estimated_embedding_seconds`, `quality_warnings`, `context`
 
 Review tables are audit/report tables only. `catalog-apply` must reference a completed catalog review run, then still uses catalog plan item state and stale hash guards as the mutation source of truth.
+
+## RAG Replacement Candidate Schema
+
+`rag_source_replacement_candidates` stores audit evidence for replacement URL previews.
+
+- lineage: `source_id`, `catalog_key`, `original_url`, `candidate_url`
+- acquisition summary: `acquisition_type`, `content_type`, `content_length`, `etag`, `last_modified`
+- parser/chunk summary: `parser_type`, `parser_confidence`, `section_count`, `chunk_count`
+- fingerprints: `content_hash`, `raw_content_hash`
+- metadata: `source_grade`, `license`, `author_or_org`, `quality_warnings`, `context`, `report_path`
+- status: `preview_succeeded`, `fetch_failed`, `parse_failed`, or `manual_review_required`
+
+This table does not authorize mutation. It is preview evidence used before later coverage comparison and catalog replacement activation.
