@@ -15,6 +15,7 @@ from app.services.rag_catalog_control_service import RAGCatalogControlService
 from app.services.rag_evaluation import evaluate_retrieval, load_retrieval_cases
 from app.services.rag_refresh_scheduler import RAGRefreshSchedulerService
 from app.services.rag_replacement_candidate_service import RAGReplacementCandidateService
+from app.services.rag_replacement_evaluation_service import RAGReplacementEvaluationService
 from app.services.rag_review_service import RAGReviewService
 from app.services.rag_service import RAGService
 
@@ -268,6 +269,18 @@ async def _replacement_preview(args: argparse.Namespace) -> None:
             license_value=args.license,
             author_or_org=args.author_or_org,
             report_path=args.report_path,
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+async def _replacement_evaluate(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        result = await RAGReplacementEvaluationService(db, settings).evaluate(
+            candidate_id=args.candidate_id,
+            report_path=args.report_path,
+            min_coverage_score=args.min_coverage_score,
+            min_readiness_score=args.min_readiness_score,
         )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
@@ -1135,6 +1148,29 @@ def build_parser() -> argparse.ArgumentParser:
     replacement_preview.add_argument("--author-or-org", default=None, help="Optional author/organization override")
     replacement_preview.add_argument("--report-path", default=None, help="Optional markdown preview report output path")
 
+    replacement_evaluate = subparsers.add_parser(
+        "replacement-evaluate",
+        help="Evaluate a replacement candidate audit row for coverage and activation readiness",
+    )
+    replacement_evaluate.add_argument("--candidate-id", type=int, required=True, help="Replacement candidate id")
+    replacement_evaluate.add_argument(
+        "--min-coverage-score",
+        type=float,
+        default=0.6,
+        help="Minimum coverage score required for activation readiness",
+    )
+    replacement_evaluate.add_argument(
+        "--min-readiness-score",
+        type=float,
+        default=0.7,
+        help="Minimum combined readiness score required for activation readiness",
+    )
+    replacement_evaluate.add_argument(
+        "--report-path",
+        default=None,
+        help="Optional markdown coverage/readiness report output path",
+    )
+
     scheduler_run = subparsers.add_parser("scheduler-run", help="Run plan-only RAG catalog scheduler")
     scheduler_run.add_argument(
         "--catalog",
@@ -1234,6 +1270,8 @@ async def _main() -> None:
         await _catalog_replace_source(args)
     elif args.command == "replacement-preview":
         await _replacement_preview(args)
+    elif args.command == "replacement-evaluate":
+        await _replacement_evaluate(args)
     elif args.command == "scheduler-run":
         await _scheduler_run(args)
     elif args.command == "scheduler-runs":

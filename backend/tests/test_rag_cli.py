@@ -81,6 +81,20 @@ def test_rag_cli_exposes_url_acquisition_commands():
     )
     assert replacement_preview.command == "replacement-preview"
     assert replacement_preview.acquisition_type == "url_html"
+    replacement_evaluate = parser.parse_args(
+        [
+            "replacement-evaluate",
+            "--candidate-id",
+            "7",
+            "--min-coverage-score",
+            "0.7",
+            "--report-path",
+            "replacement-eval.md",
+        ]
+    )
+    assert replacement_evaluate.command == "replacement-evaluate"
+    assert replacement_evaluate.candidate_id == 7
+    assert replacement_evaluate.min_coverage_score == 0.7
     assert parser.parse_args(["scheduler-run", "--force-plan"]).command == "scheduler-run"
     assert parser.parse_args(["scheduler-runs", "--limit", "5"]).command == "scheduler-runs"
     assert parser.parse_args(["scheduler-run-detail", "--run-id", "1"]).command == "scheduler-run-detail"
