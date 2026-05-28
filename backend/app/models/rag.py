@@ -535,6 +535,48 @@ class RagSourceReplacementCandidate(Base):
     source: Mapped[RagSource | None] = relationship("RagSource")
 
 
+class RagSourceReplacementEvaluation(Base):
+    __tablename__ = "rag_source_replacement_evaluations"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ready_for_activation', 'needs_manual_review', 'rejected')",
+            name="ck_rag_source_replacement_evaluations_status",
+        ),
+        Index("ix_rag_source_replacement_evaluations_candidate_id", "candidate_id"),
+        Index("ix_rag_source_replacement_evaluations_source_id", "source_id"),
+        Index("ix_rag_source_replacement_evaluations_catalog_key", "catalog_key"),
+        Index("ix_rag_source_replacement_evaluations_status", "status"),
+        Index("ix_rag_source_replacement_evaluations_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    candidate_id: Mapped[int] = mapped_column(
+        ForeignKey("rag_source_replacement_candidates.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("rag_sources.id", ondelete="SET NULL"), nullable=True)
+    catalog_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    candidate_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    readiness_score: Mapped[float] = mapped_column(Float, nullable=False)
+    coverage_score: Mapped[float] = mapped_column(Float, nullable=False)
+    metadata_score: Mapped[float] = mapped_column(Float, nullable=False)
+    parser_score: Mapped[float] = mapped_column(Float, nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    recommendation: Mapped[str] = mapped_column(String(100), nullable=False)
+    blocking_reasons: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    quality_warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    required_terms: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    matched_terms: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    missing_terms: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    context: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    report_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    candidate: Mapped[RagSourceReplacementCandidate] = relationship("RagSourceReplacementCandidate")
+    source: Mapped[RagSource | None] = relationship("RagSource")
+
+
 class RagRetrievalTrace(Base):
     __tablename__ = "rag_retrieval_traces"
     __table_args__ = (
