@@ -512,3 +512,15 @@ Review tables are audit/report tables only. `catalog-apply` must reference a com
 - status: `preview_succeeded`, `fetch_failed`, `parse_failed`, or `manual_review_required`
 
 This table does not authorize mutation. It is preview evidence used before later coverage comparison and catalog replacement activation.
+
+## RAG Replacement Evaluation Schema
+
+`rag_source_replacement_evaluations` stores coverage/readiness decisions for candidate replacement rows.
+
+- lineage: `candidate_id`, `source_id`, `catalog_key`, `candidate_url`
+- scores: `readiness_score`, `coverage_score`, `metadata_score`, `parser_score`
+- decision: `status`, `risk_level`, `recommendation`, `blocking_reasons`, `quality_warnings`
+- coverage evidence: `required_terms`, `matched_terms`, `missing_terms`
+- audit metadata: `context`, `report_path`, `created_at`
+
+Allowed status values are `ready_for_activation`, `needs_manual_review`, and `rejected`. This table is still audit-only; activation must be handled by a later catalog replacement/apply flow.

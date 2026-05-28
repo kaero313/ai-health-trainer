@@ -255,3 +255,15 @@ docker compose exec backend python -m app.cli.rag replacement-preview \
 ```
 
 It persists `rag_source_replacement_candidates` with candidate fetch metadata, parser confidence, content hash, raw hash, section count, chunk count, and warnings. It does not activate the replacement or mutate the RAG corpus. Coverage comparison and activation are handled in later recovery steps.
+
+### Replacement Candidate Evaluation
+
+After preview succeeds, evaluate whether the candidate covers the original source intent:
+
+```bash
+docker compose exec backend python -m app.cli.rag replacement-evaluate \
+  --candidate-id <candidate_id> \
+  --report-path /tmp/RAG_REPLACEMENT_CANDIDATE_EVALUATION.md
+```
+
+The evaluation stores `rag_source_replacement_evaluations` with coverage score, parser score, metadata score, readiness score, matched/missing terms, risk level, and recommendation. It does not update catalog JSON or RAG data. A `ready_for_activation` result is evidence for the later activation gate, not mutation authority by itself.

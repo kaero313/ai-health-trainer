@@ -360,3 +360,17 @@ Replacement candidate preview is audit-only.
 | low parser confidence or empty chunks | `manual_review_required` | none |
 
 The candidate row is evidence for later coverage comparison and activation. It is not sufficient by itself to modify the catalog, source registry, chunks, embeddings, or OpenSearch index.
+
+---
+
+## 18. Replacement Candidate Evaluation Policy
+
+Candidate evaluation compares the previewed candidate evidence against the original catalog/source intent.
+
+| Evaluation signal | Status | Follow-up |
+|-------------------|--------|-----------|
+| sufficient coverage, parser quality, and metadata | `ready_for_activation` | candidate may proceed to a later activation gate |
+| partial coverage or incomplete metadata | `needs_manual_review` | operator reviews missing terms and source metadata |
+| failed preview, low parser quality, or very low coverage | `rejected` | find another official candidate |
+
+Scores are audit signals, not write authorization. The replacement activation flow must still be explicit and reviewed.

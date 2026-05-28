@@ -1022,3 +1022,13 @@ docker compose exec backend python -m app.cli.rag replacement-preview \
 ```
 
 The preview fetches, parses, and chunks the candidate URL, then stores a `rag_source_replacement_candidates` audit row. It records parser confidence, content hashes, HTTP metadata, section/chunk count, and quality warnings. It never mutates `rag_sources`, `rag_chunks`, embeddings, OpenSearch, or the catalog JSON.
+
+Then evaluate replacement readiness:
+
+```bash
+docker compose exec backend python -m app.cli.rag replacement-evaluate \
+  --candidate-id <candidate_id> \
+  --report-path /tmp/RAG_REPLACEMENT_CANDIDATE_EVALUATION.md
+```
+
+The evaluation stores a `rag_source_replacement_evaluations` row. It scores semantic coverage against the original source intent, parser/chunk quality, metadata completeness, and combined readiness. `ready_for_activation` means the candidate can move to a later activation gate; it does not mutate the catalog or RAG corpus.

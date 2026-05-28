@@ -524,3 +524,4 @@ Portfolio signal:
 - External source instability is treated as an operational risk, not just an exception.
 - Existing indexed knowledge remains versioned and queryable while replacement work is reviewed.
 - The system records why a source is blocked, what replacement/fallback is expected, and which apply gate prevented mutation.
+- Replacement candidates are first previewed, then evaluated for coverage/readiness before any activation path is allowed.

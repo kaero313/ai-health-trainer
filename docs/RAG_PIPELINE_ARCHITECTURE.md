@@ -477,6 +477,7 @@ catalog source
  -> failure history lookup
  -> plan reason code (`SOURCE_DISABLED`, `FETCH_OR_PARSE_FAILED`, `REPLACEMENT_REQUIRED`)
  -> review decision (`blocked_manual_review` or `fix_source_acquisition`)
+ -> replacement preview and coverage/readiness evaluation
  -> optional catalog replacement command
  -> new plan/review/apply
 ```
