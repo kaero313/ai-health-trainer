@@ -7,15 +7,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
+from app.models.rag import RagSourceReplacementCandidate, RagSourceReplacementEvaluation
 from app.services.rag_catalog_control_service import RAGCatalogControlService
 from app.services.rag_evaluation import evaluate_retrieval, load_retrieval_cases
 from app.services.rag_refresh_scheduler import RAGRefreshSchedulerService
-from app.services.rag_replacement_candidate_service import RAGReplacementCandidateService
+from app.services.rag_replacement_candidate_service import RAGReplacementCandidateService, STATUS_PREVIEW_SUCCEEDED
 from app.services.rag_replacement_evaluation_service import RAGReplacementEvaluationService
+from app.services.rag_replacement_evaluation_service import RECOMMEND_READY, STATUS_READY
 from app.services.rag_review_service import RAGReviewService
 from app.services.rag_service import RAGService
 
@@ -238,6 +241,15 @@ async def _catalog_replace_source(args: argparse.Namespace) -> None:
         "replacement_registered_at": _now_utc(),
     }
     if args.activate:
+        if args.evaluation_id is None:
+            raise SystemExit("--evaluation-id is required when --activate is used")
+        async with AsyncSessionLocal() as db:
+            activation_metadata = await _load_replacement_activation_metadata(
+                db,
+                key=args.key,
+                replacement_url=args.replacement_url,
+                evaluation_id=args.evaluation_id,
+            )
         updates.update(
             {
                 "url": args.replacement_url,
@@ -245,6 +257,7 @@ async def _catalog_replace_source(args: argparse.Namespace) -> None:
                 "disabled_reason": None,
                 "disabled_at": None,
                 "replacement_activated_at": _now_utc(),
+                **activation_metadata,
             }
         )
     result = _update_catalog_source_failure_state(
@@ -978,6 +991,49 @@ def _escape_table_value(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
 
 
+async def _load_replacement_activation_metadata(
+    db: AsyncSession,
+    *,
+    key: str,
+    replacement_url: str,
+    evaluation_id: int,
+) -> dict[str, Any]:
+    evaluation = await db.scalar(
+        select(RagSourceReplacementEvaluation).where(RagSourceReplacementEvaluation.id == evaluation_id)
+    )
+    if evaluation is None:
+        raise SystemExit(f"Replacement evaluation not found: {evaluation_id}")
+    if evaluation.status != STATUS_READY:
+        raise SystemExit(f"Replacement evaluation is not ready for activation: {evaluation.status}")
+    if evaluation.recommendation != RECOMMEND_READY:
+        raise SystemExit(f"Replacement evaluation recommendation blocks activation: {evaluation.recommendation}")
+    if evaluation.catalog_key != key:
+        raise SystemExit(
+            f"Replacement evaluation catalog key mismatch: expected {key}, got {evaluation.catalog_key}"
+        )
+    if evaluation.candidate_url != replacement_url:
+        raise SystemExit("Replacement evaluation candidate URL does not match --replacement-url")
+
+    candidate = await db.scalar(
+        select(RagSourceReplacementCandidate).where(RagSourceReplacementCandidate.id == evaluation.candidate_id)
+    )
+    if candidate is None:
+        raise SystemExit(f"Replacement candidate not found: {evaluation.candidate_id}")
+    if candidate.status != STATUS_PREVIEW_SUCCEEDED:
+        raise SystemExit(f"Replacement candidate preview is not successful: {candidate.status}")
+    if candidate.catalog_key != key:
+        raise SystemExit(f"Replacement candidate catalog key mismatch: expected {key}, got {candidate.catalog_key}")
+    if candidate.candidate_url != replacement_url:
+        raise SystemExit("Replacement candidate URL does not match --replacement-url")
+
+    return {
+        "replacement_evaluation_id": evaluation.id,
+        "replacement_candidate_id": candidate.id,
+        "replacement_readiness_score": evaluation.readiness_score,
+        "replacement_coverage_score": evaluation.coverage_score,
+    }
+
+
 def _update_catalog_source_failure_state(
     catalog_path: Path,
     *,
@@ -1123,6 +1179,12 @@ def build_parser() -> argparse.ArgumentParser:
     catalog_replace.add_argument("--file", required=True, help="Catalog JSON path")
     catalog_replace.add_argument("--key", required=True, help="Catalog source key")
     catalog_replace.add_argument("--replacement-url", required=True, help="Replacement URL candidate")
+    catalog_replace.add_argument(
+        "--evaluation-id",
+        type=int,
+        default=None,
+        help="Required with --activate. Must reference a ready_for_activation replacement evaluation",
+    )
     catalog_replace.add_argument(
         "--activate",
         action="store_true",

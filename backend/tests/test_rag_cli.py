@@ -59,11 +59,14 @@ def test_rag_cli_exposes_url_acquisition_commands():
             "nih",
             "--replacement-url",
             "https://example.org/replacement",
+            "--evaluation-id",
+            "5",
             "--activate",
         ]
     )
     assert replace_source.command == "catalog-replace-source"
     assert replace_source.activate is True
+    assert replace_source.evaluation_id == 5
     replacement_preview = parser.parse_args(
         [
             "replacement-preview",
