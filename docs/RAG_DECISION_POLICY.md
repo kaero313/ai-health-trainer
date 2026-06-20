@@ -374,3 +374,11 @@ Candidate evaluation compares the previewed candidate evidence against the origi
 | failed preview, low parser quality, or very low coverage | `rejected` | find another official candidate |
 
 Scores are audit signals, not write authorization. The replacement activation flow must still be explicit and reviewed.
+
+Activation gate rule:
+
+- `catalog-replace-source --activate` must include an evaluation id.
+- The evaluation must be `ready_for_activation` with `candidate_ready_for_activation`.
+- The evaluation catalog key and candidate URL must match the operator command.
+- The linked candidate preview must be `preview_succeeded`.
+- Any mismatch, `needs_manual_review`, or `rejected` state blocks catalog mutation.

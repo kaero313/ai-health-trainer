@@ -110,12 +110,13 @@ Official sources that repeatedly fail acquisition are managed as catalog state i
 docker compose exec backend python -m app.cli.rag catalog-disable-source --file rag_sources/catalog.json --key <catalog_key> --reason "HTTP 403"
 docker compose exec backend python -m app.cli.rag replacement-preview --file rag_sources/catalog.json --key <catalog_key> --candidate-url <url> --report-path /tmp/RAG_REPLACEMENT_CANDIDATE_PREVIEW.md
 docker compose exec backend python -m app.cli.rag replacement-evaluate --candidate-id <candidate_id> --report-path /tmp/RAG_REPLACEMENT_CANDIDATE_EVALUATION.md
-docker compose exec backend python -m app.cli.rag catalog-replace-source --file rag_sources/catalog.json --key <catalog_key> --replacement-url <url>
+docker compose exec backend python -m app.cli.rag catalog-replace-source --file rag_sources/catalog.json --key <catalog_key> --replacement-url <url> --activate --evaluation-id <evaluation_id>
 docker compose exec backend python -m app.cli.rag catalog-enable-source --file rag_sources/catalog.json --key <catalog_key>
 ```
 
 `replacement-preview` records a candidate audit row and Markdown report only. It does not update the catalog, RAG source/chunk rows, embeddings, or OpenSearch.
 `replacement-evaluate` scores coverage, parser quality, metadata completeness, and activation readiness. It is also audit-only and does not authorize mutation by itself.
+`catalog-replace-source --activate` requires a `ready_for_activation` evaluation id before the catalog URL is changed.
 
 ## RAG Review / Approval Layer
 

@@ -267,3 +267,18 @@ docker compose exec backend python -m app.cli.rag replacement-evaluate \
 ```
 
 The evaluation stores `rag_source_replacement_evaluations` with coverage score, parser score, metadata score, readiness score, matched/missing terms, risk level, and recommendation. It does not update catalog JSON or RAG data. A `ready_for_activation` result is evidence for the later activation gate, not mutation authority by itself.
+
+### Replacement Activation Gate
+
+Only a `ready_for_activation` evaluation can activate a replacement URL:
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-replace-source \
+  --file rag_sources/catalog.json \
+  --key <catalog_key> \
+  --replacement-url <official_candidate_url> \
+  --activate \
+  --evaluation-id <evaluation_id>
+```
+
+The gate validates evaluation status, recommendation, catalog key, replacement URL, and linked candidate preview status before writing catalog JSON. Activation records the evaluation id, candidate id, readiness score, and coverage score on the catalog source. RAG source rows, chunks, embeddings, and OpenSearch are still updated only by the later catalog plan/review/apply flow.

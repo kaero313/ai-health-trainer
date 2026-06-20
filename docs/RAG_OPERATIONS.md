@@ -1032,3 +1032,16 @@ docker compose exec backend python -m app.cli.rag replacement-evaluate \
 ```
 
 The evaluation stores a `rag_source_replacement_evaluations` row. It scores semantic coverage against the original source intent, parser/chunk quality, metadata completeness, and combined readiness. `ready_for_activation` means the candidate can move to a later activation gate; it does not mutate the catalog or RAG corpus.
+
+Activate only after a ready evaluation exists:
+
+```bash
+docker compose exec backend python -m app.cli.rag catalog-replace-source \
+  --file rag_sources/catalog.json \
+  --key <catalog_key> \
+  --replacement-url <official_candidate_url> \
+  --activate \
+  --evaluation-id <evaluation_id>
+```
+
+Activation changes only the catalog source URL and records evaluation/candidate metadata. The actual RAG corpus is updated later through `catalog-plan`, `catalog-review`, and `catalog-apply`.
