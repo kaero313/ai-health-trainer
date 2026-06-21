@@ -117,6 +117,7 @@ docker compose exec backend python -m app.cli.rag catalog-enable-source --file r
 `replacement-preview` records a candidate audit row and Markdown report only. It does not update the catalog, RAG source/chunk rows, embeddings, or OpenSearch.
 `replacement-evaluate` scores coverage, parser quality, metadata completeness, and activation readiness. It is also audit-only and does not authorize mutation by itself.
 `catalog-replace-source --activate` requires a `ready_for_activation` evaluation id before the catalog URL is changed.
+The full recovery evidence is documented in [RAG_REPLACEMENT_RECOVERY_REPORT.md](docs/RAG_REPLACEMENT_RECOVERY_REPORT.md).
 
 ## RAG Review / Approval Layer
 

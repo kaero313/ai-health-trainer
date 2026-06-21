@@ -525,3 +525,4 @@ Portfolio signal:
 - Existing indexed knowledge remains versioned and queryable while replacement work is reviewed.
 - The system records why a source is blocked, what replacement/fallback is expected, and which apply gate prevented mutation.
 - Replacement candidates are first previewed, then evaluated for coverage/readiness before any activation path is allowed.
+- Replacement recovery is verified as an end-to-end operating flow in `docs/RAG_REPLACEMENT_RECOVERY_REPORT.md`.

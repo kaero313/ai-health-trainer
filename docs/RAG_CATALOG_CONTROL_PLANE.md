@@ -282,3 +282,5 @@ docker compose exec backend python -m app.cli.rag catalog-replace-source \
 ```
 
 The gate validates evaluation status, recommendation, catalog key, replacement URL, and linked candidate preview status before writing catalog JSON. Activation records the evaluation id, candidate id, readiness score, and coverage score on the catalog source. RAG source rows, chunks, embeddings, and OpenSearch are still updated only by the later catalog plan/review/apply flow.
+
+The end-to-end recovery evidence is summarized in `docs/RAG_REPLACEMENT_RECOVERY_REPORT.md`.

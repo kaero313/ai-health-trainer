@@ -1045,3 +1045,14 @@ docker compose exec backend python -m app.cli.rag catalog-replace-source \
 ```
 
 Activation changes only the catalog source URL and records evaluation/candidate metadata. The actual RAG corpus is updated later through `catalog-plan`, `catalog-review`, and `catalog-apply`.
+
+### Replacement Recovery Verification
+
+The end-to-end recovery evidence is maintained in `docs/RAG_REPLACEMENT_RECOVERY_REPORT.md`.
+
+The report records:
+
+- rejected candidate behavior when a reachable official URL does not cover the original source intent.
+- deterministic ready candidate and activation gate evidence from backend tests.
+- no-mutation boundaries for preview, evaluation, activation, and catalog apply.
+- the command chain operators should use before applying a recovered source to the RAG corpus.
