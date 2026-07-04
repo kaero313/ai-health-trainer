@@ -1,34 +1,40 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  // Background
-  static const Color background = Color(0xFF0D1B2A);
-  static const Color surface = Color(0xFF1B2838);
-  static const Color surfaceLight = Color(0xFF243447);
+  static const Color background = Color(0xFF050505);
+  static const Color surface = Color(0xFF131313);
+  static const Color surfaceLow = Color(0xFF1C1B1B);
+  static const Color surfaceHigh = Color(0xFF2A2A2A);
+  static const Color surfaceHighest = Color(0xFF353534);
+  static const Color surfaceLight = Color(0xFF201F1F);
 
-  // Brand
-  static const Color primary = Color(0xFF00E676);
-  static const Color primaryDark = Color(0xFF00C853);
-  static const Color primarySoft = Color(0x3300E676);
+  static const Color primary = Color(0xFF00F0FF);
+  static const Color primaryDark = Color(0xFF00DBE9);
+  static const Color primarySoft = Color(0x3300F0FF);
+  static const Color primaryPale = Color(0xFFDBFCFF);
 
-  // Nutrition
-  static const Color calories = Color(0xFFFF6B6B);
-  static const Color protein = Color(0xFF4ECDC4);
-  static const Color carbs = Color(0xFFFFD93D);
-  static const Color fat = Color(0xFFFF8A65);
+  static const Color secondary = Color(0xFFC3F400);
+  static const Color secondaryDark = Color(0xFFABD600);
+  static const Color secondarySoft = Color(0x33C3F400);
 
-  // Text
-  static const Color textPrimary = Color(0xFFF0F0F0);
-  static const Color textSecondary = Color(0xFF8899AA);
-  static const Color textDisabled = Color(0xFF556677);
+  static const Color tertiary = Color(0xFFFF5C00);
+  static const Color tertiarySoft = Color(0x33FF5C00);
 
-  // Status
-  static const Color success = Color(0xFF00E676);
-  static const Color warning = Color(0xFFFFD93D);
-  static const Color error = Color(0xFFFF5252);
-  static const Color info = Color(0xFF448AFF);
+  static const Color textPrimary = Color(0xFFE5E2E1);
+  static const Color textSecondary = Color(0xFFB9CACB);
+  static const Color textDisabled = Color(0xFF849495);
 
-  // Others
-  static const Color divider = Color(0xFF2A3A4A);
-  static const Color shimmer = Color(0xFF2A3A4A);
+  static const Color success = secondary;
+  static const Color warning = Color(0xFFFFCFBE);
+  static const Color error = Color(0xFFFFB4AB);
+  static const Color info = primary;
+
+  static const Color divider = Color(0xFF3B494B);
+  static const Color outline = Color(0xFF849495);
+  static const Color shimmer = Color(0xFF252525);
+
+  static const Color calories = primary;
+  static const Color protein = primary;
+  static const Color carbs = secondary;
+  static const Color fat = tertiary;
 }
