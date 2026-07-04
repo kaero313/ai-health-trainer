@@ -62,7 +62,9 @@ final routerProvider = Provider<GoRouter>((ref) {
 
           // 인증됨 + 프로필 체크
           if (isAuthenticated && !isAuthRoute) {
-            final AsyncValue<bool> profileAsync = ref.read(profileCheckProvider);
+            final AsyncValue<bool> profileAsync = ref.read(
+              profileCheckProvider,
+            );
             return profileAsync.when(
               loading: () => null,
               error: (_, __) => null,
@@ -94,10 +96,17 @@ final routerProvider = Provider<GoRouter>((ref) {
             (context, state, child) =>
                 MainShell(currentLocation: state.uri.path, child: child),
         routes: [
-          GoRoute(path: '/dashboard', builder: (c, s) => const DashboardScreen()),
+          GoRoute(
+            path: '/dashboard',
+            builder: (c, s) => const DashboardScreen(),
+          ),
           GoRoute(path: '/diet', builder: (c, s) => const DietScreen()),
           GoRoute(path: '/exercise', builder: (c, s) => const ExerciseScreen()),
           GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
+          GoRoute(
+            path: '/diet/analyze',
+            builder: (c, s) => const DietAnalyzeScreen(),
+          ),
         ],
       ),
       GoRoute(
@@ -106,14 +115,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             (c, s) => _buildTransitionPage(
               state: s,
               child: const MonthlyReportScreen(),
-            ),
-      ),
-      GoRoute(
-        path: '/diet/analyze',
-        pageBuilder:
-            (c, s) => _buildTransitionPage(
-              state: s,
-              child: const DietAnalyzeScreen(),
             ),
       ),
       GoRoute(

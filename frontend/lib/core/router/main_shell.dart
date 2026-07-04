@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
 
 class MainShell extends StatelessWidget {
   final Widget child;
@@ -15,16 +16,16 @@ class MainShell extends StatelessWidget {
   });
 
   int _selectedIndex() {
-    if (currentLocation.startsWith('/dashboard')) {
-      return 0;
-    }
-    if (currentLocation.startsWith('/diet')) {
+    if (currentLocation.startsWith('/profile')) {
       return 1;
     }
     if (currentLocation.startsWith('/exercise')) {
       return 2;
     }
-    if (currentLocation.startsWith('/profile')) {
+    if (currentLocation.startsWith('/diet/analyze')) {
+      return 4;
+    }
+    if (currentLocation.startsWith('/diet')) {
       return 3;
     }
     return 0;
@@ -36,16 +37,16 @@ class MainShell extends StatelessWidget {
         context.go('/dashboard');
         return;
       case 1:
-        context.go('/diet');
+        context.go('/profile');
         return;
       case 2:
         context.go('/exercise');
         return;
       case 3:
-        context.go('/profile');
+        context.go('/diet');
         return;
-      default:
-        context.go('/dashboard');
+      case 4:
+        context.go('/diet/analyze');
         return;
     }
   }
@@ -53,57 +54,66 @@ class MainShell extends StatelessWidget {
   void _showQuickActionSheet(BuildContext outerContext) {
     showModalBottomSheet<void>(
       context: outerContext,
-      backgroundColor: AppColors.surface,
+      backgroundColor: AppColors.surfaceLow,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: (BuildContext sheetContext) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _QuickActionTile(
-                icon: Icons.restaurant,
-                title: '🍽 식단 추가',
-                onTap:
-                    () => _closeSheetThenPush(
-                      sheetContext: sheetContext,
-                      outerContext: outerContext,
-                      route: '/diet/add',
-                    ),
-              ),
-              _QuickActionTile(
-                icon: Icons.photo_camera,
-                title: '📷 사진 분석',
-                onTap:
-                    () => _closeSheetThenPush(
-                      sheetContext: sheetContext,
-                      outerContext: outerContext,
-                      route: '/diet/analyze',
-                    ),
-              ),
-              _QuickActionTile(
-                icon: Icons.fitness_center,
-                title: '💪 운동 추가',
-                onTap:
-                    () => _closeSheetThenPush(
-                      sheetContext: sheetContext,
-                      outerContext: outerContext,
-                      route: '/exercise/add',
-                    ),
-              ),
-              _QuickActionTile(
-                icon: Icons.smart_toy,
-                title: '🤖 AI 코칭',
-                onTap:
-                    () => _closeSheetThenPush(
-                      sheetContext: sheetContext,
-                      outerContext: outerContext,
-                      route: '/ai/chat',
-                    ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('빠른 실행', style: AppTypography.h3),
+                const SizedBox(height: AppSpacing.sm),
+                _QuickActionTile(
+                  icon: Icons.restaurant_menu,
+                  title: '식단 기록 추가',
+                  subtitle: '오늘 먹은 음식을 직접 입력합니다.',
+                  onTap:
+                      () => _closeSheetThenPush(
+                        sheetContext: sheetContext,
+                        outerContext: outerContext,
+                        route: '/diet/add',
+                      ),
+                ),
+                _QuickActionTile(
+                  icon: Icons.add_a_photo_outlined,
+                  title: '사진으로 식단 분석',
+                  subtitle: '음식 사진을 AI로 분석합니다.',
+                  onTap:
+                      () => _closeSheetThenPush(
+                        sheetContext: sheetContext,
+                        outerContext: outerContext,
+                        route: '/diet/analyze',
+                      ),
+                ),
+                _QuickActionTile(
+                  icon: Icons.fitness_center,
+                  title: '운동 기록 추가',
+                  subtitle: '세트, 반복, 중량을 기록합니다.',
+                  onTap:
+                      () => _closeSheetThenPush(
+                        sheetContext: sheetContext,
+                        outerContext: outerContext,
+                        route: '/exercise/add',
+                      ),
+                ),
+                _QuickActionTile(
+                  icon: Icons.psychology_alt_outlined,
+                  title: 'AI 코치에게 질문',
+                  subtitle: '식단과 운동 맥락으로 답변을 받습니다.',
+                  onTap:
+                      () => _closeSheetThenPush(
+                        sheetContext: sheetContext,
+                        outerContext: outerContext,
+                        route: '/ai/chat',
+                      ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -129,49 +139,82 @@ class MainShell extends StatelessWidget {
     final int selectedIndex = _selectedIndex();
 
     return Scaffold(
+      extendBody: true,
+      backgroundColor: AppColors.background,
       body: child,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      floatingActionButton: FloatingActionButton(
-        shape: const CircleBorder(),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.background,
-        onPressed: () => _showQuickActionSheet(context),
-        child: const Icon(Icons.add),
+      floatingActionButton: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.28),
+              blurRadius: 28,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: FloatingActionButton(
+          shape: const CircleBorder(),
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.background,
+          elevation: 0,
+          onPressed: () => _showQuickActionSheet(context),
+          child: const Icon(Icons.add, size: 24),
+        ),
       ),
-      bottomNavigationBar: BottomAppBar(
-        color: AppColors.surface,
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 6,
-        child: SizedBox(
-          height: 68,
-          child: Row(
-            children: [
-              _NavItem(
-                label: '대시보드',
-                icon: Icons.home,
-                active: selectedIndex == 0,
-                onTap: () => _onTabTap(context, 0),
-              ),
-              _NavItem(
-                label: '식단',
-                icon: Icons.restaurant,
-                active: selectedIndex == 1,
-                onTap: () => _onTabTap(context, 1),
-              ),
-              const SizedBox(width: 56),
-              _NavItem(
-                label: '운동',
-                icon: Icons.fitness_center,
-                active: selectedIndex == 2,
-                onTap: () => _onTabTap(context, 2),
-              ),
-              _NavItem(
-                label: '프로필',
-                icon: Icons.person,
-                active: selectedIndex == 3,
-                onTap: () => _onTabTap(context, 3),
-              ),
-            ],
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+          child: Container(
+            height: 72,
+            decoration: BoxDecoration(
+              color: AppColors.surface.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(AppRadius.xl),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  blurRadius: 26,
+                  offset: const Offset(0, -8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                _NavItem(
+                  label: '홈',
+                  icon: Icons.grid_view_rounded,
+                  active: selectedIndex == 0,
+                  onTap: () => _onTabTap(context, 0),
+                ),
+                _NavItem(
+                  label: '통계',
+                  icon: Icons.monitor_heart_outlined,
+                  active: selectedIndex == 1,
+                  onTap: () => _onTabTap(context, 1),
+                ),
+                _NavItem(
+                  label: '플랜',
+                  icon: Icons.fitness_center,
+                  active: selectedIndex == 2,
+                  onTap: () => _onTabTap(context, 2),
+                ),
+                _NavItem(
+                  label: '식단',
+                  icon: Icons.restaurant,
+                  active: selectedIndex == 3,
+                  onTap: () => _onTabTap(context, 3),
+                ),
+                _NavItem(
+                  label: '스캔',
+                  icon: Icons.center_focus_strong,
+                  active: selectedIndex == 4,
+                  onTap: () => _onTabTap(context, 4),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -182,25 +225,32 @@ class MainShell extends StatelessWidget {
 class _QuickActionTile extends StatelessWidget {
   final IconData icon;
   final String title;
+  final String subtitle;
   final VoidCallback onTap;
 
   const _QuickActionTile({
     required this.icon,
     required this.title,
+    required this.subtitle,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: AppColors.primary),
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: AppColors.primarySoft,
+          borderRadius: BorderRadius.circular(AppRadius.md),
         ),
+        child: Icon(icon, color: AppColors.primary, size: 20),
+      ),
+      title: Text(title, style: AppTypography.body1),
+      subtitle: Text(
+        subtitle,
+        style: AppTypography.caption.copyWith(color: AppColors.textDisabled),
       ),
       onTap: onTap,
     );
@@ -226,18 +276,30 @@ class _NavItem extends StatelessWidget {
 
     return Expanded(
       child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         onTap: onTap,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 2),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: active ? 42 : 28,
+              height: 30,
+              decoration: BoxDecoration(
+                color: active ? AppColors.primarySoft : Colors.transparent,
+                borderRadius: BorderRadius.circular(AppRadius.full),
+              ),
+              child: Icon(icon, color: color, size: 19),
+            ),
+            const SizedBox(height: 3),
             Text(
               label,
-              style: TextStyle(
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.caption.copyWith(
                 color: color,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ],
