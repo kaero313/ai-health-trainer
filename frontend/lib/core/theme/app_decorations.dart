@@ -3,28 +3,65 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 import 'app_spacing.dart';
 
-final BoxDecoration cardDecoration = BoxDecoration(
-  color: AppColors.surface,
-  borderRadius: BorderRadius.circular(AppRadius.md),
-  border: Border.all(color: AppColors.divider, width: 0.5),
+BoxDecoration cardDecoration = BoxDecoration(
+  color: AppColors.surfaceLow.withValues(alpha: 0.86),
+  borderRadius: BorderRadius.circular(AppRadius.lg),
+  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+  gradient: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Colors.white.withValues(alpha: 0.045),
+      Colors.white.withValues(alpha: 0.005),
+    ],
+  ),
 );
 
-final BoxDecoration glassCardDecoration = BoxDecoration(
-  color: AppColors.surface.withValues(alpha: 0.7),
-  borderRadius: BorderRadius.circular(AppRadius.lg),
-  border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+BoxDecoration glassCardDecoration = BoxDecoration(
+  color: AppColors.surfaceLow.withValues(alpha: 0.72),
+  borderRadius: BorderRadius.circular(AppRadius.xl),
+  border: Border.all(color: AppColors.primary.withValues(alpha: 0.22)),
   boxShadow: [
     BoxShadow(
-      color: AppColors.primary.withValues(alpha: 0.05),
-      blurRadius: 20,
-      offset: const Offset(0, 4),
+      color: AppColors.primary.withValues(alpha: 0.08),
+      blurRadius: 32,
+      offset: const Offset(0, 14),
+    ),
+  ],
+  gradient: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Colors.white.withValues(alpha: 0.055),
+      Colors.white.withValues(alpha: 0.008),
+    ],
+  ),
+);
+
+BoxDecoration primaryButtonDecoration = BoxDecoration(
+  color: AppColors.primary,
+  borderRadius: BorderRadius.circular(AppRadius.lg),
+  boxShadow: [
+    BoxShadow(
+      color: AppColors.primary.withValues(alpha: 0.24),
+      blurRadius: 24,
+      offset: const Offset(0, 10),
     ),
   ],
 );
 
-final BoxDecoration primaryButtonDecoration = BoxDecoration(
-  gradient: const LinearGradient(
-    colors: [AppColors.primary, AppColors.primaryDark],
-  ),
-  borderRadius: BorderRadius.circular(AppRadius.md),
+BoxDecoration outlineButtonDecoration = BoxDecoration(
+  color: Colors.transparent,
+  borderRadius: BorderRadius.circular(AppRadius.lg),
+  border: Border.all(color: AppColors.primary.withValues(alpha: 0.45)),
 );
+
+BoxDecoration chipDecoration({bool selected = false, Color? color}) {
+  final Color resolved = color ?? AppColors.primary;
+  return BoxDecoration(
+    color:
+        selected ? resolved : AppColors.surfaceHighest.withValues(alpha: 0.72),
+    borderRadius: BorderRadius.circular(AppRadius.full),
+    border: Border.all(color: resolved.withValues(alpha: selected ? 1 : 0.45)),
+  );
+}
