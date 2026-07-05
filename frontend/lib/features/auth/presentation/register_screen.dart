@@ -19,7 +19,8 @@ class RegisterScreen extends ConsumerStatefulWidget {
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _passwordConfirmController = TextEditingController();
+  final TextEditingController _passwordConfirmController =
+      TextEditingController();
 
   bool _obscurePassword = true;
   bool _obscurePasswordConfirm = true;
@@ -85,12 +86,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       _submitError = null;
     });
 
-    if (emailError != null || passwordError != null || passwordConfirmError != null) {
+    if (emailError != null ||
+        passwordError != null ||
+        passwordConfirmError != null) {
       return;
     }
 
     try {
-      await ref.read(authControllerProvider.notifier).register(
+      await ref
+          .read(authControllerProvider.notifier)
+          .register(
             _emailController.text.trim(),
             _passwordController.text,
             _passwordConfirmController.text,
@@ -185,7 +190,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       _emailError!,
-                      style: AppTypography.caption.copyWith(color: AppColors.error),
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.error,
+                      ),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.md),
@@ -211,7 +218,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           });
                         },
                         icon: Icon(
-                          _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                          _obscurePassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
                           color: AppColors.textSecondary,
                         ),
                       ),
@@ -221,7 +230,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       _passwordError!,
-                      style: AppTypography.caption.copyWith(color: AppColors.error),
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.error,
+                      ),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.md),
@@ -244,7 +255,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           });
                         },
                         icon: Icon(
-                          _obscurePasswordConfirm ? Icons.visibility_off : Icons.visibility,
+                          _obscurePasswordConfirm
+                              ? Icons.visibility_off
+                              : Icons.visibility,
                           color: AppColors.textSecondary,
                         ),
                       ),
@@ -254,14 +267,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       _passwordConfirmError!,
-                      style: AppTypography.caption.copyWith(color: AppColors.error),
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.error,
+                      ),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.lg),
                   if (_submitError != null) ...[
                     Text(
                       _submitError!,
-                      style: AppTypography.body2.copyWith(color: AppColors.error),
+                      style: AppTypography.body2.copyWith(
+                        color: AppColors.error,
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                   ],
@@ -277,22 +294,23 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             borderRadius: BorderRadius.circular(AppRadius.md),
                             onTap: isLoading ? null : _submit,
                             child: Center(
-                              child: isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: AppColors.background,
+                              child:
+                                  isLoading
+                                      ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: AppColors.background,
+                                        ),
+                                      )
+                                      : Text(
+                                        '가입하기',
+                                        style: AppTypography.body1.copyWith(
+                                          color: AppColors.background,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
-                                    )
-                                  : Text(
-                                      '가입하기',
-                                      style: AppTypography.body1.copyWith(
-                                        color: AppColors.background,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
                             ),
                           ),
                         ),

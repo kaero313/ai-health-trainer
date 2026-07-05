@@ -18,8 +18,12 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   // TODO: 배포 전 기본값 제거
-  final TextEditingController _emailController = TextEditingController(text: 'admin@admin.com');
-  final TextEditingController _passwordController = TextEditingController(text: 'Admin@12345678');
+  final TextEditingController _emailController = TextEditingController(
+    text: 'admin@admin.com',
+  );
+  final TextEditingController _passwordController = TextEditingController(
+    text: 'Admin@12345678',
+  );
 
   bool _obscurePassword = true;
   String? _emailError;
@@ -67,10 +71,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     try {
-      await ref.read(authControllerProvider.notifier).login(
-            _emailController.text.trim(),
-            _passwordController.text,
-          );
+      await ref
+          .read(authControllerProvider.notifier)
+          .login(_emailController.text.trim(), _passwordController.text);
       if (!mounted) {
         return;
       }
@@ -164,7 +167,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       _emailError!,
-                      style: AppTypography.caption.copyWith(color: AppColors.error),
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.error,
+                      ),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.md),
@@ -187,7 +192,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           });
                         },
                         icon: Icon(
-                          _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                          _obscurePassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
                           color: AppColors.textSecondary,
                         ),
                       ),
@@ -197,14 +204,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       _passwordError!,
-                      style: AppTypography.caption.copyWith(color: AppColors.error),
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.error,
+                      ),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.lg),
                   if (_submitError != null) ...[
                     Text(
                       _submitError!,
-                      style: AppTypography.body2.copyWith(color: AppColors.error),
+                      style: AppTypography.body2.copyWith(
+                        color: AppColors.error,
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                   ],
@@ -220,22 +231,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             borderRadius: BorderRadius.circular(AppRadius.md),
                             onTap: isLoading ? null : _submit,
                             child: Center(
-                              child: isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: AppColors.background,
+                              child:
+                                  isLoading
+                                      ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: AppColors.background,
+                                        ),
+                                      )
+                                      : Text(
+                                        '로그인',
+                                        style: AppTypography.body1.copyWith(
+                                          color: AppColors.background,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
-                                    )
-                                  : Text(
-                                      '로그인',
-                                      style: AppTypography.body1.copyWith(
-                                        color: AppColors.background,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
                             ),
                           ),
                         ),

@@ -19,18 +19,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   int _currentPage = 0;
 
   static const List<_OnboardingPageData> _pages = [
-    _OnboardingPageData(
-      icon: Icons.camera_alt,
-      title: '사진 한 장으로 영양 분석',
-    ),
-    _OnboardingPageData(
-      icon: Icons.fitness_center,
-      title: 'AI 기반 맞춤 운동 추천',
-    ),
-    _OnboardingPageData(
-      icon: Icons.trending_up,
-      title: '목표에 맞춘 코칭',
-    ),
+    _OnboardingPageData(icon: Icons.camera_alt, title: '사진 한 장으로 영양 분석'),
+    _OnboardingPageData(icon: Icons.fitness_center, title: 'AI 기반 맞춤 운동 추천'),
+    _OnboardingPageData(icon: Icons.trending_up, title: '목표에 맞춘 코칭'),
   ];
 
   @override
@@ -63,7 +54,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 onPressed: _completeOnboarding,
                 child: Text(
                   '건너뛰기',
-                  style: AppTypography.body2.copyWith(color: AppColors.textSecondary),
+                  style: AppTypography.body2.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
             ),
@@ -79,15 +72,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 itemBuilder: (BuildContext context, int index) {
                   final _OnboardingPageData page = _pages[index];
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          page.icon,
-                          size: 96,
-                          color: AppColors.primary,
-                        ),
+                        Icon(page.icon, size: 96, color: AppColors.primary),
                         const SizedBox(height: AppSpacing.xl),
                         Text(
                           page.title,
@@ -157,8 +148,5 @@ class _OnboardingPageData {
   final IconData icon;
   final String title;
 
-  const _OnboardingPageData({
-    required this.icon,
-    required this.title,
-  });
+  const _OnboardingPageData({required this.icon, required this.title});
 }
