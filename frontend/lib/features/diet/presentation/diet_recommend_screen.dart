@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_decorations.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/neo_widgets.dart';
 import '../data/diet_repository.dart';
 import '../domain/diet_controller.dart';
 
@@ -132,17 +133,26 @@ class _DietRecommendScreenState extends ConsumerState<DietRecommendScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('AI 식단 추천')),
       body: SafeArea(
-        child:
-            _isLoading
-                ? const _RecommendationLoadingView()
-                : _errorMessage != null
-                ? _RecommendationErrorView(
-                  message: _errorMessage!,
-                  onRetry: () => _loadRecommendation(refresh: true),
-                )
-                : _buildSuccessBody(),
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: NeoTopBar(title: 'AI 식단 추천', showBack: true),
+            ),
+            Expanded(
+              child:
+                  _isLoading
+                      ? const _RecommendationLoadingView()
+                      : _errorMessage != null
+                      ? _RecommendationErrorView(
+                        message: _errorMessage!,
+                        onRetry: () => _loadRecommendation(refresh: true),
+                      )
+                      : _buildSuccessBody(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -495,26 +505,15 @@ class _RecommendationErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              message,
-              style: AppTypography.body2.copyWith(color: AppColors.error),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextButton(
-              onPressed: onRetry,
-              child: Text(
-                '다시 시도',
-                style: AppTypography.body2.copyWith(color: AppColors.primary),
-              ),
-            ),
-          ],
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Center(
+        child: NeoStateCard(
+          icon: Icons.psychology_alt_outlined,
+          title: '추천을 불러오지 못했습니다',
+          message: _cleanRecommendationError(message),
+          actionLabel: '다시 시도',
+          onAction: onRetry,
         ),
       ),
     );
@@ -526,6 +525,15 @@ String _extractErrorMessage(Object error) {
     return error.message;
   }
   return error.toString();
+}
+
+String _cleanRecommendationError(String message) {
+  final String normalized =
+      message.replaceAll(r'\n', ' ').replaceAll('"', '').trim();
+  if (normalized.contains('recommendation')) {
+    return 'AI 응답 형식이 맞지 않아 추천을 표시하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  return normalized.isEmpty ? '요청 처리 중 오류가 발생했습니다.' : normalized;
 }
 
 double _toDouble(dynamic value) {
