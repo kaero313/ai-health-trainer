@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_decorations.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/neo_widgets.dart';
 import '../data/profile_repository.dart';
 import '../domain/profile_check_provider.dart';
 import '../domain/profile_controller.dart';
@@ -22,7 +23,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _allergyInputController = TextEditingController();
-  final TextEditingController _preferenceInputController = TextEditingController();
+  final TextEditingController _preferenceInputController =
+      TextEditingController();
 
   String _gender = 'male';
   String _goal = 'maintain';
@@ -57,9 +59,12 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     );
 
     final Object? error = profileAsync.asError?.error;
-    final bool isNotFound = error is ProfileRepositoryException && error.statusCode == 404;
-    final bool isInitialLoading = profileAsync.isLoading && !_initializedFromData;
-    final bool hasUnhandledError = error != null && !isNotFound && !_initializedFromData;
+    final bool isNotFound =
+        error is ProfileRepositoryException && error.statusCode == 404;
+    final bool isInitialLoading =
+        profileAsync.isLoading && !_initializedFromData;
+    final bool hasUnhandledError =
+        error != null && !isNotFound && !_initializedFromData;
 
     if (!_initializedFromData && profileAsync.hasValue) {
       _applyInitialValues(profileAsync.requireValue);
@@ -71,17 +76,27 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
     final bool isInitialSetupMode = _isInitialSetupMode;
     final String screenTitle = isInitialSetupMode ? '프로필 설정' : '프로필 수정';
-    final Widget? screenLeading = isInitialSetupMode ? const SizedBox.shrink() : null;
 
     if (isInitialLoading) {
       return Scaffold(
         backgroundColor: AppColors.background,
-        appBar: AppBar(
-          title: Text(screenTitle),
-          leading: screenLeading,
-        ),
-        body: const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: NeoTopBar(
+                  title: screenTitle,
+                  showBack: !isInitialSetupMode,
+                ),
+              ),
+              const Expanded(
+                child: Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -89,31 +104,31 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     if (hasUnhandledError) {
       return Scaffold(
         backgroundColor: AppColors.background,
-        appBar: AppBar(
-          title: Text(screenTitle),
-          leading: screenLeading,
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _extractErrorMessage(error),
-                  style: AppTypography.body2.copyWith(color: AppColors.error),
-                  textAlign: TextAlign.center,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: NeoTopBar(
+                  title: screenTitle,
+                  showBack: !isInitialSetupMode,
                 ),
-                const SizedBox(height: AppSpacing.md),
-                TextButton(
-                  onPressed: () => ref.invalidate(profileControllerProvider),
-                  child: Text(
-                    '다시 시도',
-                    style: AppTypography.body2.copyWith(color: AppColors.primary),
+              ),
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: NeoStateCard(
+                      icon: Icons.error_outline,
+                      title: '프로필을 불러오지 못했습니다',
+                      message: _extractErrorMessage(error),
+                      actionLabel: '다시 시도',
+                      onAction: () => ref.invalidate(profileControllerProvider),
+                    ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       );
@@ -121,141 +136,181 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(screenTitle),
-        leading: screenLeading,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (isInitialSetupMode) ...[
-              _buildInitialSetupNotice(),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-            _buildNumericField(
-              controller: _heightController,
-              hintText: '키 (cm)',
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              errorText: _heightError,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _buildNumericField(
-              controller: _weightController,
-              hintText: '몸무게 (kg)',
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              errorText: _weightError,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _buildNumericField(
-              controller: _ageController,
-              hintText: '나이',
-              keyboardType: TextInputType.number,
-              errorText: _ageError,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _buildDropdownField(
-              label: '성별',
-              value: _gender,
-              items: const <MapEntry<String, String>>[
-                MapEntry<String, String>('male', '남성'),
-                MapEntry<String, String>('female', '여성'),
-                MapEntry<String, String>('other', '기타'),
-              ],
-              onChanged: (String value) {
-                setState(() {
-                  _gender = value;
-                });
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _buildDropdownField(
-              label: '목표',
-              value: _goal,
-              items: const <MapEntry<String, String>>[
-                MapEntry<String, String>('bulk', '벌크업'),
-                MapEntry<String, String>('diet', '다이어트'),
-                MapEntry<String, String>('maintain', '유지'),
-              ],
-              onChanged: (String value) {
-                setState(() {
-                  _goal = value;
-                });
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _buildDropdownField(
-              label: '활동 수준',
-              value: _activityLevel,
-              items: const <MapEntry<String, String>>[
-                MapEntry<String, String>('sedentary', '비활동적'),
-                MapEntry<String, String>('light', '가벼운'),
-                MapEntry<String, String>('moderate', '보통 (주 3~5)'),
-                MapEntry<String, String>('active', '활발 (주 6~7)'),
-                MapEntry<String, String>('very_active', '매우 활발'),
-              ],
-              onChanged: (String value) {
-                setState(() {
-                  _activityLevel = value;
-                });
-              },
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            _buildTagEditor(
-              title: '알레르기',
-              inputController: _allergyInputController,
-              tags: _allergies,
-              onAdd: _addAllergy,
-              onRemove: _removeAllergy,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _buildTagEditor(
-              title: '선호 식품',
-              inputController: _preferenceInputController,
-              tags: _foodPreferences,
-              onAdd: _addPreference,
-              onRemove: _removePreference,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            if (_submitError != null) ...[
-              Text(
-                _submitError!,
-                style: AppTypography.body2.copyWith(color: AppColors.error),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: NeoTopBar(
+                title: screenTitle,
+                showBack: !isInitialSetupMode,
               ),
-              const SizedBox(height: AppSpacing.sm),
-            ],
-            Opacity(
-              opacity: _isSubmitting ? 0.7 : 1,
-              child: SizedBox(
-                height: 52,
-                child: DecoratedBox(
-                  decoration: primaryButtonDecoration,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      onTap: _isSubmitting ? null : _submit,
-                      child: Center(
-                        child: _isSubmitting
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.background,
-                                ),
-                              )
-                            : Text(
-                                '저장하기',
-                                style: AppTypography.body1.copyWith(
-                                  color: AppColors.background,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    NeoGlassCard(
+                      highlighted: true,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isInitialSetupMode
+                                ? 'Start Profile'
+                                : 'Profile Settings',
+                            style: AppTypography.h2,
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            'AI 코칭에 사용할 신체 정보와 목표를 관리합니다.',
+                            style: AppTypography.body2.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.lg),
+                    if (isInitialSetupMode) ...[
+                      _buildInitialSetupNotice(),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+                    _buildNumericField(
+                      controller: _heightController,
+                      hintText: '키 (cm)',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      errorText: _heightError,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _buildNumericField(
+                      controller: _weightController,
+                      hintText: '몸무게 (kg)',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      errorText: _weightError,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _buildNumericField(
+                      controller: _ageController,
+                      hintText: '나이',
+                      keyboardType: TextInputType.number,
+                      errorText: _ageError,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _buildDropdownField(
+                      label: '성별',
+                      value: _gender,
+                      items: const <MapEntry<String, String>>[
+                        MapEntry<String, String>('male', '남성'),
+                        MapEntry<String, String>('female', '여성'),
+                        MapEntry<String, String>('other', '기타'),
+                      ],
+                      onChanged: (String value) {
+                        setState(() {
+                          _gender = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _buildDropdownField(
+                      label: '목표',
+                      value: _goal,
+                      items: const <MapEntry<String, String>>[
+                        MapEntry<String, String>('bulk', '벌크업'),
+                        MapEntry<String, String>('diet', '다이어트'),
+                        MapEntry<String, String>('maintain', '유지'),
+                      ],
+                      onChanged: (String value) {
+                        setState(() {
+                          _goal = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _buildDropdownField(
+                      label: '활동 수준',
+                      value: _activityLevel,
+                      items: const <MapEntry<String, String>>[
+                        MapEntry<String, String>('sedentary', '비활동적'),
+                        MapEntry<String, String>('light', '가벼운'),
+                        MapEntry<String, String>('moderate', '보통 (주 3~5)'),
+                        MapEntry<String, String>('active', '활발 (주 6~7)'),
+                        MapEntry<String, String>('very_active', '매우 활발'),
+                      ],
+                      onChanged: (String value) {
+                        setState(() {
+                          _activityLevel = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    _buildTagEditor(
+                      title: '알레르기',
+                      inputController: _allergyInputController,
+                      tags: _allergies,
+                      onAdd: _addAllergy,
+                      onRemove: _removeAllergy,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _buildTagEditor(
+                      title: '선호 식품',
+                      inputController: _preferenceInputController,
+                      tags: _foodPreferences,
+                      onAdd: _addPreference,
+                      onRemove: _removePreference,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    if (_submitError != null) ...[
+                      Text(
+                        _submitError!,
+                        style: AppTypography.body2.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
+                    Opacity(
+                      opacity: _isSubmitting ? 0.7 : 1,
+                      child: SizedBox(
+                        height: 52,
+                        child: DecoratedBox(
+                          decoration: primaryButtonDecoration,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(AppRadius.md),
+                              onTap: _isSubmitting ? null : _submit,
+                              child: Center(
+                                child:
+                                    _isSubmitting
+                                        ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppColors.background,
+                                          ),
+                                        )
+                                        : Text(
+                                          '저장하기',
+                                          style: AppTypography.body1.copyWith(
+                                            color: AppColors.background,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -344,14 +399,16 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
             dropdownColor: AppColors.surface,
             style: AppTypography.body1,
             iconEnabledColor: AppColors.textSecondary,
-            items: items
-                .map(
-                  (MapEntry<String, String> item) => DropdownMenuItem<String>(
-                    value: item.key,
-                    child: Text('$label: ${item.value}'),
-                  ),
-                )
-                .toList(),
+            items:
+                items
+                    .map(
+                      (MapEntry<String, String> item) =>
+                          DropdownMenuItem<String>(
+                            value: item.key,
+                            child: Text('$label: ${item.value}'),
+                          ),
+                    )
+                    .toList(),
             onChanged: (String? newValue) {
               if (newValue != null) {
                 onChanged(newValue);
@@ -400,32 +457,35 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
             if (tags.isEmpty)
               Text(
                 '없음',
-                style: AppTypography.body2.copyWith(color: AppColors.textSecondary),
+                style: AppTypography.body2.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               )
             else
               Wrap(
                 spacing: AppSpacing.xs,
                 runSpacing: AppSpacing.xs,
-                children: tags
-                    .map(
-                      (String tag) => Chip(
-                        backgroundColor: AppColors.surfaceLight,
-                        side: BorderSide.none,
-                        label: Text(
-                          tag,
-                          style: AppTypography.caption.copyWith(
-                            color: AppColors.textPrimary,
+                children:
+                    tags
+                        .map(
+                          (String tag) => Chip(
+                            backgroundColor: AppColors.surfaceLight,
+                            side: BorderSide.none,
+                            label: Text(
+                              tag,
+                              style: AppTypography.caption.copyWith(
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            deleteIcon: const Icon(
+                              Icons.close,
+                              size: 16,
+                              color: AppColors.textSecondary,
+                            ),
+                            onDeleted: () => onRemove(tag),
                           ),
-                        ),
-                        deleteIcon: const Icon(
-                          Icons.close,
-                          size: 16,
-                          color: AppColors.textSecondary,
-                        ),
-                        onDeleted: () => onRemove(tag),
-                      ),
-                    )
-                    .toList(),
+                        )
+                        .toList(),
               ),
           ],
         ),
@@ -459,28 +519,30 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     _weightController.text = (data['weight_kg'] ?? '').toString();
     _ageController.text = (data['age'] ?? '').toString();
 
-    _gender = _validatedOrDefault(
-      data['gender']?.toString(),
-      const <String>{'male', 'female', 'other'},
+    _gender = _validatedOrDefault(data['gender']?.toString(), const <String>{
       'male',
-    );
-    _goal = _validatedOrDefault(
-      data['goal']?.toString(),
-      const <String>{'bulk', 'diet', 'maintain'},
+      'female',
+      'other',
+    }, 'male');
+    _goal = _validatedOrDefault(data['goal']?.toString(), const <String>{
+      'bulk',
+      'diet',
       'maintain',
-    );
+    }, 'maintain');
     _activityLevel = _validatedOrDefault(
       data['activity_level']?.toString(),
       const <String>{'sedentary', 'light', 'moderate', 'active', 'very_active'},
       'moderate',
     );
 
-    _allergies = (data['allergies'] as List<dynamic>? ?? <dynamic>[])
-        .map((dynamic e) => e.toString())
-        .toList();
-    _foodPreferences = (data['food_preferences'] as List<dynamic>? ?? <dynamic>[])
-        .map((dynamic e) => e.toString())
-        .toList();
+    _allergies =
+        (data['allergies'] as List<dynamic>? ?? <dynamic>[])
+            .map((dynamic e) => e.toString())
+            .toList();
+    _foodPreferences =
+        (data['food_preferences'] as List<dynamic>? ?? <dynamic>[])
+            .map((dynamic e) => e.toString())
+            .toList();
 
     _isInitialSetupMode = false;
     _initializedFromData = true;
@@ -530,7 +592,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
   void _removePreference(String value) {
     setState(() {
-      _foodPreferences = _foodPreferences.where((String item) => item != value).toList();
+      _foodPreferences =
+          _foodPreferences.where((String item) => item != value).toList();
       _submitError = null;
     });
   }
@@ -573,9 +636,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('프로필이 저장되었습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('프로필이 저장되었습니다.')));
       if (wasInitialSetupMode) {
         context.go('/dashboard');
       } else {

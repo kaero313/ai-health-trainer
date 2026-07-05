@@ -30,7 +30,9 @@ class ProfileRepository {
     }
   }
 
-  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> payload) async {
+  Future<Map<String, dynamic>> updateProfile(
+    Map<String, dynamic> payload,
+  ) async {
     try {
       final Response<dynamic> response = await dio.put<dynamic>(
         '/profile',
@@ -47,7 +49,9 @@ class ProfileRepository {
 
   Future<bool> checkProfile() async {
     try {
-      final Response<dynamic> response = await dio.get<dynamic>('/profile/check');
+      final Response<dynamic> response = await dio.get<dynamic>(
+        '/profile/check',
+      );
       final dynamic data = response.data;
       if (data is Map<String, dynamic>) {
         return data['has_profile'] == true;
