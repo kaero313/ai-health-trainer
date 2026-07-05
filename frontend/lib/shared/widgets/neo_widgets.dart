@@ -229,6 +229,7 @@ class NeoStateCard extends StatelessWidget {
     return NeoGlassCard(
       highlighted: true,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: AppColors.primary, size: 28),
