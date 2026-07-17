@@ -38,12 +38,46 @@ async def test_create_diet_log_success(client, register_and_get_token, auth_head
     body = response.json()
     assert body["status"] == "success"
     assert body["data"]["meal_type"] == "lunch"
+    assert body["data"]["ai_analyzed"] is False
     assert len(body["data"]["items"]) == 2
     assert body["data"]["items"][0]["food_catalog_item_id"] is None
     assert body["data"]["items"][0]["serving_grams"] is None
     assert body["data"]["items"][0]["sugar_g"] is None
     assert body["data"]["items"][0]["saturated_fat_g"] is None
     assert body["data"]["items"][0]["unsaturated_fat_g"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_diet_log_preserves_ai_analysis_provenance(
+    client,
+    register_and_get_token,
+    auth_headers,
+):
+    access_token, _ = await register_and_get_token(client, "diet-ai-analysis@example.com")
+
+    response = await client.post(
+        "/api/v1/diet/logs",
+        json={
+            "log_date": "2026-07-15",
+            "meal_type": "breakfast",
+            "ai_analyzed": True,
+            "items": [
+                {
+                    "food_name": "연어",
+                    "serving_size": "100g",
+                    "calories": 208,
+                    "protein_g": 20,
+                    "carbs_g": 0,
+                    "fat_g": 13,
+                    "confidence": 0.95,
+                }
+            ],
+        },
+        headers=auth_headers(access_token),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["ai_analyzed"] is True
 
 
 @pytest.mark.asyncio

@@ -25,6 +25,7 @@ class DietLogCreate(BaseModel):
     log_date: date
     meal_type: MealTypeEnum
     image_url: str | None = Field(None, max_length=500)
+    ai_analyzed: bool = False
     items: list[DietLogItemCreate] = Field(..., min_length=1)
 
 

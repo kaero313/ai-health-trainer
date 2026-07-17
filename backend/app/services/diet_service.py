@@ -37,6 +37,7 @@ class DietService:
             log_date=payload.log_date,
             meal_type=payload.meal_type,
             image_url=payload.image_url,
+            ai_analyzed=payload.ai_analyzed,
         )
         log.diet_log_items = self._build_diet_items(payload.items)
         self.db.add(log)
