@@ -1,13 +1,18 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/network/api_error.dart';
+import '../../../core/network/auth_interceptor.dart';
 
 class DietRepositoryException implements Exception {
   final String message;
   final int? statusCode;
+  final String? code;
 
-  const DietRepositoryException(this.message, {this.statusCode});
+  const DietRepositoryException(this.message, {this.statusCode, this.code});
 
   @override
   String toString() => message;
@@ -18,16 +23,27 @@ class DietRepository {
 
   DietRepository({required this.dio});
 
-  Future<Map<String, dynamic>> analyzeImage(String imagePath) async {
+  Future<Map<String, dynamic>> analyzeImage({
+    required Uint8List bytes,
+    required String filename,
+    required String contentType,
+  }) async {
     try {
-      final String fileName = imagePath.split(RegExp(r'[\\/]')).last;
-      final FormData formData = FormData.fromMap(<String, dynamic>{
-        'image': await MultipartFile.fromFile(imagePath, filename: fileName),
+      FormData createFormData() => FormData.fromMap(<String, dynamic>{
+        'image': MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+          contentType: DioMediaType.parse(contentType),
+        ),
       });
 
       final Response<dynamic> response = await dio.post<dynamic>(
         '/diet/analyze-image',
-        data: formData,
+        data: createFormData(),
+        options: Options(
+          receiveTimeout: kAiReceiveTimeout,
+          extra: <String, dynamic>{kRetryDataFactoryExtra: createFormData},
+        ),
       );
 
       final dynamic rawResponse = response.data;
@@ -45,9 +61,14 @@ class DietRepository {
 
       return rawData;
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: '이미지 분석 요청 중 오류가 발생했습니다.',
+      );
       throw DietRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -74,9 +95,14 @@ class DietRepository {
       }
       return rawData;
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: '식단 저장 요청 중 오류가 발생했습니다.',
+      );
       throw DietRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -106,9 +132,14 @@ class DietRepository {
       }
       return rawData.whereType<Map<String, dynamic>>().toList();
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: '음식 검색 요청 중 오류가 발생했습니다.',
+      );
       throw DietRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -121,9 +152,14 @@ class DietRepository {
       );
       return _parseDietLogsResponse(response.data);
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: '식단 조회 요청 중 오류가 발생했습니다.',
+      );
       throw DietRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -138,6 +174,7 @@ class DietRepository {
       final Response<dynamic> response = await dio.get<dynamic>(
         '/diet/recommend',
         queryParameters: queryParameters.isEmpty ? null : queryParameters,
+        options: Options(receiveTimeout: kAiReceiveTimeout),
       );
 
       final dynamic rawResponse = response.data;
@@ -154,9 +191,14 @@ class DietRepository {
       }
       return rawData;
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: 'AI 식단 추천 요청 중 오류가 발생했습니다.',
+      );
       throw DietRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -174,9 +216,14 @@ class DietRepository {
         throw const DietRepositoryException('식단 삭제에 실패했습니다.');
       }
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: '식단 삭제 요청 중 오류가 발생했습니다.',
+      );
       throw DietRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -196,40 +243,6 @@ class DietRepository {
     }
 
     return rawData;
-  }
-
-  String _extractDioErrorMessage(DioException e) {
-    final dynamic body = e.response?.data;
-    if (body is Map<String, dynamic>) {
-      final dynamic detail = body['detail'];
-      if (detail is String && detail.isNotEmpty) {
-        return detail;
-      }
-      if (detail is Map<String, dynamic>) {
-        final dynamic detailMessage = detail['message'];
-        if (detailMessage is String && detailMessage.isNotEmpty) {
-          return detailMessage;
-        }
-      }
-
-      final dynamic error = body['error'];
-      if (error is Map<String, dynamic>) {
-        final dynamic errorMessage = error['message'];
-        if (errorMessage is String && errorMessage.isNotEmpty) {
-          return errorMessage;
-        }
-      }
-
-      final dynamic message = body['message'];
-      if (message is String && message.isNotEmpty) {
-        return message;
-      }
-    }
-
-    if (e.message != null && e.message!.isNotEmpty) {
-      return e.message!;
-    }
-    return '요청 처리 중 오류가 발생했습니다.';
   }
 }
 

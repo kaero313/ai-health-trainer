@@ -1,16 +1,16 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shimmer/shimmer.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_decorations.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/neo_widgets.dart';
+import '../data/diet_image_picker.dart';
 import '../data/diet_repository.dart';
 import '../domain/diet_controller.dart';
 
@@ -29,133 +29,86 @@ class DietAnalyzeScreen extends ConsumerStatefulWidget {
 }
 
 class _DietAnalyzeScreenState extends ConsumerState<DietAnalyzeScreen> {
-  final ImagePicker _picker = ImagePicker();
-
-  XFile? _selectedImage;
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageName;
   List<Map<String, dynamic>> _foods = <Map<String, dynamic>>[];
   Set<int> _selectedIndexes = <int>{};
   String _mealType = 'breakfast';
   bool _isAnalyzing = false;
   bool _isSaving = false;
-  bool _hasAnalyzed = false;
   String? _errorMessage;
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startAnalyzeFlow();
-    });
-  }
-
-  Future<void> _startAnalyzeFlow() async {
-    final ImageSource? source = await _showSourceSheet();
-    if (source == null) {
-      if (mounted) {
-        context.pop();
-      }
-      return;
-    }
-    await _pickAndAnalyze(source);
-  }
-
-  Future<ImageSource?> _showSourceSheet() async {
-    return showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('이미지 선택', style: AppTypography.h3),
-                const SizedBox(height: AppSpacing.sm),
-                ListTile(
-                  leading: const Icon(
-                    Icons.camera_alt,
-                    color: AppColors.primary,
-                  ),
-                  title: Text('카메라', style: AppTypography.body1),
-                  onTap: () => Navigator.of(context).pop(ImageSource.camera),
-                ),
-                ListTile(
-                  leading: const Icon(
-                    Icons.photo_library,
-                    color: AppColors.primary,
-                  ),
-                  title: Text('갤러리', style: AppTypography.body1),
-                  onTap: () => Navigator.of(context).pop(ImageSource.gallery),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _pickAndAnalyze(ImageSource source) async {
-    final XFile? image = await _picker.pickImage(source: source);
-    if (image == null) {
-      if (mounted) {
-        context.pop();
-      }
-      return;
-    }
-
-    setState(() {
-      _selectedImage = image;
-      _isAnalyzing = true;
-      _errorMessage = null;
-      _hasAnalyzed = false;
-    });
-
     try {
+      final XFile? image = await ref
+          .read(dietImagePickerProvider)
+          .pickImage(source);
+      if (image == null) {
+        return;
+      }
+      final Uint8List bytes = await image.readAsBytes();
+      if (bytes.isEmpty) {
+        throw const DietRepositoryException('선택한 이미지가 비어 있습니다.');
+      }
+      final String contentType = _resolveImageContentType(
+        filename: image.name,
+        pickerMimeType: image.mimeType,
+      );
+      final String filename = _normalizedFilename(
+        image.name,
+        source,
+        contentType,
+      );
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _selectedImageBytes = bytes;
+        _selectedImageName = filename;
+        _isAnalyzing = true;
+        _errorMessage = null;
+        _foods = <Map<String, dynamic>>[];
+        _selectedIndexes = <int>{};
+      });
+
       final Map<String, dynamic> result = await ref
           .read(dietRepositoryProvider)
-          .analyzeImage(image.path);
-
+          .analyzeImage(
+            bytes: bytes,
+            filename: filename,
+            contentType: contentType,
+          );
       final List<Map<String, dynamic>> foods =
           (result['foods'] as List<dynamic>? ?? <dynamic>[])
               .whereType<Map<String, dynamic>>()
               .toList();
 
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _foods = foods;
         _selectedIndexes = Set<int>.from(
           List<int>.generate(foods.length, (int index) => index),
         );
-        _hasAnalyzed = true;
         _isAnalyzing = false;
       });
-    } catch (e) {
-      setState(() {
-        _errorMessage = _extractErrorMessage(e);
-        _isAnalyzing = false;
-      });
-    }
-  }
-
-  Future<void> _retake() async {
-    final ImageSource? source = await _showSourceSheet();
-    if (source == null) {
-      if (mounted) {
-        context.pop();
+    } catch (error) {
+      if (!mounted) {
+        return;
       }
-      return;
+      setState(() {
+        _errorMessage = _extractErrorMessage(error);
+        _isAnalyzing = false;
+      });
     }
-    await _pickAndAnalyze(source);
   }
 
   Future<void> _saveSelectedFoods() async {
     if (_selectedIndexes.isEmpty) {
       setState(() {
-        _errorMessage = '저장할 음식을 하나 이상 선택해주세요.';
+        _errorMessage = '저장할 음식을 하나 이상 선택해 주세요.';
       });
       return;
     }
@@ -187,6 +140,7 @@ class _DietAnalyzeScreenState extends ConsumerState<DietAnalyzeScreen> {
       'log_date': DateFormat('yyyy-MM-dd').format(targetDate),
       'meal_type': _mealType,
       'image_url': null,
+      'ai_analyzed': true,
       'items': selectedFoods,
     };
 
@@ -196,10 +150,10 @@ class _DietAnalyzeScreenState extends ConsumerState<DietAnalyzeScreen> {
       if (!mounted) {
         return;
       }
-      context.pop(true);
-    } catch (e) {
+      context.go('/diet');
+    } catch (error) {
       setState(() {
-        _errorMessage = _extractErrorMessage(e);
+        _errorMessage = _extractErrorMessage(error);
       });
     } finally {
       if (mounted) {
@@ -212,291 +166,326 @@ class _DietAnalyzeScreenState extends ConsumerState<DietAnalyzeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('음식 사진 분석')),
-      body: SafeArea(child: _buildBody()),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isAnalyzing) {
-      return const _AnalyzeLoadingView();
-    }
-
-    if (_selectedImage == null) {
-      return Center(child: Text('이미지를 불러오는 중...', style: AppTypography.body2));
-    }
-
-    if (_errorMessage != null && !_hasAnalyzed) {
-      return _AnalyzeErrorView(message: _errorMessage!, onRetry: _retake);
-    }
-
-    if (_hasAnalyzed && _foods.isEmpty) {
-      return _EmptyAnalyzeResult(
-        imagePath: _selectedImage!.path,
-        message: '인식된 음식이 없습니다. 다시 촬영해주세요.',
-        onRetake: _retake,
-      );
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            child: Image.file(
-              File(_selectedImage!.path),
-              height: 250,
-              fit: BoxFit.cover,
-            ),
-          ),
+    return NeoPage(
+      children: [
+        Text('AI 식단 스캔', style: AppTypography.h1),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          '사진으로 칼로리와 영양 정보를 분석합니다.',
+          style: AppTypography.body2.copyWith(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _ScanHero(
+          selectedImageBytes: _selectedImageBytes,
+          selectedImageName: _selectedImageName,
+          isAnalyzing: _isAnalyzing,
+          onCamera: () => _pickAndAnalyze(ImageSource.camera),
+          onGallery: () => _pickAndAnalyze(ImageSource.gallery),
+        ),
+        if (_errorMessage != null) ...[
           const SizedBox(height: AppSpacing.md),
-          for (int index = 0; index < _foods.length; index) ...[
-            _AnalyzedFoodCard(
-              food: _foods[index],
-              checked: _selectedIndexes.contains(index),
-              onChanged: (bool checked) {
-                setState(() {
-                  if (checked) {
-                    _selectedIndexes.add(index);
-                  } else {
-                    _selectedIndexes.remove(index);
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
-          _SelectedTotalCard(foods: _foods, selectedIndexes: _selectedIndexes),
-          const SizedBox(height: AppSpacing.md),
-          Text('식사시간', style: AppTypography.body2),
-          const SizedBox(height: AppSpacing.xs),
-          DropdownButtonFormField<String>(
-            value: _mealType,
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: AppColors.surfaceLight,
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                borderSide: const BorderSide(color: AppColors.divider),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                borderSide: const BorderSide(
-                  color: AppColors.primary,
-                  width: 1.2,
-                ),
-              ),
-            ),
-            dropdownColor: AppColors.surface,
-            style: AppTypography.body1,
-            items:
-                kDietMealTypeLabels.entries.map((MapEntry<String, String> e) {
-                  return DropdownMenuItem<String>(
-                    value: e.key,
-                    child: Text(e.value),
-                  );
-                }).toList(),
-            onChanged: (String? value) {
-              if (value == null) {
-                return;
-              }
-              setState(() {
-                _mealType = value;
-              });
-            },
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (_errorMessage != null) ...[
-            Text(
-              _errorMessage!,
-              style: AppTypography.body2.copyWith(color: AppColors.error),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
-          Opacity(
-            opacity: _isSaving ? 0.7 : 1,
-            child: SizedBox(
-              height: 52,
-              child: DecoratedBox(
-                decoration: primaryButtonDecoration,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    onTap: _isSaving ? null : _saveSelectedFoods,
-                    child: Center(
-                      child:
-                          _isSaving
-                              ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.background,
-                                ),
-                              )
-                              : Text(
-                                '식단에 추가하기',
-                                style: AppTypography.body1.copyWith(
-                                  color: AppColors.background,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          OutlinedButton(
-            onPressed: _retake,
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: AppColors.divider),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-              ),
-            ),
-            child: Text(
-              '다시 촬영',
-              style: AppTypography.body2.copyWith(color: AppColors.textPrimary),
-            ),
+          NeoStateCard(
+            icon: Icons.error_outline,
+            title: '분석 오류',
+            message: _errorMessage!,
           ),
         ],
-      ),
+        if (_selectedImageBytes != null && !_isAnalyzing) ...[
+          const SizedBox(height: AppSpacing.md),
+          _AnalyzeResult(
+            foods: _foods,
+            selectedIndexes: _selectedIndexes,
+            mealType: _mealType,
+            onMealTypeChanged: (String mealType) {
+              setState(() {
+                _mealType = mealType;
+              });
+            },
+            onFoodSelectionChanged: (int index, bool checked) {
+              setState(() {
+                if (checked) {
+                  _selectedIndexes.add(index);
+                } else {
+                  _selectedIndexes.remove(index);
+                }
+              });
+            },
+            onSave: _isSaving ? null : _saveSelectedFoods,
+            isSaving: _isSaving,
+          ),
+        ],
+      ],
     );
   }
 }
 
-class _AnalyzeLoadingView extends StatelessWidget {
-  const _AnalyzeLoadingView();
+class _ScanHero extends StatelessWidget {
+  final Uint8List? selectedImageBytes;
+  final String? selectedImageName;
+  final bool isAnalyzing;
+  final VoidCallback onCamera;
+  final VoidCallback onGallery;
 
-  @override
-  Widget build(BuildContext context) {
-    return Shimmer.fromColors(
-      baseColor: AppColors.surface,
-      highlightColor: AppColors.surfaceLight,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          children: [
-            Container(
-              height: 250,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            for (int i = 0; i < 3; i++) ...[
-              Container(
-                height: 120,
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AnalyzeErrorView extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _AnalyzeErrorView({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              message,
-              style: AppTypography.body2.copyWith(color: AppColors.error),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextButton(
-              onPressed: onRetry,
-              child: Text(
-                '다시 시도',
-                style: AppTypography.body2.copyWith(color: AppColors.primary),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyAnalyzeResult extends StatelessWidget {
-  final String imagePath;
-  final String message;
-  final VoidCallback onRetake;
-
-  const _EmptyAnalyzeResult({
-    required this.imagePath,
-    required this.message,
-    required this.onRetake,
+  const _ScanHero({
+    required this.selectedImageBytes,
+    required this.selectedImageName,
+    required this.isAnalyzing,
+    required this.onCamera,
+    required this.onGallery,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return NeoGlassCard(
+      highlighted: true,
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            child: Image.file(File(imagePath), height: 250, fit: BoxFit.cover),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            message,
-            style: AppTypography.body1,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          OutlinedButton(
-            onPressed: onRetake,
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: AppColors.divider),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadius.md),
+          if (selectedImageBytes == null)
+            Container(
+              height: 280,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadius.xl),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.24),
+                ),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.primary.withValues(alpha: 0.16),
+                    Colors.white.withValues(alpha: 0.02),
+                  ],
+                ),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.xl),
+                    child: Image.asset(
+                      'assets/stitch/nutrition_salmon.jpg',
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppRadius.xl),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          AppColors.background.withValues(alpha: 0.26),
+                          AppColors.background.withValues(alpha: 0.92),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.center_focus_strong,
+                            color: AppColors.primary,
+                            size: 48,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            '음식 사진을 선택하세요',
+                            style: AppTypography.h3,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            'JPG/PNG 형식을 지원합니다.',
+                            style: AppTypography.body2.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Semantics(
+              image: true,
+              label: selectedImageName ?? '선택한 음식 이미지',
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.xl),
+                child: Image.memory(
+                  selectedImageBytes!,
+                  height: 260,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (
+                    BuildContext context,
+                    Object _,
+                    StackTrace? __,
+                  ) {
+                    return const SizedBox(
+                      height: 260,
+                      child: Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: AppColors.error,
+                          size: 44,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
-            child: Text(
-              '다시 촬영',
-              style: AppTypography.body2.copyWith(color: AppColors.textPrimary),
+          if (selectedImageBytes != null && selectedImageName != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              selectedImageName!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: AppTypography.caption,
             ),
-          ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          if (isAnalyzing)
+            Column(
+              children: [
+                const LinearProgressIndicator(
+                  minHeight: 4,
+                  color: AppColors.primary,
+                  backgroundColor: AppColors.surfaceHigh,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  '음식과 영양 정보를 분석하고 있습니다.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.body2.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: NeoPrimaryButton(
+                    label: '카메라',
+                    icon: Icons.camera_alt_outlined,
+                    onPressed: onCamera,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: NeoOutlineButton(
+                    label: '갤러리',
+                    icon: Icons.photo_library_outlined,
+                    onPressed: onGallery,
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
   }
 }
 
-class _AnalyzedFoodCard extends StatelessWidget {
+class _AnalyzeResult extends StatelessWidget {
+  final List<Map<String, dynamic>> foods;
+  final Set<int> selectedIndexes;
+  final String mealType;
+  final ValueChanged<String> onMealTypeChanged;
+  final void Function(int index, bool checked) onFoodSelectionChanged;
+  final VoidCallback? onSave;
+  final bool isSaving;
+
+  const _AnalyzeResult({
+    required this.foods,
+    required this.selectedIndexes,
+    required this.mealType,
+    required this.onMealTypeChanged,
+    required this.onFoodSelectionChanged,
+    required this.onSave,
+    required this.isSaving,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (foods.isEmpty) {
+      return const NeoStateCard(
+        icon: Icons.search_off,
+        title: '인식된 음식이 없습니다',
+        message: '다른 각도에서 다시 촬영하거나 직접 식단을 추가해 주세요.',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('분석 결과', style: AppTypography.h2)),
+            NeoInfoChip(
+              label: '${selectedIndexes.length}/${foods.length}개 선택',
+              color: AppColors.primary,
+              filled: true,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        for (int index = 0; index < foods.length; index++) ...[
+          _FoodResultCard(
+            food: foods[index],
+            checked: selectedIndexes.contains(index),
+            onChanged: (bool checked) => onFoodSelectionChanged(index, checked),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        const SizedBox(height: AppSpacing.sm),
+        DropdownButtonFormField<String>(
+          value: mealType,
+          dropdownColor: AppColors.surfaceLow,
+          style: AppTypography.body1,
+          decoration: const InputDecoration(labelText: '식사 시간'),
+          items:
+              kDietMealTypeLabels.entries.map((MapEntry<String, String> e) {
+                return DropdownMenuItem<String>(
+                  value: e.key,
+                  child: Text(e.value),
+                );
+              }).toList(),
+          onChanged: (String? value) {
+            if (value != null) {
+              onMealTypeChanged(value);
+            }
+          },
+        ),
+        const SizedBox(height: AppSpacing.md),
+        NeoPrimaryButton(
+          label: isSaving ? '저장 중...' : '선택한 음식 저장',
+          icon: Icons.check_circle_outline,
+          onPressed: onSave,
+        ),
+      ],
+    );
+  }
+}
+
+class _FoodResultCard extends StatelessWidget {
   final Map<String, dynamic> food;
   final bool checked;
   final ValueChanged<bool> onChanged;
 
-  const _AnalyzedFoodCard({
+  const _FoodResultCard({
     required this.food,
     required this.checked,
     required this.onChanged,
@@ -504,178 +493,137 @@ class _AnalyzedFoodCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double confidence = _toDouble(food['confidence']);
-    final int stars = (confidence * 5).clamp(0, 5).round();
+    final String name = food['food_name']?.toString() ?? '음식';
+    final int calories = _toDouble(food['calories']).round();
+    final int protein = _toDouble(food['protein_g']).round();
+    final int carbs = _toDouble(food['carbs_g']).round();
+    final int fat = _toDouble(food['fat_g']).round();
+    final String? servingSize = _nullableString(food['serving_size']);
+    final double? confidence = _toDoubleOrNull(food['confidence']);
 
-    return DecoratedBox(
-      decoration: cardDecoration,
-      child: CheckboxListTile(
-        value: checked,
-        onChanged: (bool? value) => onChanged(value ?? false),
-        activeColor: AppColors.primary,
-        controlAffinity: ListTileControlAffinity.leading,
-        title: Text(
-          food['food_name']?.toString() ?? '음식',
-          style: AppTypography.body1.copyWith(fontWeight: FontWeight.w700),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.xs),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${_format(_toDouble(food['calories']))} kcal',
-                style: AppTypography.body2.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Row(
-                children: [
+    return NeoGlassCard(
+      child: Row(
+        children: [
+          Checkbox(
+            value: checked,
+            activeColor: AppColors.primary,
+            checkColor: AppColors.background,
+            onChanged: (bool? value) => onChanged(value ?? false),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: AppTypography.h3),
+                if (servingSize != null || confidence != null) ...[
+                  const SizedBox(height: 2),
                   Text(
-                    '단 ${_format(_toDouble(food['protein_g']))}g',
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.protein,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    '탄 ${_format(_toDouble(food['carbs_g']))}g',
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.carbs,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    '지 ${_format(_toDouble(food['fat_g']))}g',
-                    style: AppTypography.caption.copyWith(color: AppColors.fat),
+                    <String>[
+                      if (servingSize != null) servingSize,
+                      if (confidence != null)
+                        '신뢰도 ${(confidence.clamp(0, 1) * 100).round()}%',
+                    ].join(' · '),
+                    style: AppTypography.caption,
                   ),
                 ],
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Row(
-                children: List<Widget>.generate(5, (int index) {
-                  return Icon(
-                    index < stars ? Icons.star : Icons.star_border,
-                    size: 14,
-                    color: AppColors.warning,
-                  );
-                }),
-              ),
-            ],
+                const SizedBox(height: AppSpacing.xs),
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    NeoInfoChip(
+                      label: '$calories kcal',
+                      color: AppColors.primary,
+                    ),
+                    NeoInfoChip(
+                      label: 'P $protein g',
+                      color: AppColors.textSecondary,
+                    ),
+                    NeoInfoChip(
+                      label: 'C $carbs g',
+                      color: AppColors.secondary,
+                    ),
+                    NeoInfoChip(label: 'F $fat g', color: AppColors.tertiary),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 }
 
-class _SelectedTotalCard extends StatelessWidget {
-  final List<Map<String, dynamic>> foods;
-  final Set<int> selectedIndexes;
-
-  const _SelectedTotalCard({
-    required this.foods,
-    required this.selectedIndexes,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    double calories = 0;
-    double protein = 0;
-    double carbs = 0;
-    double fat = 0;
-
-    for (final int index in selectedIndexes) {
-      if (index < 0 || index >= foods.length) {
-        continue;
-      }
-      final Map<String, dynamic> food = foods[index];
-      calories += _toDouble(food['calories']);
-      protein += _toDouble(food['protein_g']);
-      carbs += _toDouble(food['carbs_g']);
-      fat += _toDouble(food['fat_g']);
-    }
-
-    return DecoratedBox(
-      decoration: cardDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('선택 합계', style: AppTypography.h3),
-            const SizedBox(height: AppSpacing.xs),
-            Text('${_format(calories)} kcal', style: AppTypography.body1),
-            const SizedBox(height: AppSpacing.xs),
-            Row(
-              children: [
-                Text(
-                  '단 ${_format(protein)}g',
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.protein,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  '탄 ${_format(carbs)}g',
-                  style: AppTypography.caption.copyWith(color: AppColors.carbs),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  '지 ${_format(fat)}g',
-                  style: AppTypography.caption.copyWith(color: AppColors.fat),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+String? _nullableString(Object? value) {
+  final String? text = value?.toString();
+  if (text == null || text.trim().isEmpty) {
+    return null;
   }
+  return text.trim();
+}
+
+double _toDouble(Object? value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value) ?? 0;
+  }
+  return 0;
+}
+
+double? _toDoubleOrNull(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value);
+  }
+  return null;
 }
 
 String _extractErrorMessage(Object error) {
   if (error is DietRepositoryException) {
     return error.message;
   }
-  return error.toString();
+  return '이미지를 불러오지 못했습니다. 카메라 또는 사진 접근 권한을 확인해 주세요.';
 }
 
-double _toDouble(dynamic value) {
-  if (value == null) {
-    return 0;
+String _normalizedFilename(
+  String name,
+  ImageSource source,
+  String contentType,
+) {
+  final String trimmed = name.trim();
+  final String extension = trimmed.toLowerCase().split('.').last;
+  if (trimmed.isNotEmpty &&
+      (extension == 'jpg' || extension == 'jpeg' || extension == 'png')) {
+    return trimmed;
   }
-  if (value is num) {
-    return value.toDouble();
-  }
-  return double.tryParse(value.toString()) ?? 0;
+  final String prefix = source == ImageSource.camera ? 'camera' : 'gallery';
+  final String fallbackExtension = contentType == 'image/png' ? 'png' : 'jpg';
+  return '${prefix}_image.$fallbackExtension';
 }
 
-double? _toDoubleOrNull(dynamic value) {
-  if (value == null) {
-    return null;
+String _resolveImageContentType({
+  required String filename,
+  required String? pickerMimeType,
+}) {
+  final String normalizedMimeType = pickerMimeType?.trim().toLowerCase() ?? '';
+  if (normalizedMimeType == 'image/jpeg' || normalizedMimeType == 'image/png') {
+    return normalizedMimeType;
   }
-  if (value is num) {
-    return value.toDouble();
-  }
-  return double.tryParse(value.toString());
-}
 
-String? _nullableString(dynamic value) {
-  if (value == null) {
-    return null;
+  final String extension = filename.toLowerCase().split('.').last;
+  if (extension == 'png') {
+    return 'image/png';
   }
-  final String text = value.toString().trim();
-  if (text.isEmpty) {
-    return null;
+  if (extension == 'jpg' || extension == 'jpeg') {
+    return 'image/jpeg';
   }
-  return text;
-}
-
-String _format(double value) {
-  if (value == value.roundToDouble()) {
-    return value.toInt().toString();
-  }
-  return value.toStringAsFixed(1);
+  throw const DietRepositoryException('JPEG 또는 PNG 이미지만 선택할 수 있습니다.');
 }

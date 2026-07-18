@@ -6,6 +6,8 @@ import 'auth_interceptor.dart';
 import 'constants.dart';
 import 'secure_storage_service.dart';
 
+const Duration kAiReceiveTimeout = Duration(seconds: 130);
+
 final dioProvider = Provider<Dio>((ref) {
   final SecureStorageService storage = ref.read(secureStorageServiceProvider);
 
@@ -17,12 +19,7 @@ final dioProvider = Provider<Dio>((ref) {
     ),
   );
 
-  dio.interceptors.add(
-    AuthInterceptor(
-      storage: storage,
-      dio: dio,
-    ),
-  );
+  dio.interceptors.add(AuthInterceptor(storage: storage, dio: dio));
 
   if (kDebugMode) {
     dio.interceptors.add(
