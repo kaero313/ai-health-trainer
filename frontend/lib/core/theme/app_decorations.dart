@@ -4,9 +4,9 @@ import 'app_colors.dart';
 import 'app_spacing.dart';
 
 BoxDecoration cardDecoration = BoxDecoration(
-  color: AppColors.surfaceLow.withValues(alpha: 0.86),
-  borderRadius: BorderRadius.circular(AppRadius.lg),
-  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+  color: AppColors.surfaceLow.withValues(alpha: 0.82),
+  borderRadius: BorderRadius.circular(AppRadius.md),
+  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
   gradient: LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
@@ -18,14 +18,14 @@ BoxDecoration cardDecoration = BoxDecoration(
 );
 
 BoxDecoration glassCardDecoration = BoxDecoration(
-  color: AppColors.surfaceLow.withValues(alpha: 0.72),
+  color: AppColors.surfaceLow.withValues(alpha: 0.66),
   borderRadius: BorderRadius.circular(AppRadius.xl),
-  border: Border.all(color: AppColors.primary.withValues(alpha: 0.22)),
+  border: Border.all(color: AppColors.primary.withValues(alpha: 0.20)),
   boxShadow: [
     BoxShadow(
-      color: AppColors.primary.withValues(alpha: 0.08),
-      blurRadius: 32,
-      offset: const Offset(0, 14),
+      color: AppColors.primary.withValues(alpha: 0.10),
+      blurRadius: 30,
+      offset: const Offset(0, 12),
     ),
   ],
   gradient: LinearGradient(

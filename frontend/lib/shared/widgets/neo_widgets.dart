@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -19,7 +20,12 @@ class NeoPage extends StatelessWidget {
     required this.children,
     this.header,
     this.onRefresh,
-    this.padding = const EdgeInsets.fromLTRB(20, 16, 20, 108),
+    this.padding = const EdgeInsets.fromLTRB(
+      AppSpacing.pageHorizontal,
+      AppSpacing.md,
+      AppSpacing.pageHorizontal,
+      AppSpacing.bottomContentInset,
+    ),
   });
 
   @override
@@ -30,26 +36,37 @@ class NeoPage extends StatelessWidget {
         padding: padding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            header ?? const NeoTopBar(),
-            const SizedBox(height: AppSpacing.lg),
-            ...children,
-          ],
+          children: children,
         ),
       ),
     );
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child:
-            onRefresh == null
-                ? scrollView
-                : RefreshIndicator(
-                  color: AppColors.primary,
-                  backgroundColor: AppColors.surfaceLow,
-                  onRefresh: onRefresh!,
-                  child: scrollView,
+        child: Column(
+          children: [
+            SizedBox(
+              height: AppSpacing.topBarHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.pageHorizontal,
                 ),
+                child: header ?? const NeoTopBar(),
+              ),
+            ),
+            Expanded(
+              child:
+                  onRefresh == null
+                      ? scrollView
+                      : RefreshIndicator(
+                        color: AppColors.primary,
+                        backgroundColor: AppColors.surfaceLow,
+                        onRefresh: onRefresh!,
+                        child: scrollView,
+                      ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -99,7 +116,16 @@ class NeoTopBar extends StatelessWidget {
     return Row(
       children: [
         if (showBack)
-          _RoundIconButton(icon: Icons.arrow_back, onTap: () => context.pop())
+          _RoundIconButton(
+            icon: Icons.arrow_back,
+            onTap: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/dashboard');
+              }
+            },
+          )
         else
           const _BrandMark(),
         const SizedBox(width: AppSpacing.sm),
@@ -187,9 +213,18 @@ class NeoGlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget content = DecoratedBox(
-      decoration: highlighted ? glassCardDecoration : cardDecoration,
-      child: Padding(padding: padding, child: child),
+    final BorderRadius borderRadius = BorderRadius.circular(
+      highlighted ? AppRadius.xl : AppRadius.md,
+    );
+    final Widget content = ClipRRect(
+      borderRadius: borderRadius,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: DecoratedBox(
+          decoration: highlighted ? glassCardDecoration : cardDecoration,
+          child: Padding(padding: padding, child: child),
+        ),
+      ),
     );
 
     if (onTap == null) {
@@ -198,12 +233,8 @@ class NeoGlassCard extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        onTap: onTap,
-        child: content,
-      ),
+      borderRadius: borderRadius,
+      child: InkWell(borderRadius: borderRadius, onTap: onTap, child: content),
     );
   }
 }
@@ -357,14 +388,21 @@ class NeoInfoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: chipDecoration(selected: filled, color: color),
-      child: Text(
-        label,
-        style: AppTypography.caption.copyWith(
-          color: filled ? AppColors.background : color,
-          fontWeight: FontWeight.w800,
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: math.max(80, MediaQuery.sizeOf(context).width - 64),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: chipDecoration(selected: filled, color: color),
+        child: Text(
+          label,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.caption.copyWith(
+            color: filled ? AppColors.background : color,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -403,11 +441,15 @@ class NeoPrimaryButton extends StatelessWidget {
                   Icon(icon, color: AppColors.background, size: 18),
                   const SizedBox(width: AppSpacing.xs),
                 ],
-                Text(
-                  label,
-                  style: AppTypography.label.copyWith(
-                    color: AppColors.background,
-                    fontWeight: FontWeight.w900,
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.label.copyWith(
+                      color: AppColors.background,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ],
@@ -433,27 +475,36 @@ class NeoOutlineButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
-      child: InkWell(
+    return Opacity(
+      opacity: onPressed == null ? 0.55 : 1,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        onTap: onPressed,
-        child: Container(
-          height: 46,
-          decoration: outlineButtonDecoration,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, color: AppColors.primary, size: 18),
-                const SizedBox(width: AppSpacing.xs),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          onTap: onPressed,
+          child: Container(
+            height: 48,
+            decoration: outlineButtonDecoration,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, color: AppColors.primary, size: 18),
+                  const SizedBox(width: AppSpacing.xs),
+                ],
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.label.copyWith(
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
               ],
-              Text(
-                label,
-                style: AppTypography.label.copyWith(color: AppColors.primary),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -567,15 +618,20 @@ class _NeoLineChartPainter extends CustomPainter {
     final double step = size.width / (values.length - 1);
     final Path path = Path();
 
+    final List<Offset> points = <Offset>[];
     for (int i = 0; i < values.length; i++) {
       final double x = step * i;
       final double normalized = (values[i] - minValue) / range;
       final double y = size.height - (normalized * size.height * 0.78) - 12;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
+      points.add(Offset(x, y));
+    }
+
+    path.moveTo(points.first.dx, points.first.dy);
+    for (int i = 0; i < points.length - 1; i++) {
+      final Offset current = points[i];
+      final Offset next = points[i + 1];
+      final double controlX = (current.dx + next.dx) / 2;
+      path.cubicTo(controlX, current.dy, controlX, next.dy, next.dx, next.dy);
     }
 
     if (fill) {

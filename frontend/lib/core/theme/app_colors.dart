@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   static const Color background = Color(0xFF050505);
+  static const Color surfaceLowest = Color(0xFF0E0E0E);
   static const Color surface = Color(0xFF131313);
   static const Color surfaceLow = Color(0xFF1C1B1B);
   static const Color surfaceHigh = Color(0xFF2A2A2A);
@@ -31,6 +32,7 @@ class AppColors {
 
   static const Color divider = Color(0xFF3B494B);
   static const Color outline = Color(0xFF849495);
+  static const Color glassBorder = Color(0x263BFAFF);
   static const Color shimmer = Color(0xFF252525);
 
   static const Color calories = primary;
