@@ -24,22 +24,12 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _handleStartup() async {
     await Future<void>.delayed(const Duration(milliseconds: 1500));
-    if (!mounted) {
-      return;
-    }
-
+    if (!mounted) return;
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final bool onboardingDone = prefs.getBool('onboarding_done') ?? false;
-    if (!mounted) {
-      return;
-    }
-
-    if (!onboardingDone) {
-      context.go('/onboarding');
-      return;
-    }
-
-    context.go('/login');
+    if (!mounted) return;
+    context.go(
+      (prefs.getBool('onboarding_done') ?? false) ? '/login' : '/onboarding',
+    );
   }
 
   @override
@@ -47,30 +37,54 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            const Spacer(),
-            const Icon(
-              Icons.fitness_center,
-              size: 64,
-              color: AppColors.primary,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              'AI Health Trainer',
-              style: AppTypography.h1.copyWith(color: AppColors.primary),
-            ),
-            const Spacer(),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: LinearProgressIndicator(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.pageHorizontal),
+          child: Column(
+            children: [
+              const Spacer(),
+              Container(
+                width: 82,
+                height: 82,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.primarySoft,
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.48),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.18),
+                      blurRadius: 32,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.monitor_heart_outlined,
+                  size: 38,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                'AI Health Trainer',
+                style: AppTypography.h1.copyWith(color: AppColors.primary),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                '오늘의 기록을 준비하고 있습니다',
+                style: AppTypography.body2.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const Spacer(),
+              const LinearProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
                 backgroundColor: AppColors.divider,
-                minHeight: 4,
+                minHeight: 3,
               ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-          ],
+            ],
+          ),
         ),
       ),
     );

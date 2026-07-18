@@ -24,10 +24,7 @@ class AuthRepository {
   }) {
     return _authenticate(
       path: '/auth/login',
-      body: <String, dynamic>{
-        'email': email,
-        'password': password,
-      },
+      body: <String, dynamic>{'email': email, 'password': password},
     );
   }
 
