@@ -246,7 +246,8 @@ RAG v2는 PostgreSQL을 source of truth로 사용하고, OpenSearch `rag_chunks_
 | `rag_catalog_plan_runs` | 공식 URL catalog plan 실행 단위, summary, report path 기록 |
 | `rag_catalog_plan_items` | source별 section/chunk diff, planned action, apply 결과 기록 |
 | `rag_retrieval_traces` | AI 요청별 검색 query, backend, mode, score, chunk/source 기록 |
-| `ai_generation_traces` | prompt version, model, context/output hash, latency 기록 |
+| `ai_generation_traces` | API 요청 lifecycle, deadline, prompt/schema version, 최종 상태 기록 |
+| `ai_generation_attempts` | 실제 provider 호출별 initial/retry/repair, token/latency, 오류 단계 기록 |
 
 Current catalog acquisition types:
 
@@ -270,6 +271,23 @@ Current catalog acquisition types:
 - `rag_chunks.embedding`은 Gemini `gemini-embedding-001` 기준 `VECTOR(3072)`이다.
 - OpenSearch는 검색 projection이며 원본/source/version/status는 PostgreSQL 기준이다.
 - OpenSearch 장애 시 PostgreSQL/pgvector fallback을 사용하고 trace에 남긴다.
+- embedding 장애 시 OpenSearch keyword-only fallback을 시도하고 검색 mode를 trace에 남긴다.
+- `rag_retrieval_traces.used_in_response`는 prompt 포함 문서 중 최종 답변 근거로 검증된 문서를 구분한다.
+- `rag_retrieval_traces.query_text`는 DB check constraint로 항상 `NULL`이며 원문 검색어를 저장하지 않는다.
+- `query_hash/query_summary/query_policy_version/query_key_version`은 keyed fingerprint와 비식별 운영 지표를 저장한다.
+- `query_retention_until`이 지난 trace는 전체 `rag_trace_group_id` 단위로 삭제한다.
+- zero-hit 검색은 `rank=0`, `used_in_prompt=false`, `chunk_id=null` trace로 backend/mode를 보존한다.
+- `ai_generation_traces.quota_status/quota_bucket/quota_position`은 Redis 원자 예약의 영속 감사 원장이다.
+- 일일 사용자 한도는 parent `request_id`당 한 번 예약하며 provider retry/schema repair는 중복 차감하지 않는다.
+- `ai_generation_traces.provider_invoked`와 `ai_generation_attempts`는 실제 provider 비용/호출 분석 기준이다.
+- `ai_generation_traces.trace_metadata`는 retrieval/provider/schema/pipeline 단계별 latency와
+  provider retry/schema repair 분리 지표를 저장한다. 원문 prompt와 응답은 저장하지 않는다.
+- `ai_generation_traces.request_id`는 외부 운영 추적용 UUID이며 한 요청의 parent trace를 식별한다.
+- `ai_generation_attempts`는 Gemini 호출 전에 `started`로 commit하고 호출 결과로 종결한다.
+- 오래된 `started` parent/attempt는 lifecycle reconciliation에서 `abandoned`로 전환한다.
+- provider 호출 전 중단된 stale parent의 `reserved` quota는 reconciliation에서 `released`로 회수한다.
+- AI 원문 prompt/response 대신 version과 hash를 저장해 추적성과 개인정보 최소화를 함께 유지한다.
+- 상세 상태·transaction 경계·CLI는 `docs/AI_REQUEST_LIFECYCLE.md`를 따른다.
 - 기존 `rag_documents`는 RAG v2 전환으로 제거되었다.
 
 ---
@@ -524,3 +542,26 @@ This table does not authorize mutation. It is preview evidence used before later
 - audit metadata: `context`, `report_path`, `created_at`
 
 Allowed status values are `ready_for_activation`, `needs_manual_review`, and `rejected`. This table is still audit-only; activation must be handled by a later catalog replacement/apply flow.
+
+## AI Integration Validation Schema
+
+`ai_validation_runs` stores one reproducible API/AI/RAG validation execution.
+
+- public lineage: `run_id`, `mode`, `status`, `started_at`, `finished_at`
+- progress: `expected_checks`, `passed_checks`, `failed_checks`, `skipped_checks`
+- cleanup audit: `validation_user_id`, `cleanup_status`
+- output: `report_path`, bounded `summary`
+
+`validation_user_id` intentionally has no foreign key. The temporary user is deleted at the end of a
+run while the non-sensitive validation audit remains.
+
+`ai_validation_items` stores crash-safe check-level progress.
+
+- unique lineage: `validation_run_id + check_name`
+- classification: `category`, `required`, `status`
+- diagnostics: `latency_ms`, `http_status`, `error_code`, bounded `evidence`
+- timing: `started_at`, `finished_at`, `created_at`
+
+Credentials, tokens, prompts, user questions, AI answer text, and provider raw responses are prohibited
+from `summary` and `evidence`. Generation and retrieval traces retain their operational metrics after
+cleanup but their user foreign keys must be null.
