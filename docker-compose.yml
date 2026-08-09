@@ -60,6 +60,7 @@ services:
     volumes:
       - ./backend:/app
       - ./docs:/workspace/docs
+      - ./frontend/assets/stitch:/workspace/frontend-assets:ro
       - uploads:/data/uploads
     depends_on:
       db:
