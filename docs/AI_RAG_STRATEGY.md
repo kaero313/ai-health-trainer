@@ -4,6 +4,9 @@
 > **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)
 > **현재 기준:** 최신 프로젝트 상태와 다음 의사결정은 `docs/OWNER_GUIDE.md`를 우선한다.
 > **RAG 운영 기준:** 지식 수집, 정제, 버전 관리, OpenSearch 색인, 삭제, 재색인, trace 정책은 `docs/RAG_OPERATIONS.md`를 우선한다.
+> **AI 요청 감사 기준:** request lifecycle, provider retry, schema repair, deadline 정책은 `docs/AI_REQUEST_LIFECYCLE.md`를 우선한다.
+> **검색 trace 개인정보 기준:** keyed fingerprint, raw-query 금지, retention 정책은 `docs/RAG_TRACE_PRIVACY.md`를 우선한다.
+> **통합 검증 기준:** 실제 API/Gemini/RAG trace와 cleanup 검증은 `docs/AI_INTEGRATION_VALIDATION.md`를 우선한다.
 
 ---
 
@@ -77,8 +80,9 @@ AI_CONFIG = {
     "max_output_tokens": 4096,           # 응답 최대 토큰
     "temperature": 0.7,                  # 창의성 수준
 
-    # 사용량 제한 (무료 티어 보호)
-    "daily_request_limit_per_user": 30,  # 사용자당 일일 AI 호출 제한
+    # 사용량 제한 (비용 및 동시성 보호)
+    "daily_request_limit_per_user": 30,  # 사용자당 일일 논리 요청 제한
+    "quota_timezone": "Asia/Seoul",
     "cache_ttl_seconds": 3600,           # 동일 요청 캐시 1시간
 }
 ```
@@ -87,8 +91,8 @@ AI_CONFIG = {
 1. 기본 모델은 `gemini-3-flash-preview` 사용 (일 250회 허용, 충분)
 2. 복잡한 코칭만 `gemini-2.5-pro` 사용 (일 25회 제한, 아껴서 사용)
 3. 동일/유사한 요청에 Redis 캐싱
-4. 사용자당 일일 AI 호출 횟수 제한
-5. `ai_recommendations` 테이블에 사용량 기록 → 모니터링
+4. Redis Lua로 사용자당 일일 논리 요청을 원자 예약
+5. parent request quota와 child provider attempt 비용을 분리해 모니터링
 6. 임베딩은 문서 등록 시 1회만 생성
 
 ---
@@ -400,6 +404,41 @@ backend/scripts/ingest_rag_data.py 로 CLI 스크립트 작성
 ---
 
 ## 6. AI 응답 파싱 가이드
+
+### 구조화 생성 v2
+
+식단 추천, 운동 추천, 채팅, 사진 분석은 단순 JSON 파싱 결과를 바로 사용하지 않는다.
+
+1. Gemini `response_schema`로 출력 구조를 제한한다.
+2. 서버에서 요청 유형별 Pydantic v2 모델로 다시 검증한다.
+3. 필수 필드, 빈 목록, 음수 영양소, confidence, 세트/반복 범위, 근육군 enum을 검증한다.
+4. schema 불일치는 validation 내용을 반영한 repair 요청을 한 번만 수행한다.
+5. 두 번째 검증도 실패하면 `AI_SCHEMA_INVALID`로 종료하고 generation trace에 실패 단계를 남긴다.
+
+추천과 채팅의 RAG context는 `[S1]`, `[S2]` 식별자를 사용한다. 모델은 내부 출력의
+`source_refs`로 근거를 선택하고, backend는 실제 retrieval 결과와 대조한 뒤 검증된 제목만
+공개 응답의 `sources`에 포함한다. 검색 문서가 없으면 `RAG_CONTEXT_UNAVAILABLE`로 차단한다.
+
+외부 문서 내용은 prompt 안에서 참고 자료로 격리하며, 문서에 포함된 지시문을 시스템 명령으로
+해석하지 않도록 명시한다. 원문 prompt나 사용자 데이터는 trace에 저장하지 않고 version과 hash만 보관한다.
+
+### 생성 지연 진단
+
+`ai_generation_traces.latency_ms`는 Gemini provider 호출 누적 시간이다. 전체 `retry_count`는 기존
+호환성을 위해 provider retry와 schema repair를 합산하지만, 원인 분석에는 `trace_metadata`의
+분리 지표를 사용한다.
+
+- retrieval: `retrieval_latency_ms`, `retrieval_embedding_latency_ms`,
+  `retrieval_backend_search_latency_ms`, `retrieval_core_latency_ms`
+- provider: `provider_call_count`, `provider_retry_count`, `generation_call_latency_ms`
+- schema: `schema_validation_latency_ms`, `schema_repair_count`, `schema_repair_reasons`
+- prompt: `initial_prompt_character_count`, `provider_prompt_character_counts`,
+  `allowed_source_ref_count`
+- pipeline: `prompt_context_build_latency_ms`, `pre_persistence_pipeline_latency_ms`
+
+원문 prompt와 provider 응답은 저장하지 않는다. schema repair 원인도 Pydantic 검증 위치, 오류 유형,
+정제된 메시지만 기록한다. 따라서 운영자는 토큰 증가와 재시도 원인을 비교할 수 있지만 사용자 원문을
+trace에서 복원할 수 없다.
 
 ### Gemini JSON 모드 활용
 
