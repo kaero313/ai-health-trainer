@@ -3,7 +3,7 @@
 > **Audience:** Codex/AI 작업자
 > **Purpose:** 새 세션의 AI가 프로젝트를 안전하게 이해하고 작업하기 위한 최소 계약서.
 > **Human-facing source of truth:** `docs/OWNER_GUIDE.md`
-> **Last updated:** 2026-04-25
+> **Last updated:** 2026-07-15
 
 ---
 
@@ -18,7 +18,7 @@ AI Health Trainer는 개인 맞춤형 건강/피트니스 AI 코칭 앱이다.
 | AI/RAG | Gemini 3 Flash Preview + Gemini 2.5 Pro + `gemini-embedding-001` 완료 |
 | Ops | Docker Compose, prod compose, Nginx, CI/CD, backup, health 완료 |
 | Phase | Phase 1~6 완료 |
-| Verification | Backend tests 56 PASS, `flutter analyze` 0 issues |
+| Verification | Backend tests 188 PASS, Flutter tests 39 PASS, `flutter analyze` 0 issues |
 
 새 작업은 **Phase 7 또는 릴리스 후보 작업**으로 정의한다.
 
@@ -79,7 +79,8 @@ flutter analyze
 
 현재 기준 검증값:
 
-- `56 passed`
+- Backend: `188 passed`
+- Flutter: `39 passed`
 - `No issues found`
 
 ---
