@@ -3,7 +3,7 @@
 > **Audience:** 사용자 본인(개발자, 설계자, 운영자)
 > **Purpose:** 제품 방향, 구현 현황, 개발/운영 방법을 한 문서에서 관리한다.
 > **AI worker guide:** `AGENTS.md`
-> **Last updated:** 2026-05-01
+> **Last updated:** 2026-07-11
 
 ---
 
@@ -16,6 +16,8 @@
 | `docs/API_SPECIFICATION.md` | API 상세 명세와 요청/응답 예시 |
 | `docs/DATABASE_SCHEMA.md` | DB 테이블/관계/계산식 상세 |
 | `docs/AI_RAG_STRATEGY.md` | AI 프롬프트, Gemini/RAG 전략 |
+| `docs/AI_REQUEST_LIFECYCLE.md` | AI 요청 lifecycle, provider attempt, retry/repair, deadline 감사 정책 |
+| `docs/RAG_TRACE_PRIVACY.md` | RAG 검색어 fingerprint, 원문 금지, key rotation, retention 정책 |
 | `docs/RAG_OPERATIONS.md` | RAG 지식 수집/정제/버전/OpenSearch 색인/삭제/추적 운영 정책 |
 | `docs/RAG_ADVANCED_PORTFOLIO_ROADMAP.md` | 고급 RAG/AI 백엔드 포트폴리오 고도화 로드맵 |
 | `docs/RAG_PIPELINE_ARCHITECTURE.md` | RAG source registry, parser/chunker, refresh/reindex 파이프라인 기준 |
@@ -24,6 +26,9 @@
 | `docs/RAG_SCHEDULER_REVIEW_REPORT.md` | 최신 scheduler review approval report |
 | `docs/RAG_CATALOG_REVIEW_REPORT.md` | 최신 catalog plan review approval report |
 | `docs/FLUTTER_UI_DESIGN.md` | Flutter 화면별 UI/UX 상세 설계 |
+| `docs/UI_AI_INTEGRATION_VALIDATION_REPORT.md` | Stitch UI와 AI/RAG 생성 경로 통합 검증 결과 |
+| `docs/AI_INTEGRATION_VALIDATION.md` | API/AI/RAG 검증 run, 개인정보, cleanup 운영 기준 |
+| `docs/UI_MOBILE_ACCEPTANCE_REPORT.md` | 16개 Flutter route와 모바일 3개 viewport 수용 검증 결과 |
 | `docs/DEPLOYMENT.md` | Docker/Nginx/배포 상세 |
 | `docs/DEVELOPMENT_GUIDE.md` | 개발 컨벤션과 구현 순서 기록 |
 | `docs/PROJECT_OVERVIEW.md` | 초기 프로젝트 개요와 역할 분담 |
@@ -56,7 +61,8 @@ AI Health Trainer는 사진 한 장과 운동/체중 기록을 바탕으로 현�
 
 검증 기준:
 
-- Backend tests: 64 PASS
+- Backend tests: 187 PASS
+- Flutter widget tests: 36 PASS
 - Flutter: `flutter analyze` 0 issues
 
 다음 작업은 Phase 7 또는 릴리스 후보 작업으로 새로 정의한다.
@@ -328,6 +334,13 @@ Flutter analysis:
 ```bash
 cd frontend
 flutter analyze
+```
+
+Auditable API/AI/RAG validation:
+
+```bash
+docker compose exec -e DEBUG=false backend python -m app.cli.ai validate-integration \
+  --report-path /workspace/docs/UI_AI_INTEGRATION_VALIDATION_REPORT.md
 ```
 
 Commit convention:
