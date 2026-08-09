@@ -302,7 +302,9 @@ AI 답변 생성 시 어떤 chunk가 검색되었고 실제 prompt에 들어갔�
 | `user_id` | 사용자 |
 | `request_type` | `diet`, `exercise`, `chat`, `food_analysis` |
 | `request_id` | 추천/채팅 등 상위 요청 id |
-| `query_text` | 검색 query |
+| `query_hash` | keyed query fingerprint; 원문 query는 저장하지 않음 |
+| `query_summary` | request/category/길이 기반 비식별 summary |
+| `query_key_version` | HMAC key rotation 추적 버전 |
 | `category_filter` | 적용된 category |
 | `search_backend` | `opensearch`, `pgvector_fallback` |
 | `search_mode` | `keyword`, `vector`, `hybrid` |
@@ -317,6 +319,7 @@ AI 답변 생성 시 어떤 chunk가 검색되었고 실제 prompt에 들어갔�
 | `keyword_score` | keyword 점수가 제공될 경우 |
 | `vector_score` | vector 점수가 제공될 경우 |
 | `used_in_prompt` | 실제 prompt 포함 여부 |
+| `used_in_response` | 검증된 `source_refs`로 최종 답변 근거에 선택됐는지 여부 |
 | `embedding_model` | 검색 query embedding model |
 | `created_at` | 생성 일시 |
 
@@ -329,7 +332,7 @@ AI 답변 생성 시 어떤 chunk가 검색되었고 실제 prompt에 들어갔�
 | `id` | trace PK |
 | `user_id` | 사용자 |
 | `recommendation_id` | 기존 `ai_recommendations.id` |
-| `request_type` | `diet`, `exercise`, `chat` |
+| `request_type` | `diet`, `exercise`, `chat`, `food_analysis` |
 | `prompt_version` | prompt 템플릿 버전 |
 | `model_used` | LLM 모델 |
 | `rag_trace_group_id` | retrieval trace 묶음 |
@@ -339,7 +342,34 @@ AI 답변 생성 시 어떤 chunk가 검색되었고 실제 prompt에 들어갔�
 | `tokens_input`, `tokens_output` | 가능할 경우 기록 |
 | `finish_reason` | 모델 응답 종료 사유 |
 | `error_code` | 실패 코드 |
+| `status` | `succeeded`, `failed`, `blocked`, `skipped` |
+| `provider_invoked` | 실제 Gemini 호출 여부. 일일 사용량 집계 기준 |
+| `response_schema_version` | 요청 유형별 구조화 응답 schema 버전 |
+| `provider_response_id` | provider response 식별자 |
+| `retry_count` | provider/schema repair 재시도 횟수 |
+| `raw_response_hash` | 원문을 저장하지 않는 응답 무결성 hash |
+| `error_stage` | `retrieval`, `provider`, `parse`, `schema`, `persistence` |
+| `trace_metadata` | 민감정보를 제외한 retry/fallback 운영 metadata |
 | `created_at` | 생성 일시 |
+
+추천/채팅은 retrieval 결과가 없을 때 provider를 호출하지 않는다. 이 경우 generation trace는
+`status=skipped`, `provider_invoked=false`, `error_code=RAG_CONTEXT_UNAVAILABLE`로 남긴다.
+검색 결과가 0건이어도 retrieval backend와 mode를 잃지 않도록 `rank=0`,
+`used_in_prompt=false`, `chunk_id=null`인 zero-hit retrieval trace를 저장한다.
+OpenSearch 장애는 pgvector fallback을 사용하고, embedding 생성 장애는 OpenSearch keyword-only
+검색을 시도한다. 두 경로 모두 신뢰 가능한 문서를 확보하지 못하면 fail-closed한다.
+
+`trace_metadata`의 지연 진단 값은 다음 경계를 따른다.
+
+- `retrieval_core_latency_ms`: query embedding과 검색 backend 실행까지의 핵심 retrieval 시간
+- `retrieval_latency_ms`: retrieval trace 저장을 포함해 추천/채팅 service가 관측한 전체 검색 시간
+- `generation_call_latency_ms`: 구조화 생성과 필요 시 한 번의 schema repair를 포함한 시간
+- `pre_persistence_pipeline_latency_ms`: 요청 context 구성부터 결과 DB 저장 직전까지의 시간
+- `provider_retry_count`: provider timeout/5xx 등 provider 호출 재시도 횟수
+- `schema_repair_count`: JSON/schema/source reference 검증 실패 후 repair 요청 횟수
+
+`retry_count`는 하위 호환 합계이므로 운영 원인 분류에는 사용하지 않는다. `provider_retry_count`와
+`schema_repair_count`를 각각 확인한다.
 
 ### 7-6. OpenSearch `rag_chunks` index
 
@@ -1056,3 +1086,18 @@ The report records:
 - deterministic ready candidate and activation gate evidence from backend tests.
 - no-mutation boundaries for preview, evaluation, activation, and catalog apply.
 - the command chain operators should use before applying a recovered source to the RAG corpus.
+
+---
+
+## 22. API / AI / RAG Integration Validation
+
+RAG retrieval quality is also verified through the production-facing API paths used by Flutter:
+
+```bash
+docker compose exec -e DEBUG=false backend python -m app.cli.ai validate-integration \
+  --report-path /workspace/docs/UI_AI_INTEGRATION_VALIDATION_REPORT.md
+```
+
+The run verifies diet recommendation, exercise recommendation, chat, and food image analysis. It then
+checks generation/retrieval trace linkage, final source selection, raw-query prohibition, and temporary
+data cleanup. See `docs/AI_INTEGRATION_VALIDATION.md` for the run and recovery contract.
