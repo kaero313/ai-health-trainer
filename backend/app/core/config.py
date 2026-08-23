@@ -1,5 +1,7 @@
 ﻿from functools import lru_cache
 
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,7 +29,17 @@ class Settings(BaseSettings):
     AI_EMBEDDING_MODEL: str = "gemini-embedding-001"
     AI_MAX_OUTPUT_TOKENS: int = 4096
     AI_TEMPERATURE: float = 0.7
-    AI_DAILY_REQUEST_LIMIT: int = 30
+    AI_DAILY_REQUEST_LIMIT: int = Field(default=30, ge=1)
+    AI_REQUEST_DEADLINE_SECONDS: float = 60.0
+    AI_PROVIDER_TIMEOUT_SECONDS: float = 30.0
+    AI_MAX_PROVIDER_RETRIES: int = 1
+    AI_MAX_SCHEMA_REPAIRS: int = 1
+    AI_QUOTA_TIMEZONE: str = "Asia/Seoul"
+    AI_QUOTA_KEY_PREFIX: str = "ai:quota:v1"
+    AI_QUOTA_KEY_GRACE_SECONDS: int = Field(default=86400, ge=0)
+    AI_VALIDATION_BASE_URL: str = "http://127.0.0.1:8000/api/v1"
+    AI_VALIDATION_IMAGE_PATH: str = "/workspace/frontend-assets/nutrition_salmon.jpg"
+    AI_VALIDATION_TIMEOUT_SECONDS: float = Field(default=90.0, gt=0)
 
     RAG_OPENSEARCH_INDEX: str = "rag_chunks_v1"
     RAG_OPENSEARCH_ALIAS: str = "rag_chunks_current"
@@ -40,6 +52,9 @@ class Settings(BaseSettings):
     RAG_URL_FETCH_TIMEOUT_SECONDS: float = 20.0
     RAG_URL_MAX_BYTES: int = 2_000_000
     RAG_URL_USER_AGENT: str = "AIHealthTrainerRAG/1.0"
+    RAG_TRACE_HASH_KEY: str = ""
+    RAG_TRACE_HASH_KEY_VERSION: str = "v1"
+    RAG_TRACE_RETENTION_DAYS: int = Field(default=90, ge=1)
 
     UPLOAD_DIR: str = "/data/uploads"
     MAX_IMAGE_SIZE_MB: int = 10
@@ -64,6 +79,15 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("AI_QUOTA_TIMEZONE")
+    @classmethod
+    def validate_ai_quota_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("AI_QUOTA_TIMEZONE must be a valid IANA timezone") from exc
         return value
 
 
