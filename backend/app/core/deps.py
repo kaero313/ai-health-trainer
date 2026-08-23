@@ -4,10 +4,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.config import get_settings
+from app.core.redis import get_redis_client
 from app.core.security import decode_jwt_token
 from app.models.user import User
+from app.services.ai_quota_service import AIQuotaService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+
+def get_ai_quota_service() -> AIQuotaService:
+    return AIQuotaService(get_settings(), get_redis_client())
 
 
 async def get_current_user(
