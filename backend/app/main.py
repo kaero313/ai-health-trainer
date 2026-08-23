@@ -11,6 +11,7 @@ from sqlalchemy import text
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import engine
+from app.core.redis import close_redis_client
 
 logger = logging.getLogger("api")
 settings = get_settings()
@@ -24,7 +25,10 @@ else:
 async def lifespan(_: FastAPI):
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-    yield
+    try:
+        yield
+    finally:
+        await close_redis_client()
 
 
 app = FastAPI(
