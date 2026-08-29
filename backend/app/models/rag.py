@@ -2,10 +2,23 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -583,6 +596,11 @@ class RagRetrievalTrace(Base):
         Index("ix_rag_retrieval_traces_user_request", "user_id", "request_type"),
         Index("ix_rag_retrieval_traces_group", "rag_trace_group_id"),
         Index("ix_rag_retrieval_traces_chunk_id", "chunk_id"),
+        Index("ix_rag_retrieval_traces_query_hash", "query_hash"),
+        CheckConstraint(
+            "query_text IS NULL",
+            name="ck_rag_retrieval_traces_query_text_redacted",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -590,7 +608,13 @@ class RagRetrievalTrace(Base):
     request_type: Mapped[str] = mapped_column(String(30), nullable=False)
     request_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rag_trace_group_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    query_text: Mapped[str] = mapped_column(Text, nullable=False)
+    query_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    query_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    query_summary: Mapped[str] = mapped_column(String(300), nullable=False)
+    query_policy_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    query_key_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    query_retention_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    query_redacted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     category_filter: Mapped[str | None] = mapped_column(String(100), nullable=True)
     search_backend: Mapped[str] = mapped_column(String(30), nullable=False)
     search_mode: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -605,6 +629,7 @@ class RagRetrievalTrace(Base):
     keyword_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     vector_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     used_in_prompt: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    used_in_response: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -618,9 +643,35 @@ class AIGenerationTrace(Base):
     __table_args__ = (
         Index("ix_ai_generation_traces_user_type", "user_id", "request_type"),
         Index("ix_ai_generation_traces_rag_group", "rag_trace_group_id"),
+        Index(
+            "ix_ai_generation_traces_user_provider_created",
+            "user_id",
+            "provider_invoked",
+            "created_at",
+        ),
+        Index(
+            "ix_ai_generation_traces_user_quota_bucket",
+            "user_id",
+            "quota_bucket",
+            "quota_status",
+        ),
+        CheckConstraint(
+            "status IN ('started', 'succeeded', 'failed', 'blocked', 'skipped', 'abandoned')",
+            name="ck_ai_generation_traces_status",
+        ),
+        CheckConstraint(
+            "quota_status IN ('not_checked', 'reserved', 'consumed', 'released', 'rejected', 'error')",
+            name="ck_ai_generation_traces_quota_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        nullable=False,
+        unique=True,
+        server_default=text("gen_random_uuid()"),
+    )
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     recommendation_id: Mapped[int | None] = mapped_column(
         ForeignKey("ai_recommendations.id", ondelete="SET NULL"),
@@ -637,7 +688,97 @@ class AIGenerationTrace(Base):
     tokens_output: Mapped[int | None] = mapped_column(Integer, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="succeeded")
+    provider_invoked: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    response_schema_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider_response_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    raw_response_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_stage: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    trace_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    lifecycle_version: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        server_default="request-lifecycle-v1",
+    )
+    quota_policy_version: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        server_default="daily-logical-request-v1",
+    )
+    quota_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="not_checked",
+    )
+    quota_bucket: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    quota_timezone: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    quota_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quota_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quota_reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    quota_finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     user: Mapped[User | None] = relationship("User")
     recommendation: Mapped[AIRecommendation | None] = relationship("AIRecommendation")
+    attempts: Mapped[list[AIGenerationAttempt]] = relationship(
+        "AIGenerationAttempt",
+        back_populates="generation_trace",
+        cascade="all, delete-orphan",
+        order_by="AIGenerationAttempt.attempt_no",
+    )
+
+
+class AIGenerationAttempt(Base):
+    __tablename__ = "ai_generation_attempts"
+    __table_args__ = (
+        UniqueConstraint("generation_trace_id", "attempt_no", name="uq_ai_generation_attempt_trace_no"),
+        Index("ix_ai_generation_attempts_trace", "generation_trace_id"),
+        Index("ix_ai_generation_attempts_status_started", "status", "started_at"),
+        CheckConstraint(
+            "attempt_kind IN ('initial', 'provider_retry', 'schema_repair')",
+            name="ck_ai_generation_attempts_kind",
+        ),
+        CheckConstraint(
+            "status IN ('started', 'succeeded', 'failed', 'blocked', 'abandoned')",
+            name="ck_ai_generation_attempts_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    generation_trace_id: Mapped[int] = mapped_column(
+        ForeignKey("ai_generation_traces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    attempt_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempt_kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, server_default="google_gemini")
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="started")
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_output: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    finish_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider_response_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    raw_response_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_stage: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    attempt_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    generation_trace: Mapped[AIGenerationTrace] = relationship(
+        "AIGenerationTrace",
+        back_populates="attempts",
+    )
