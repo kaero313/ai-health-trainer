@@ -205,6 +205,9 @@ async def test_hybrid_search_merges_keyword_and_vector_hits(db_session, monkeypa
     assert [item["chunk_id"] for item in results] == [chunk_b.id, chunk_a.id]
     assert results[0]["search_backend"] == "opensearch"
     assert results[0]["search_mode"] == "hybrid"
+    assert results[0]["embedding_latency_ms"] >= 0
+    assert results[0]["backend_search_latency_ms"] >= 0
+    assert results[0]["retrieval_core_latency_ms"] >= 0
 
 
 @pytest.mark.asyncio
@@ -228,9 +231,88 @@ async def test_search_falls_back_to_pgvector_when_opensearch_fails(db_session):
     assert results[0]["source_grade"] == "B"
     assert results[0]["search_backend"] == "pgvector_fallback"
     assert results[0]["search_mode"] == "vector"
+    assert results[0]["embedding_latency_ms"] >= 0
+    assert results[0]["backend_search_latency_ms"] >= 0
+    assert results[0]["retrieval_core_latency_ms"] >= 0
     decision = (await db_session.execute(select(RagPipelineDecision))).scalar_one()
     assert decision.selected_action == "pgvector_fallback"
     assert decision.reason_code == "OPENSEARCH_UNAVAILABLE"
+    assert "query" not in decision.context
+    assert len(decision.context["query_hash"]) == 64
+    assert decision.context["error_type"] == "RAGIndexError"
+    assert "error" not in decision.context
+
+
+@pytest.mark.asyncio
+async def test_search_falls_back_to_opensearch_keyword_when_embedding_fails(db_session):
+    user = User(email="keyword-fallback@example.com", password_hash="hash")
+    db_session.add(user)
+    await db_session.flush()
+    chunk = await _create_rag_chunk(db_session, title="keyword guide", content="단백질 회복 영양 가이드")
+
+    service = RAGService(db_session, get_settings())
+    service.get_embedding = AsyncMock(side_effect=RuntimeError("embedding unavailable"))
+    service.index_service.keyword_search = AsyncMock(
+        return_value=[
+            {"_id": str(chunk.id), "_score": 5.0, "_source": {"chunk_id": str(chunk.id)}}
+        ]
+    )
+
+    results = await service.search(
+        "단백질 회복",
+        category="nutrition",
+        top_k=1,
+        user_id=user.id,
+        request_type="diet",
+        trace_group_id="keyword-fallback-group",
+    )
+
+    assert len(results) == 1
+    assert results[0]["chunk_id"] == chunk.id
+    assert results[0]["search_backend"] == "opensearch_keyword_fallback"
+    assert results[0]["search_mode"] == "keyword"
+    assert results[0]["embedding_latency_ms"] >= 0
+    assert results[0]["backend_search_latency_ms"] >= 0
+    assert results[0]["retrieval_core_latency_ms"] >= 0
+    decision = (await db_session.execute(select(RagPipelineDecision))).scalar_one()
+    assert decision.selected_action == "opensearch_keyword_fallback"
+    assert decision.reason_code == "EMBEDDING_UNAVAILABLE"
+    assert "query" not in decision.context
+    assert len(decision.context["query_hash"]) == 64
+    trace = (await db_session.execute(select(RagRetrievalTrace))).scalar_one()
+    assert trace.search_mode == "keyword"
+    assert trace.embedding_model is None
+    assert trace.used_in_response is False
+
+
+@pytest.mark.asyncio
+async def test_search_writes_zero_hit_retrieval_trace(db_session):
+    user = User(email="zero-hit-trace@example.com", password_hash="hash")
+    db_session.add(user)
+    await db_session.commit()
+
+    service = RAGService(db_session, get_settings())
+    service.get_embedding = AsyncMock(return_value=[0.1] * 3072)
+    service._search_opensearch = AsyncMock(return_value=[])
+
+    results = await service.search(
+        "근거가 없는 질문",
+        category="nutrition",
+        top_k=3,
+        user_id=user.id,
+        request_type="diet",
+        trace_group_id="zero-hit-group",
+    )
+
+    assert results == []
+    trace = (await db_session.execute(select(RagRetrievalTrace))).scalar_one()
+    assert trace.rag_trace_group_id == "zero-hit-group"
+    assert trace.search_backend == "opensearch"
+    assert trace.search_mode == "hybrid"
+    assert trace.rank == 0
+    assert trace.chunk_id is None
+    assert trace.used_in_prompt is False
+    assert trace.used_in_response is False
 
 
 @pytest.mark.asyncio
@@ -262,6 +344,13 @@ async def test_search_writes_retrieval_trace(db_session):
     assert traces[0].chunk_id == chunk.id
     assert traces[0].search_backend == "opensearch"
     assert traces[0].search_mode == "hybrid"
+    assert traces[0].query_text is None
+    assert len(traces[0].query_hash) == 64
+    assert traces[0].query_policy_version == "query-minimization-v1"
+    assert traces[0].query_key_version == "v1"
+    assert "trace" not in traces[0].query_summary
+    assert "raw_stored=false" in traces[0].query_summary
+    assert traces[0].query_retention_until > traces[0].query_redacted_at
 
 
 @pytest.mark.asyncio
