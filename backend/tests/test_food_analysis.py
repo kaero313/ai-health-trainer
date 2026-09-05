@@ -1,6 +1,10 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from app.services.ai_service import AIInvocationResult, FOOD_ANALYSIS_SCHEMA_VERSION
+from app.services.ai_quota_service import AIQuotaError
 
 MOCK_ANALYSIS = {
     "foods": [
@@ -22,13 +26,29 @@ MOCK_ANALYSIS = {
     },
 }
 
+MOCK_INVOCATION = AIInvocationResult(
+    payload={"foods": MOCK_ANALYSIS["foods"]},
+    model="gemini-test",
+    response_schema_version=FOOD_ANALYSIS_SCHEMA_VERSION,
+    response_id="food-response-id",
+    tokens_input=10,
+    tokens_output=20,
+    finish_reason="STOP",
+    latency_ms=25,
+    raw_response_hash="a" * 64,
+)
+
 
 @pytest.mark.asyncio
 @patch("app.api.v1.diet.AIService")
 async def test_analyze_food_image_success(mock_ai_class, client, register_and_get_token, auth_headers):
     mock_ai = mock_ai_class.return_value
-    mock_ai.analyze_food_image = AsyncMock(return_value=MOCK_ANALYSIS)
+    mock_ai.analyze_food_image = AsyncMock(return_value=MOCK_INVOCATION)
     mock_ai.check_rate_limit = AsyncMock(return_value=False)
+    mock_ai.start_generation_trace = AsyncMock(
+        return_value=SimpleNamespace(id=101)
+    )
+    mock_ai.complete_generation_trace = AsyncMock(return_value=True)
 
     token, _ = await register_and_get_token(client, "food-analysis-success@example.com")
     fake_jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 128
@@ -44,6 +64,9 @@ async def test_analyze_food_image_success(mock_ai_class, client, register_and_ge
     assert body["status"] == "success"
     assert len(body["data"]["foods"]) == 1
     assert body["data"]["foods"][0]["food_name"] == "kimchi_stew"
+    assert mock_ai.start_generation_trace.await_count == 1
+    assert mock_ai.complete_generation_trace.await_count == 1
+    assert "attempt_recorder" in mock_ai.analyze_food_image.await_args.kwargs
 
 
 @pytest.mark.asyncio
@@ -104,10 +127,22 @@ async def test_analyze_without_auth(client):
 
 @pytest.mark.asyncio
 @patch("app.api.v1.diet.AIService")
-async def test_analyze_rate_limited(mock_ai_class, client, register_and_get_token, auth_headers):
+async def test_analyze_rate_limited(
+    mock_ai_class,
+    client,
+    register_and_get_token,
+    auth_headers,
+    quota_service,
+):
     mock_ai = mock_ai_class.return_value
-    mock_ai.check_rate_limit = AsyncMock(return_value=True)
-    mock_ai.analyze_food_image = AsyncMock(return_value=MOCK_ANALYSIS)
+    mock_ai.analyze_food_image = AsyncMock(return_value=MOCK_INVOCATION)
+    mock_ai.start_generation_trace = AsyncMock(return_value=SimpleNamespace(id=901))
+    quota_service.reserve.side_effect = AIQuotaError(
+        429,
+        "DAILY_LIMIT_EXCEEDED",
+        "일일 AI 사용 한도에 도달했습니다",
+        stage="quota_admission",
+    )
 
     token, _ = await register_and_get_token(client, "food-analysis-rate-limit@example.com")
     fake_jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 128
