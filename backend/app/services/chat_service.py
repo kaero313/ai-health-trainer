@@ -15,7 +15,10 @@ from app.models.diet import DietLog, DietLogItem
 from app.models.exercise import ExerciseLog
 from app.models.rag import AIGenerationTrace
 from app.models.user import UserProfile
-from app.services.ai_service import AIService
+from app.services.ai_service import CHAT_SCHEMA_VERSION, AIInvocationResult, AIService, AIServiceError
+from app.services.ai_trace_service import AIGenerationAttemptRecorder
+from app.services.ai_quota_service import AIQuotaError, AIQuotaService
+from app.services.rag_prompt_context import build_rag_prompt_context
 from app.services.rag_service import RAGService
 
 
@@ -34,12 +37,20 @@ class ChatService:
         "maintain": "유지",
     }
 
-    def __init__(self, db: AsyncSession, ai_service: AIService, rag_service: RAGService):
+    def __init__(
+        self,
+        db: AsyncSession,
+        ai_service: AIService,
+        rag_service: RAGService,
+        quota_service: AIQuotaService,
+    ):
         self.db = db
         self.ai_service = ai_service
         self.rag_service = rag_service
+        self.quota_service = quota_service
 
     async def chat(self, user_id: int, message: str, context_type: str) -> dict:
+        pipeline_started = time.perf_counter()
         profile = await self._get_profile(user_id)
         today = date.today()
         goal_description = self.GOAL_DESCRIPTION_MAP.get(profile.goal.value, profile.goal.value)
@@ -56,20 +67,43 @@ class ChatService:
             context_lines.append(diet_line)
             context_used["today_diet_records"] = today_diet_records
             rag_category = "nutrition"
-            rag_query = f"{goal_description} 식단 코칭"
+            rag_query = f"diet {goal_description} 식단 코칭 질문 {message}"
         elif context_type == "exercise":
             exercise_line, today_exercise_records = await self._build_exercise_context_line(user_id, today)
             context_lines.append(exercise_line)
             context_used["today_exercise_records"] = today_exercise_records
             rag_category = "exercise"
-            rag_query = f"{goal_description} 운동 코칭"
+            rag_query = f"exercise {goal_description} 운동 코칭 질문 {message}"
         elif context_type == "general":
             rag_category = None
-            rag_query = f"{goal_description} 건강 코칭"
+            rag_query = f"general {goal_description} 건강 코칭 질문 {message}"
         else:
             raise ChatServiceError(400, "VALIDATION_ERROR", "지원하지 않는 context_type입니다")
 
         trace_group_id = str(uuid4())
+        user_context_text = "\n".join(context_lines)
+        input_context_hash = self._hash_text(
+            user_context_text + "\n" + message + "\n" + rag_query
+        )
+        generation_trace = await self.ai_service.start_generation_trace(
+            self.db,
+            user_id=user_id,
+            request_type="chat",
+            prompt_version=CHAT_SCHEMA_VERSION,
+            rag_trace_group_id=trace_group_id,
+            input_context_hash=input_context_hash,
+            trace_metadata={
+                "context_type": context_type,
+                "retrieval_category": rag_category,
+            },
+        )
+        await self._reserve_generation_quota(generation_trace)
+        attempt_recorder = AIGenerationAttemptRecorder(
+            self.db,
+            generation_trace.id,
+            self.quota_service,
+        )
+        retrieval_started = time.perf_counter()
         documents = await self.rag_service.search(
             rag_query,
             category=rag_category,
@@ -78,35 +112,89 @@ class ChatService:
             request_type="chat",
             trace_group_id=trace_group_id,
         )
-        rag_context = self._build_rag_context(documents)
-        user_context_text = "\n".join(context_lines)
+        pipeline_metadata = self._retrieval_metadata(
+            documents,
+            int((time.perf_counter() - retrieval_started) * 1000),
+        )
+        if not documents:
+            error = AIServiceError(
+                503,
+                "RAG_CONTEXT_UNAVAILABLE",
+                "답변 근거를 찾지 못해 AI 요청을 처리할 수 없습니다",
+                stage="retrieval",
+                provider_invoked=False,
+                response_schema_version=CHAT_SCHEMA_VERSION,
+            )
+            pipeline_metadata["pre_persistence_pipeline_latency_ms"] = int(
+                (time.perf_counter() - pipeline_started) * 1000
+            )
+            await self._record_failed_generation(
+                user_id=user_id,
+                trace_group_id=trace_group_id,
+                generation_trace_id=generation_trace.id,
+                input_context_hash=input_context_hash,
+                error=error,
+                trace_metadata=pipeline_metadata,
+            )
+            raise error
 
-        started = time.perf_counter()
-        ai_result = await self.ai_service.chat(message, user_context_text, rag_context)
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        answer = str(ai_result.get("answer", "")).strip()
-        if not answer:
-            raise ChatServiceError(502, "AI_PARSE_ERROR", "AI 응답을 처리할 수 없습니다")
+        context_started = time.perf_counter()
+        prompt_context = build_rag_prompt_context(documents)
+        pipeline_metadata["prompt_context_build_latency_ms"] = int(
+            (time.perf_counter() - context_started) * 1000
+        )
+        generation_started = time.perf_counter()
+        try:
+            invocation = await self.ai_service.chat(
+                message,
+                user_context_text,
+                prompt_context.text,
+                allowed_source_refs=prompt_context.allowed_refs,
+                attempt_recorder=attempt_recorder,
+            )
+        except AIServiceError as error:
+            pipeline_metadata["generation_call_latency_ms"] = int(
+                (time.perf_counter() - generation_started) * 1000
+            )
+            pipeline_metadata["pre_persistence_pipeline_latency_ms"] = int(
+                (time.perf_counter() - pipeline_started) * 1000
+            )
+            await self._record_failed_generation(
+                user_id=user_id,
+                trace_group_id=trace_group_id,
+                generation_trace_id=generation_trace.id,
+                input_context_hash=input_context_hash,
+                error=error,
+                trace_metadata=pipeline_metadata,
+            )
+            raise
+        pipeline_metadata["generation_call_latency_ms"] = int(
+            (time.perf_counter() - generation_started) * 1000
+        )
 
-        rag_sources = [str(document.get("title")) for document in documents if document.get("title")]
-        ai_sources = ai_result.get("sources")
-        if isinstance(ai_sources, list):
-            sources = [str(item) for item in ai_sources if str(item).strip()]
-        else:
-            sources = []
-        if not sources:
-            sources = rag_sources
+        answer = prompt_context.resolve_reference_markers(str(invocation.payload["answer"]))
+        source_refs = [str(ref) for ref in invocation.payload["source_refs"]]
+        sources = prompt_context.verified_titles(source_refs)
+        await self.rag_service.mark_traces_used_in_response(
+            trace_group_id,
+            prompt_context.selected_chunk_ids(source_refs),
+        )
+        pipeline_metadata["pre_persistence_pipeline_latency_ms"] = int(
+            (time.perf_counter() - pipeline_started) * 1000
+        )
 
         await self._save_chat_recommendation(
             user_id=user_id,
             context_type=context_type,
-            message=message,
             answer=answer,
             rag_sources=sources,
             trace_group_id=trace_group_id,
-            input_context_hash=self._hash_text(user_context_text + "\n" + message),
+            generation_trace_id=generation_trace.id,
+            input_context_hash=input_context_hash,
             output_hash=self._hash_text(answer),
-            latency_ms=latency_ms,
+            invocation=invocation,
+            source_refs=source_refs,
+            trace_metadata=pipeline_metadata,
         )
 
         return {
@@ -200,44 +288,51 @@ class ChatService:
         self,
         user_id: int,
         context_type: str,
-        message: str,
         answer: str,
         rag_sources: list[str],
         trace_group_id: str | None,
+        generation_trace_id: int,
         input_context_hash: str | None,
         output_hash: str | None,
-        latency_ms: int | None,
+        invocation: AIInvocationResult,
+        source_refs: list[str],
+        trace_metadata: dict[str, object],
     ) -> None:
-        summary_message = message.strip()
-        if len(summary_message) > 120:
-            summary_message = summary_message[:117] + "..."
-
         recommendation = AIRecommendation(
             user_id=user_id,
             type=RecommendationTypeEnum.COACHING,
-            context_summary=f"{context_type} 채팅: {summary_message}",
+            context_summary=f"{context_type} 채팅 요청 (내용 비저장)",
             prompt_used=None,
             recommendation=answer,
             rag_sources=rag_sources,
-            model_used=self.ai_service.settings.AI_DEFAULT_MODEL,
+            model_used=invocation.model,
         )
 
         try:
             self.db.add(recommendation)
             await self.db.flush()
             await self.rag_service.mark_traces_request_id(trace_group_id, recommendation.id)
-            self.db.add(
-                AIGenerationTrace(
-                    user_id=user_id,
-                    recommendation_id=recommendation.id,
-                    request_type="chat",
-                    prompt_version="chat_v1",
-                    model_used=self.ai_service.settings.AI_DEFAULT_MODEL,
-                    rag_trace_group_id=trace_group_id,
-                    input_context_hash=input_context_hash,
-                    output_hash=output_hash,
-                    latency_ms=latency_ms,
-                )
+            generation_trace = await self.db.get(
+                AIGenerationTrace,
+                generation_trace_id,
+            )
+            if generation_trace is None:
+                raise RuntimeError("generation trace disappeared before persistence")
+            self.ai_service.apply_generation_trace_result(
+                generation_trace,
+                user_id=user_id,
+                recommendation_id=recommendation.id,
+                request_type="chat",
+                prompt_version=CHAT_SCHEMA_VERSION,
+                status="succeeded",
+                rag_trace_group_id=trace_group_id,
+                input_context_hash=input_context_hash,
+                output_hash=output_hash,
+                invocation=invocation,
+                trace_metadata={
+                    **trace_metadata,
+                    "selected_source_refs": source_refs,
+                },
             )
             await self.db.commit()
         except Exception as exc:
@@ -253,11 +348,68 @@ class ChatService:
             f"[프로필] 키 {height}cm, 몸무게 {weight}kg, 목표: {goal_description}, 활동수준: {activity_level}"
         )
 
+    async def _record_failed_generation(
+        self,
+        *,
+        user_id: int,
+        trace_group_id: str,
+        generation_trace_id: int,
+        input_context_hash: str,
+        error: AIServiceError,
+        trace_metadata: dict[str, object] | None = None,
+    ) -> None:
+        await self.ai_service.complete_generation_trace(
+            self.db,
+            generation_trace_id,
+            quota_service=self.quota_service,
+            user_id=user_id,
+            request_type="chat",
+            prompt_version=CHAT_SCHEMA_VERSION,
+            status=error.trace_status,
+            rag_trace_group_id=trace_group_id,
+            input_context_hash=input_context_hash,
+            error=error,
+            provider_invoked=error.provider_invoked,
+            trace_metadata=trace_metadata,
+        )
+
+    async def _reserve_generation_quota(
+        self,
+        generation_trace: AIGenerationTrace,
+    ) -> None:
+        try:
+            await self.quota_service.reserve(self.db, generation_trace)
+        except AIQuotaError as exc:
+            raise AIServiceError(
+                exc.status_code,
+                exc.code,
+                exc.message,
+                stage=exc.stage,
+                provider_invoked=False,
+            ) from exc
+
     @staticmethod
-    def _build_rag_context(documents: list[dict]) -> str:
+    def _retrieval_metadata(documents: list[dict], retrieval_latency_ms: int) -> dict[str, object]:
+        metadata: dict[str, object] = {
+            "retrieval_latency_ms": retrieval_latency_ms,
+            "retrieved_document_count": len(documents),
+        }
         if not documents:
-            return "참고 자료 없음"
-        return "\n\n".join(f"[{document['title']}]\n{document['content']}" for document in documents)
+            return metadata
+
+        first = documents[0]
+        key_map = {
+            "search_backend": "search_backend",
+            "search_mode": "search_mode",
+            "embedding_latency_ms": "retrieval_embedding_latency_ms",
+            "backend_search_latency_ms": "retrieval_backend_search_latency_ms",
+            "retrieval_core_latency_ms": "retrieval_core_latency_ms",
+        }
+        for source_key, target_key in key_map.items():
+            value = first.get(source_key)
+            if value is not None:
+                metadata[target_key] = value
+        return metadata
 
     @staticmethod
     def _to_float(value: Decimal | int | float | None) -> float:
