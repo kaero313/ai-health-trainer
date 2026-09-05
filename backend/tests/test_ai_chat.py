@@ -2,6 +2,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.services.ai_service import AIServiceError
+
 MOCK_CHAT_RESULT = {
     "answer": "Reduce pork belly to 150g and add vegetables.",
     "context_used": {
@@ -135,9 +137,17 @@ async def test_chat_rate_limited(
     auth_headers,
 ):
     _ = mock_rag_class
-    _ = mock_chat_class
     mock_ai = mock_ai_class.return_value
     mock_ai.check_rate_limit = AsyncMock(return_value=True)
+    mock_chat = mock_chat_class.return_value
+    mock_chat.chat = AsyncMock(
+        side_effect=AIServiceError(
+            429,
+            "DAILY_LIMIT_EXCEEDED",
+            "일일 AI 사용 한도에 도달했습니다",
+            stage="quota_admission",
+        )
+    )
 
     token, _ = await register_and_get_token(client, "chat-rate-limit@example.com")
     response = await client.post(
