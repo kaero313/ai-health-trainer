@@ -883,16 +883,57 @@ class RAGDecisionPolicy:
             },
         )
 
-    def opensearch_fallback(self, *, query: str, category: str | None, top_k: int, error: str) -> PipelineDecision:
+    def opensearch_fallback(
+        self,
+        *,
+        query_context: dict[str, str],
+        category: str | None,
+        top_k: int,
+        error_type: str,
+    ) -> PipelineDecision:
         return PipelineDecision(
             decision_type="retrieval_backend",
             selected_action="pgvector_fallback",
             risk_level="medium",
             reason_code="OPENSEARCH_UNAVAILABLE",
-            context={"query": query, "category": category, "top_k": top_k, "error": error},
+            context={
+                **query_context,
+                "category": category,
+                "top_k": top_k,
+                "error_type": error_type,
+            },
             tradeoffs={
                 "accepted": "serve degraded vector retrieval from PostgreSQL ledger",
                 "rejected": "fail user-facing AI request when retrieval index is down",
+            },
+        )
+
+    def embedding_keyword_fallback(
+        self,
+        *,
+        query_context: dict[str, str],
+        category: str | None,
+        top_k: int,
+        error_type: str,
+        result_count: int,
+        opensearch_available: bool,
+    ) -> PipelineDecision:
+        return PipelineDecision(
+            decision_type="retrieval_backend",
+            selected_action="opensearch_keyword_fallback" if opensearch_available else "retrieval_unavailable",
+            risk_level="medium" if result_count else "high",
+            reason_code="EMBEDDING_UNAVAILABLE",
+            context={
+                **query_context,
+                "category": category,
+                "top_k": top_k,
+                "error_type": error_type,
+                "result_count": result_count,
+                "opensearch_available": opensearch_available,
+            },
+            tradeoffs={
+                "accepted": "use lexical evidence without fabricating a query embedding",
+                "rejected": "skip retrieval controls or use an invalid vector",
             },
         )
 
