@@ -1,3 +1,6 @@
+import hashlib
+import json
+import time
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -5,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_ai_quota_service, get_current_user
 from app.models.diet import MealTypeEnum
 from app.models.user import User
 from app.schemas.ai import DietRecommendationResponse, FoodAnalysisResponse
@@ -17,12 +20,23 @@ from app.schemas.diet import (
     DietLogsByDateResponse,
     DietLogUpdate,
 )
-from app.services.ai_service import AIService, AIServiceError
+from app.services.ai_service import (
+    FOOD_ANALYSIS_SCHEMA_VERSION,
+    AIService,
+    AIServiceError,
+)
+from app.services.ai_trace_service import AIGenerationAttemptRecorder
+from app.services.ai_quota_service import AIQuotaError, AIQuotaService
 from app.services.diet_service import DietService, DietServiceError
 from app.services.rag_service import RAGService
 from app.services.recommendation_service import RecommendationService, RecommendationServiceError
 
 router = APIRouter(prefix="/diet", tags=["diet"])
+
+
+def _hash_json(value: object) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _raise_http_error(service_error: DietServiceError) -> None:
@@ -131,7 +145,9 @@ async def analyze_food_image(
     meal_type: MealTypeEnum | None = Form(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    quota_service: AIQuotaService = Depends(get_ai_quota_service),
 ) -> FoodAnalysisResponse:
+    pipeline_started = time.perf_counter()
     _ = meal_type
     settings = get_settings()
     ai_service = AIService(settings)
@@ -145,7 +161,9 @@ async def analyze_food_image(
             },
         )
 
+    image_read_started = time.perf_counter()
     image_bytes = await image.read()
+    image_read_latency_ms = int((time.perf_counter() - image_read_started) * 1000)
     max_size_bytes = settings.MAX_IMAGE_SIZE_MB * 1024 * 1024
     if len(image_bytes) > max_size_bytes:
         raise HTTPException(
@@ -156,20 +174,68 @@ async def analyze_food_image(
             },
         )
 
-    is_limited = await ai_service.check_rate_limit(db, current_user.id)
-    if is_limited:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "code": "DAILY_LIMIT_EXCEEDED",
-                "message": "일일 AI 사용 한도에 도달했습니다",
+    input_context_hash = hashlib.sha256(image_bytes).hexdigest()
+    try:
+        generation_trace = await ai_service.start_generation_trace(
+            db,
+            user_id=current_user.id,
+            request_type="food_analysis",
+            prompt_version=FOOD_ANALYSIS_SCHEMA_VERSION,
+            input_context_hash=input_context_hash,
+            trace_metadata={
+                "mime_type": image.content_type,
+                "image_size_bytes": len(image_bytes),
+                "image_read_latency_ms": image_read_latency_ms,
             },
         )
-
-    try:
-        result = await ai_service.analyze_food_image(image_bytes, image.content_type)
     except AIServiceError as exc:
         _raise_ai_error(exc)
+    try:
+        await quota_service.reserve(db, generation_trace)
+    except AIQuotaError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    attempt_recorder = AIGenerationAttemptRecorder(
+        db,
+        generation_trace.id,
+        quota_service,
+    )
+    generation_started = time.perf_counter()
+    try:
+        invocation = await ai_service.analyze_food_image(
+            image_bytes,
+            image.content_type,
+            attempt_recorder=attempt_recorder,
+        )
+    except AIServiceError as exc:
+        generation_call_latency_ms = int((time.perf_counter() - generation_started) * 1000)
+        await ai_service.complete_generation_trace(
+            db,
+            generation_trace.id,
+            quota_service=quota_service,
+            user_id=current_user.id,
+            request_type="food_analysis",
+            prompt_version=FOOD_ANALYSIS_SCHEMA_VERSION,
+            status=exc.trace_status,
+            input_context_hash=input_context_hash,
+            error=exc,
+            provider_invoked=exc.provider_invoked,
+            trace_metadata={
+                "mime_type": image.content_type,
+                "image_size_bytes": len(image_bytes),
+                "image_read_latency_ms": image_read_latency_ms,
+                "generation_call_latency_ms": generation_call_latency_ms,
+                "pre_persistence_pipeline_latency_ms": int(
+                    (time.perf_counter() - pipeline_started) * 1000
+                ),
+            },
+        )
+        _raise_ai_error(exc)
+    generation_call_latency_ms = int((time.perf_counter() - generation_started) * 1000)
+
+    result = dict(invocation.payload)
 
     foods = result.get("foods", [])
     if "total" not in result:
@@ -180,6 +246,29 @@ async def analyze_food_image(
             "fat_g": sum(f.get("fat_g", 0) for f in foods),
         }
 
+    await ai_service.complete_generation_trace(
+        db,
+        generation_trace.id,
+        quota_service=quota_service,
+        user_id=current_user.id,
+        request_type="food_analysis",
+        prompt_version=FOOD_ANALYSIS_SCHEMA_VERSION,
+        status="succeeded",
+        input_context_hash=input_context_hash,
+        output_hash=_hash_json(result),
+        invocation=invocation,
+        trace_metadata={
+            "mime_type": image.content_type,
+            "food_count": len(foods),
+            "image_size_bytes": len(image_bytes),
+            "image_read_latency_ms": image_read_latency_ms,
+            "generation_call_latency_ms": generation_call_latency_ms,
+            "pre_persistence_pipeline_latency_ms": int(
+                (time.perf_counter() - pipeline_started) * 1000
+            ),
+        },
+    )
+
     return FoodAnalysisResponse(status="success", data=result)
 
 
@@ -188,20 +277,17 @@ async def recommend_diet(
     target_date: date | None = Query(None, alias="date"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    quota_service: AIQuotaService = Depends(get_ai_quota_service),
 ) -> DietRecommendationResponse:
     settings = get_settings()
     ai_service = AIService(settings)
-    if await ai_service.check_rate_limit(db, current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "code": "DAILY_LIMIT_EXCEEDED",
-                "message": "일일 AI 사용 한도에 도달했습니다",
-            },
-        )
-
     rag_service = RAGService(db, settings)
-    rec_service = RecommendationService(db, ai_service, rag_service)
+    rec_service = RecommendationService(
+        db,
+        ai_service,
+        rag_service,
+        quota_service,
+    )
 
     try:
         result = await rec_service.recommend_diet(current_user.id, target_date or date.today())
