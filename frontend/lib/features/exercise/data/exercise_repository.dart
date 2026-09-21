@@ -2,12 +2,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/network/api_error.dart';
 
 class ExerciseRepositoryException implements Exception {
   final String message;
   final int? statusCode;
+  final String? code;
 
-  const ExerciseRepositoryException(this.message, {this.statusCode});
+  const ExerciseRepositoryException(this.message, {this.statusCode, this.code});
 
   @override
   String toString() => message;
@@ -26,9 +28,14 @@ class ExerciseRepository {
       );
       return _parseExerciseLogsResponse(response.data);
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: '운동 조회 요청 중 오류가 발생했습니다.',
+      );
       throw ExerciseRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -43,6 +50,7 @@ class ExerciseRepository {
       final Response<dynamic> response = await dio.get<dynamic>(
         '/exercise/recommend',
         queryParameters: queryParameters.isEmpty ? null : queryParameters,
+        options: Options(receiveTimeout: kAiReceiveTimeout),
       );
 
       final dynamic rawResponse = response.data;
@@ -55,15 +63,18 @@ class ExerciseRepository {
 
       final dynamic rawData = rawResponse['data'];
       if (rawData is! Map<String, dynamic>) {
-        throw const ExerciseRepositoryException(
-          'AI 운동 추천 데이터가 비어 있습니다.',
-        );
+        throw const ExerciseRepositoryException('AI 운동 추천 데이터가 비어 있습니다.');
       }
       return rawData;
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: 'AI 운동 추천 요청 중 오류가 발생했습니다.',
+      );
       throw ExerciseRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -90,9 +101,14 @@ class ExerciseRepository {
       }
       return rawData;
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: '운동 저장 요청 중 오류가 발생했습니다.',
+      );
       throw ExerciseRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -110,9 +126,14 @@ class ExerciseRepository {
         throw const ExerciseRepositoryException('운동 삭제에 실패했습니다.');
       }
     } on DioException catch (e) {
+      final ApiErrorDetails error = parseDioApiError(
+        e,
+        fallbackMessage: '운동 삭제 요청 중 오류가 발생했습니다.',
+      );
       throw ExerciseRepositoryException(
-        _extractDioErrorMessage(e),
-        statusCode: e.response?.statusCode,
+        error.message,
+        statusCode: error.statusCode,
+        code: error.code,
       );
     }
   }
@@ -132,40 +153,6 @@ class ExerciseRepository {
     }
 
     return rawData;
-  }
-
-  String _extractDioErrorMessage(DioException e) {
-    final dynamic body = e.response?.data;
-    if (body is Map<String, dynamic>) {
-      final dynamic detail = body['detail'];
-      if (detail is String && detail.isNotEmpty) {
-        return detail;
-      }
-      if (detail is Map<String, dynamic>) {
-        final dynamic detailMessage = detail['message'];
-        if (detailMessage is String && detailMessage.isNotEmpty) {
-          return detailMessage;
-        }
-      }
-
-      final dynamic error = body['error'];
-      if (error is Map<String, dynamic>) {
-        final dynamic errorMessage = error['message'];
-        if (errorMessage is String && errorMessage.isNotEmpty) {
-          return errorMessage;
-        }
-      }
-
-      final dynamic message = body['message'];
-      if (message is String && message.isNotEmpty) {
-        return message;
-      }
-    }
-
-    if (e.message != null && e.message!.isNotEmpty) {
-      return e.message!;
-    }
-    return '요청 처리 중 오류가 발생했습니다.';
   }
 }
 
