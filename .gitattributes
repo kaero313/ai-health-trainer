@@ -1,0 +1,22 @@
+# 텍스트 파일은 모든 OS에서 LF로 저장·체크아웃한다. Windows의 core.autocrlf=true가 CRLF로 바꾸면
+# scripts/verify.py의 workspace_sha256(파일 바이트 해시)이 OS마다 달라지고 커밋마다 경고가 난다.
+* text=auto eol=lf
+# Windows 배치 파일만 CRLF
+*.bat text eol=crlf
+# Codex용 스킬 사본은 scripts/harness.py render가 만든다
+.agents/skills/** linguist-generated=true
+# 바이너리
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.jks binary
+*.keystore binary
+*.dump binary
