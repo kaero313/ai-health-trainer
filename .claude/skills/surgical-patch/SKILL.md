@@ -13,6 +13,6 @@ description: 버그와 작은 동작 변경을 책임 있는 가장 좁은 계�
 - 수정 범위 밖의 정리·이름 변경·추상화를 하지 않는다.
 - 작업과 관련된 회귀 증명만 추가한다.
 
-인증·토큰, AI 쿼터·Gemini 호출 경로, RAG apply/reindex/archive, 마이그레이션, retrieval trace 개인정보를 건드리면 `qa` 독립 테스트와 `reviewer` 역할의 검토를 받는다.
+인증·토큰, AI 쿼터·Gemini 호출 경로, AI 프롬프트·안전 설정, RAG 운영 명령(ingest·register·refresh·apply·reindex·archive), 마이그레이션, retrieval trace 개인정보를 건드리면 `qa` 독립 테스트와 `reviewer` 역할의 검토를 받는다.
 
 집중 증명과 가장 가까운 게이트를 돌린다. 실패가 고쳐지고 회귀 증명이 통과하면 멈춘다.

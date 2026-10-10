@@ -4,12 +4,6 @@
 schema_version = 1
 harness_version = "1.0"  # 변경 이력은 docs/DEVELOPMENT_WORKFLOW.md §10
 
-[policy]
-lead = "starting_session"
-model_unavailable = "stop_and_report"
-git_push = "explicit_request_only"
-live_gemini_calls = "explicit_request_only"
-
 # 문서 표기용 모델 이름. AGENTS.md·README.md·docs/DEVELOPMENT_WORKFLOW.md의 역할 표가 이 원본과
 # 어긋나면 tests/test_harness_scripts.py가 실패한다. 새 모델을 쓰면 여기에도 추가한다.
 [display.models]
@@ -53,7 +47,7 @@ read_only = false
 allowed_paths = ["frontend/", "docs/"]
 
 [roles.qa]
-description = "인증·AI 쿼터·RAG apply·마이그레이션·개인정보 변경의 테스트를 구현과 독립적으로 계약 기준으로 작성한다. 테스트만 수정한다."
+description = "인증·AI 쿼터·프롬프트·RAG 운영·마이그레이션·개인정보 변경의 테스트를 구현과 독립적으로 계약 기준으로 작성한다. 테스트만 수정한다."
 claude_model = "claude-opus-5-5"
 codex_model = "gpt-6-sol"
 effort = "high"
@@ -61,7 +55,7 @@ read_only = false
 allowed_paths = ["backend/tests/", "frontend/test/"]
 
 [roles.reviewer]
-description = "인증·AI 쿼터·RAG apply·마이그레이션·개인정보·배포 경계 diff를 독립 검토한다. 소스를 수정하지 않는다."
+description = "인증·AI 쿼터·프롬프트·RAG 운영·마이그레이션·개인정보·배포 경계 diff를 독립 검토한다. 소스를 수정하지 않는다."
 claude_model = "claude-fable-5-1"
 codex_model = "gpt-6-sol"
 effort = "xhigh"
