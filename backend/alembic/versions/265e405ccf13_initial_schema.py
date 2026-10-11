@@ -157,3 +157,14 @@ def downgrade() -> None:
     op.drop_index('ix_users_email', table_name='users')
     op.drop_table('users')
     # ### end Alembic commands ###
+    # upgrade에서 sa.Enum 컬럼이 만든 타입은 drop_table로 지워지지 않는다.
+    # 남기면 downgrade base 뒤 다시 upgrade할 때 "type ... already exists"로 실패한다.
+    for enum_name in (
+        'activity_level_enum',
+        'goal_enum',
+        'gender_enum',
+        'muscle_group_enum',
+        'meal_type_enum',
+        'recommendation_type_enum',
+    ):
+        op.execute(f'DROP TYPE IF EXISTS {enum_name}')

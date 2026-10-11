@@ -942,6 +942,8 @@ async def test_catalog_apply_requires_confirmation_for_full_reindex(db_session, 
     service = RAGCatalogControlService(db_session, get_settings())
     service.rag_service.get_embedding = AsyncMock(return_value=_embedding())
     service.rag_service.index_service.index_chunk = AsyncMock(return_value=None)
+    # 전체 재색인은 기존 청크를 보관하면서 OpenSearch 삭제를 부른다
+    service.rag_service.index_service.delete_chunk = AsyncMock(return_value=None)
     initial_plan = await service.create_plan(catalog_file=catalog_path)
     initial_review_id = await _review_plan(db_session, initial_plan["run"]["id"])
     await service.apply_run(run_id=initial_plan["run"]["id"], review_run_id=initial_review_id)

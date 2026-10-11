@@ -20,7 +20,6 @@ from app.schemas.ai_generation import DietRecommendationV2, ExerciseRecommendati
 from app.services.ai_service import (
     CHAT_SCHEMA_VERSION,
     DIET_RECOMMEND_SCHEMA_VERSION,
-    FOOD_ANALYSIS_SCHEMA_VERSION,
     AIInvocationResult,
     AIService,
     AIServiceError,
