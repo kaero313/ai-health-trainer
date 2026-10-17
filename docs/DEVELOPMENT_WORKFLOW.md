@@ -19,7 +19,7 @@ Claude Code와 Codex로 개발할 때 쓰는 하네스의 사용법이다. 공�
 | `.gitnexus/` | GitNexus 인덱스. 약 100MB | X |
 | `scripts/harness.py` | 역할 파일·스킬 사본 생성기 | O |
 | `scripts/verify.py` | 검증 게이트와 증거 기록 | O |
-| `pytest.ini`, `tests/test_harness_scripts.py` | 루트 pytest는 하네스 자체 테스트만 돈다 | O |
+| `pytest.ini`, `tests/test_harness_scripts.py`, `tests/test_dev_compose.py` | 루트 pytest는 하네스 자체 테스트와 저장소 설정 테스트(개발용 compose 포트)만 돈다 | O |
 | `backend/pytest.ini`, `backend/tests/conftest.py` | 백엔드 테스트 설정(`--strict-markers`, `migration` 마커)과 테스트 격리 | O |
 | `backend/ruff.toml` | ruff 규칙 고정(E4·E7·E9·F) | O |
 | `.gitattributes` | 텍스트 파일 LF 고정, 바이너리 지정 | O |
@@ -96,10 +96,10 @@ python scripts/verify.py --frontend-only # Docker 없이 render 검사와 flutte
 - 백엔드 단계는 `docker compose up -d`로 띄운 backend 컨테이너 안에서 돈다. `backend/`가 `/app`에 바인드 마운트되므로 워킹트리의 코드가 그대로 검사된다. 컨테이너가 없으면 `docker_ready`에서 `backend_container_not_running`으로 멈춘다. ruff는 `backend/requirements.txt`에 있으므로 requirements를 바꿨으면 `docker compose build backend && docker compose up -d backend`로 이미지를 갱신한다.
 - 기동 검사는 `import app.main`이다. pytest를 전부 통과하고도 앱이 못 뜨는 커밋(진입점 import 오류, 라우터 등록 오류)을 걸러낸다. `alembic heads`는 마이그레이션 head가 갈라졌는지 본다.
 - flutter는 PATH에서 찾고, 없으면 `FLUTTER_ROOT`(또는 `FLUTTER_HOME`)`/bin/flutter`를 쓴다. Claude Code 세션에서는 `.claude/settings.local.json`의 `env.FLUTTER_ROOT`로 준다.
-- 결과는 `.harness/runs/<YYYYmmdd-HHMMSS>-<8hex>/`의 `result.json`, `harness-junit.xml`, `junit.xml`(backend pytest), `flutter-tests.json`에 남는다. `result.json`은 `status`, `reason`, `failed_step`, `base_commit`, 실행 전후 `workspace_sha256`(추적+미추적 파일 내용 해시), `evidence_sha256`, `steps[]`의 명령·exit code·출력 꼬리·결과 합계·`evidence_error`·`check_error`, pytest `summary`를 담는다. 보고와 커밋 메시지의 수치는 이 파일의 값을 쓴다.
+- 결과는 `.harness/runs/<YYYYmmdd-HHMMSS>-<8hex>/`의 `result.json`, `harness-junit.xml`, `junit.xml`(backend pytest), `flutter-tests.json`에 남는다. `result.json`은 `status`, `reason`, `failed_step`, `base_commit`, 실행 전후 `workspace_sha256`(추적+미추적 파일 내용 해시)과 그사이 바뀐 `workspace_changed_paths`, `evidence_sha256`, `steps[]`의 명령·exit code·출력 꼬리·결과 합계·`evidence_error`·`check_error`, pytest `summary`를 담는다. 보고와 커밋 메시지의 수치는 이 파일의 값을 쓴다.
 - 테스트 명령이 exit 0이어도 결과 파일이 없으면 `junit_missing`, 0건이면 `zero_tests`, 실패·오류가 기록돼 있으면 `junit_unsuccessful`로 실패 처리한다. flutter JSON 리포터는 `done` 이벤트가 없으면 증거로 보지 않는다.
-- 실행 중 워킹트리가 바뀌면 `reason: workspace_mutated`로 실패 처리한다. 증거가 어느 트리를 말하는지 알 수 없기 때문이다.
-- 하네스 스크립트 자체는 `tests/test_harness_scripts.py`가 검증한다. render drift 감지, 생성물 형식, 스킬 사본 동기화, 역할 파일이 규칙 전문을 복사하지 않는지, 역할 표 세 곳과 `agents.toml`의 일치, `.claude/settings.json`의 lead 모델·`.env` 차단·git 확인 항목, verify의 요약 파싱과 증거 판정을 본다.
+- 실행 중 워킹트리가 바뀌면 `reason: workspace_mutated`로 실패 처리한다. 증거가 어느 트리를 말하는지 알 수 없기 때문이다. 바뀐 경로는 `workspace_changed_paths`와 요약 줄(앞 5개)에 나온다. 다른 세션이 같은 저장소를 동시에 고치면 이 실패가 난다. 그 파일이 내 변경과 무관하면 그 작업이 멈춘 뒤 다시 돌린다.
+- 하네스 스크립트 자체는 `tests/test_harness_scripts.py`가 검증한다. render drift 감지, 생성물 형식, 스킬 사본 동기화, 역할 파일이 규칙 전문을 복사하지 않는지, 역할 표 세 곳과 `agents.toml`의 일치, `.claude/settings.json`의 lead 모델·`.env` 차단·git 확인 항목, verify의 요약 파싱과 증거 판정을 본다. `tests/test_dev_compose.py`는 개발용 `docker-compose.yml`의 호스트 포트가 모두 `127.0.0.1`에 묶였는지 본다.
 - 테스트 통과와 스크린샷은 화면 품질의 증거가 아니다. 프론트 변경은 사람이 앱을 열어 확인할 화면과 상태를 보고에 적는다.
 - 실제 Gemini를 호출하는 통합 검증(`python -m app.cli.ai validate-integration`)은 게이트에 넣지 않는다. 사용자가 명시적으로 요청할 때만 돌린다.
 - **테스트 격리.** compose는 `backend/.env` 전체를 backend 컨테이너의 환경변수로 넣고, 설정 객체도 `/app/.env` 파일을 읽는다. 그래서 `backend/tests/conftest.py`가 app import 전에 세 가지를 한다. 설정 필드와 같은 이름의 환경변수를 지우고(DB·Redis·OpenSearch 주소 4개만 유지) `.env` 파일을 읽지 않는 설정 함수로 바꿔 로컬과 CI가 같은 코드 기본값으로 테스트하게 한다. `GEMINI_API_KEY`는 가짜 값으로 덮어쓴다. 루프백과 테스트 DB·Redis 외의 이름 해석·소켓 연결을 차단한다. OpenSearch 주소는 루프백이어도 차단한다. CI에서는 `localhost:9200`이라 루프백 허용에 걸려 연결 거부만 조용히 삼켜지기 때문이다. 서비스 코드가 `except Exception`으로 차단 예외를 삼키면 테스트가 저하 경로로 통과할 수 있으므로, 차단 시도를 기록해 두고 테스트 종료 시 기록이 있으면 그 테스트를 오류로 처리한다. 차단을 일부러 확인하는 테스트는 `expect_network_block` 픽스처를 쓴다. 기본값과 다른 설정이 남아 있으면 `pytest_configure`가 이름만 적어 멈춘다. `verify.py`의 backend_pytest 단계도 CI와 같은 가짜 키(`dummy-key-for-test`)를 넘긴다. `docker compose exec backend pytest`로 직접 돌려도 격리된다. 대역을 빠뜨린 테스트는 `외부 네트워크 접속을 차단했습니다`로 실패한다. 키를 빈 값으로 두면 `genai.Client` 생성에서 60건이 실패하므로 가짜 값을 쓴다. `backend/tests/test_network_isolation.py`가 이 격리를 검사한다. 2026-09-25 도입 시 로컬 `.env` 값에 기대던 테스트는 없었다. 종료 시 검사를 넣자 `test_catalog_apply_requires_confirmation_for_full_reindex`가 OpenSearch 삭제 호출을 대역 없이 하고 있던 것이 드러나 대역을 추가했다(reviewer 지적).
@@ -113,25 +113,27 @@ python scripts/verify.py --frontend-only # Docker 없이 render 검사와 flutte
 
 1. 이번 커밋에 넣지 않을 변경을 `git stash push -- <paths>`로 치운다(미추적 파일은 `-u`).
 2. 남은 후보로 `python scripts/verify.py`를 돌린다. 프론트만이면 `--frontend-only`.
-3. 단독으로 성립하지 않는 파일은 순서를 잡아 하나씩 얹으며 매 단계 검증한다. 예: 서비스를 먼저, 라우터를 뒤에. 스키마를 먼저, Flutter repository를 뒤에.
+3. 단독으로 성립하지 않는 파일은 순서를 잡아 하나씩 얹으며 매 단계 검증한다. 예: 서비스를 먼저, 라우터를 뒤에. 스키마를 먼저, Flutter repository를 뒤에. HEAD 호출자는 `git grep <심볼> HEAD`로 확인한다. GitNexus 인덱스는 워킹트리 기준이라 HEAD 판단에 쓰지 않는다.
 4. 통과한 파일만 `git commit -m "..." -- <paths>`로 커밋한다.
 5. `git stash pop`으로 나머지를 되돌리고 반복한다.
 
 ## 6. Git 규칙
 
-- 커밋 메시지 규칙은 `AGENTS.md` §7에 있다. 저장소 이력에서 뽑은 관례다: 한국어 제목 한 줄, 영역 scope, 파일 1~2개 단위, 본문과 트레일러 없음. `.githooks/commit-msg`가 형식을 검사한다(`core.hooksPath=.githooks`).
+- 커밋 메시지 규칙은 `AGENTS.md` §7에 있다. 저장소 이력에서 뽑은 관례다: 한국어 제목 한 줄, 영역 scope, 파일 1~2개 단위, 본문과 트레일러 없음. `.githooks/commit-msg`가 형식, 제목 100자(로캘과 무관하게 글자 수로 센다), 트레일러 없음을 검사한다(`core.hooksPath=.githooks`). Claude Code가 기본으로 붙이는 `Co-Authored-By`·`Claude-Session`은 `.claude/settings.json`의 `attribution`으로 끈다.
 - 커밋은 사용자가 명령할 때만 만든다. 작업을 끝냈다고 스스로 커밋하지 않는다. push·`reset --hard`·강제 push는 사용자 확인이 필요하다.
+- 브랜치 없이 `main`에 바로 커밋한다. 오래 걸리는 큰 작업에만 사용자가 정하면 브랜치를 쓴다. 테스트 수가 바뀌면 README·OWNER_GUIDE의 현재 상태 수치를 `result.json` 값으로 같은 묶음에서 갱신한다.
 - `.gitattributes`가 텍스트 파일을 LF로 고정한다. Windows `core.autocrlf=true` 체크아웃의 CRLF 경고를 없애고 `workspace_sha256`을 OS 간에 안정시킨다.
 
 ## 7. CI
 
-`.github/workflows/ci.yml`이 main·develop의 push와 PR마다 세 잡을 돌린다.
+`.github/workflows/ci.yml`이 main의 push와 PR마다 네 잡을 돌린다.
 
 | 잡 | 내용 |
 |---|---|
 | harness-check | `scripts/harness.py render --check`, 하네스 자체 테스트 |
 | backend-test | ruff, `import app.main`, alembic head 단일 검사, PostgreSQL(pgvector)·Redis 서비스 컨테이너로 pytest |
 | flutter-quality | `flutter pub get`, `flutter analyze`, `flutter test` |
+| android-build | Java 17, `flutter build apk --debug`. AGP·Gradle·Kotlin 설정 깨짐을 잡는다. 느려서 로컬 `verify.py`에는 넣지 않았다 |
 
 CI는 설치 시점의 최신 라이브러리를 받는다. 로컬 이미지와 버전이 달라 생기는 실패는 CI가 먼저 알려 준다. lock 파일 도입은 별도 과제다.
 
@@ -177,6 +179,8 @@ gitnexus detect-changes --scope staged --repo .   # 커밋 전 영향받는 실�
 | FastAPI 라우트의 Flutter 소비자 | Dio 경로 문자열 | 0 (`route_map` 라우트 26개는 모두 찾음) | 라우트별 1개 이상 |
 
 - Python 백엔드는 이번 표본에서 정확했다. Dart는 Riverpod provider를 거치는 호출과 FastAPI↔Flutter 경계가 비어 있다. 이 두 경우는 반드시 텍스트 검색으로 교차 확인한다.
+- Dart 위젯의 `impact`에는 그 파일을 import만 한 화면도 파일 단위 항목으로 섞인다. 실제 사용처는 `build` 같은 함수 단위 항목으로 판단한다. `route_map`은 백엔드 라우트만 보여 주고 소비자는 비어 있다.
+- 2026-10-04 점검에서 인덱스가 2026-09-25 이후 갱신되지 않은 채(커밋 14개 차이) 서브에이전트가 그대로 쓰고 있었다. scout·reviewer는 Bash가 없어 스스로 인덱싱하지 못하므로 lead가 위임 전에 갱신한다. 재인덱싱은 37.5초였고 `get_current_user` 직접 호출자는 22로 텍스트 검색과 같았다.
 - `detect-changes`는 추적 중인 파일의 diff만 본다. 실측에서 `--scope all` 결과의 파일 수가 `git diff --name-only HEAD`와 같았고 미추적 새 파일은 빠졌다. 커밋 전에는 stage한 뒤 `--scope staged`로 본다.
 - 첫 인덱싱에서 `frontend/lib/features/auth/data/`와 `chat/data/`의 repository 두 파일이 빠졌다. 원인은 Docker 볼륨용으로 둔 앵커 없는 `data/` 무시 규칙이었다. 파일은 이미 추적 중이라 git에는 보였지만 GitNexus는 무시 규칙을 따른다. 규칙을 `/data/`로 좁혀 해결했다. 인덱스에서 파일이 빠지면 `git check-ignore -v --no-index <경로>`로 먼저 확인한다.
 - 라이선스는 PolyForm Noncommercial 1.0.0이다. 비상업적 개인 사용 범위에서만 쓴다.
@@ -194,3 +198,9 @@ gitnexus detect-changes --scope staged --repo .   # 커밋 전 영향받는 실�
 | 1.0 | 2026-09-25 | 테스트 설정을 로컬 `.env` 대신 코드 기본값으로 생성(인프라 주소만 유지), `backend/pytest.ini`(`--strict-markers`, `migration` 마커), 마이그레이션 왕복 테스트(qa 작성)와 결함 2건 수정(`started_at` 기본값 마이그레이션, 초기 downgrade의 enum 삭제) |
 | 1.0 | 2026-09-25 | reviewer 지적 반영: 차단 예외가 서비스에서 삼켜져도 테스트 종료 시 실패, OpenSearch는 루프백이어도 차단(CI와 로컬 일치), 대역이 빠진 기존 테스트 1건 수정 |
 | 1.0 | 2026-09-25 | 스킬 실사용 장치: 모든 역할에 Skill·GitNexus 읽기 MCP 도구, 역할 본문의 기본 스킬 지시와 보고, `AGENTS.md` §8 위임 지시문 스킬 명시·§9 불러서 따르기 규칙, 하네스 테스트 2건 |
+| 1.0 | 2026-10-03 | ai-trade-manager 재대조(9/23 이후 하네스 변경 없음 확인). 커밋 규칙 강제: `commit-msg`가 트레일러 거부·제목 100자를 로캘과 무관하게 검사, `.claude/settings.json` `attribution`으로 Claude Code 커밋 트레일러 끔, 하네스 테스트 2종. ATM 규칙 이식: 나눠 커밋할 때 HEAD 호출자는 `git grep`으로 lead가 확인. frontend 역할·`AGENTS.md` §6에 `shadcn-ui-flutter`·`docs/DESIGN_SYSTEM.md` 지시 |
+| 1.0 | 2026-10-04 | 프로젝트 적합성 점검: `AGENTS.md`의 테스트 수 하드코딩 제거(기준값은 `result.json`), OWNER_GUIDE 전체 선독을 관련 절 읽기로 축소, OWNER_GUIDE·DEVELOPMENT_GUIDE의 영어·scope 없는 커밋 예시와 예전 CI 설명, 없는 `docker-compose.test.yml`·로컬 pytest 기준 테스트 안내 정정, 실제 Gemini 통합 검증 명령에 비용 경고 |
+| 1.0 | 2026-10-04 | 사용자 결정 반영: 위험 경로에 AI 프롬프트·안전 설정과 RAG 운영 명령 전체(ingest·register·refresh 포함) 추가(qa·reviewer 역할 기준 보강), `main`에 바로 커밋하는 규칙 명시(DEVELOPMENT_GUIDE 브랜치 전략 정정), README·OWNER_GUIDE 테스트 수는 커밋 때 `result.json` 값으로 갱신, 참조 없는 `.agent/workflows/` 승인 템플릿 삭제, CI `android-build` 잡 추가 |
+| 1.0 | 2026-10-04 | 개발용 `docker-compose.yml`의 호스트 포트 4개(5432·6379·9200·8000)를 `127.0.0.1`에만 열도록 변경(ai-trade-manager 2026-09-25 보안 조치와 같은 방향)과 회귀 테스트 `tests/test_dev_compose.py`. 에뮬레이터(`10.0.2.2`)와 실기기(`adb reverse`) 접속 방법을 `AGENTS.md` §3·OWNER_GUIDE에 기록 |
+| 1.0 | 2026-10-04 | 이식 적합성·동작 점검: 역할 5종 실제 모델·Skill·GitNexus MCP·`AGENTS.md` 적재를 실행 기록으로 확인. 어디서도 읽지 않던 `agents.toml` `[policy]` 표 삭제(ATM에서 따라온 장식). GitNexus 인덱스가 2026-09-25 이후 갱신되지 않아 재인덱싱하고, 그래프 작업을 맡기기 전에 lead가 인덱스를 갱신하는 규칙 추가(scout·reviewer는 Bash가 없음) |
+| 1.0 | 2026-10-04 | `verify.py`가 실행 중 바뀐 경로를 `workspace_changed_paths`와 요약 줄에 남김(동시 세션 작업으로 생기는 `workspace_mutated` 원인을 바로 찾기 위해, 해시 형식은 유지, 테스트 2건). `AGENTS.md` §10을 규칙만 남기고 측정·세부 설명은 WORKFLOW §9로 이동(3.6KB→2.4KB). Codex 지원은 유지 |

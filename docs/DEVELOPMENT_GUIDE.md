@@ -1,7 +1,7 @@
 # AI Health Trainer - 개발 가이드라인
 
-> **이 문서의 목적:** Codex가 코드를 작성할 때 따라야 하는 규칙, 컨벤션, 실행 방법 안내.
-> **관리:** Claude Opus 4.6 (설계/수정), Codex 5.3 (구현)
+> **이 문서의 목적:** AI 작업자가 코드를 작성할 때 따라야 하는 규칙, 컨벤션, 실행 방법 안내.
+> **작업자와 역할:** Claude Code·Codex 공통 규칙은 `AGENTS.md`, 역할·모델 배정과 검증 게이트는 `docs/DEVELOPMENT_WORKFLOW.md`와 `harness/agents.toml`을 따른다. 아래 Phase별 기록의 Codex 표기는 당시 작업 이력이다.
 > **현재 기준:** 최신 프로젝트 상태와 다음 의사결정은 `docs/OWNER_GUIDE.md`를 우선한다.
 
 ---
@@ -277,33 +277,15 @@ backend/tests/
 └── test_rag_service.py      # RAG 서비스 테스트
 ```
 
-**테스트 실행:**
-```bash
-cd backend
-pytest tests/ -v --cov=app --cov-report=term-missing
-```
+위는 주요 파일만 적었다. 전체 목록은 `backend/tests/`를 본다.
 
-**conftest.py 구현 가이드:**
-```python
-"""
-Codex 구현 가이드:
-- httpx.AsyncClient + ASGITransport 사용
-- 테스트용 PostgreSQL DB (docker-compose.test.yml)
-- 각 테스트 함수마다 트랜잭션 롤백 (테스트 격리)
-- Gemini API는 Mock 처리 (실제 호출 금지)
-"""
-import pytest
-from httpx import AsyncClient, ASGITransport
-from app.main import app
+**테스트 실행:** 백엔드 의존성은 Docker 이미지에만 있으므로 backend 컨테이너 안에서 돈다. 보통은 `python scripts/verify.py`로 돌리고, 직접 돌리는 명령은 `docs/OWNER_GUIDE.md` §8에 있다.
 
-@pytest.fixture
-async def client():
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
-    ) as ac:
-        yield ac
-```
+**conftest.py 구성** (`backend/tests/conftest.py`):
+- `httpx.AsyncClient` + `ASGITransport`로 앱을 부른다.
+- 세션 시작 시 전용 테스트 DB(`health_trainer_test`)를 만들고, 테스트마다 `drop_all`/`create_all`로 스키마를 새로 만든다.
+- 설정은 로컬 `.env` 대신 코드 기본값으로 만들고, Gemini 키는 가짜 값으로 덮어쓰며, 루프백·테스트 DB·Redis 외의 네트워크 접속을 차단한다. 세부는 `docs/DEVELOPMENT_WORKFLOW.md` §4.
+- 마이그레이션은 `test_migrations.py`가 전용 임시 DB에서 따로 검사한다.
 
 ### 4-2. 최소 테스트 케이스 (반드시 구현)
 
@@ -320,24 +302,15 @@ async def client():
 
 ## 5. Git 브랜치 전략
 
-```
-main           ← 배포 가능한 안정 버전
-  └── develop  ← 개발 통합
-       ├── feature/auth          ← 인증 기능
-       ├── feature/profile       ← 프로필 기능
-       ├── feature/exercise      ← 운동 기능
-       ├── feature/diet          ← 식단 기능
-       ├── feature/dashboard     ← 대시보드
-       └── feature/ai-coaching   ← AI 코칭
-```
+1인 개발이므로 브랜치 없이 `main`에 바로 커밋한다. 처음에는 main/develop/feature 브랜치를 계획했지만 실제로 쓰지 않았다(2026-10-04 기준 커밋 312개 중 merge 0개). 오래 걸리는 큰 작업만 필요할 때 브랜치를 쓴다. push하면 CI가 돈다.
 
-**커밋 메시지 컨벤션:**
+**커밋 메시지 컨벤션:** `AGENTS.md` §7을 따른다. `.githooks/commit-msg`가 검사한다.
 ```
-feat: 운동 기록 CRUD API 구현
-fix: 토큰 갱신 시 만료 처리 버그 수정
-docs: API 명세서 업데이트
-test: 식단 API 테스트 추가
-refactor: AI 서비스 에러 처리 개선
+feat(exercise): 운동 기록 CRUD API 추가
+fix(auth): 토큰 갱신 시 만료 처리 수정
+docs(api): API 명세서 갱신
+test(diet): 식단 API 테스트 추가
+refactor(ai): AI 서비스 에러 처리 정리
 ```
 
 ---
@@ -404,4 +377,4 @@ refactor: AI 서비스 에러 처리 개선
 
 ### 다음 작업 기준
 
-Phase 1~6은 완료 상태로 취급한다. 새 작업은 Phase 7 또는 릴리스 후보 작업으로 별도 정의하고, 릴리스 전에는 로컬 테스트용 로그인 기본값 제거, Gemini 3 Flash Preview 응답 품질 검증, Play Store/운영 배포 검증을 확인한다.
+Phase 1~6은 완료 상태로 취급한다. 새 작업은 Phase 7 또는 릴리스 후보 작업으로 별도 정의하고, 릴리스 전에는 로컬 개발 계정(`backend/scripts/create_admin.py`)을 운영 DB에 만들지 않았는지 확인하고, Gemini 3 Flash Preview 응답 품질 검증, Play Store/운영 배포 검증을 확인한다.
