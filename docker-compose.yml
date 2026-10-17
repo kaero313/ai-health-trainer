@@ -1,4 +1,5 @@
 ﻿
+# 호스트 포트는 127.0.0.1에만 연다. 에뮬레이터(10.0.2.2)와 실기기(adb reverse)도 이 주소로 들어온다.
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -8,7 +9,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: health_trainer
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +22,7 @@ services:
     image: redis:7-alpine
     container_name: health_trainer_redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
 
@@ -34,7 +35,7 @@ services:
       DISABLE_INSTALL_DEMO_CONFIG: "true"
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - opensearchdata:/usr/share/opensearch/data
     healthcheck:
@@ -56,7 +57,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       OPENSEARCH_URL: http://opensearch:9200
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./backend:/app
       - ./docs:/workspace/docs
