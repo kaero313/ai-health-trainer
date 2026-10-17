@@ -6,15 +6,16 @@ AI 기반 개인 맞춤형 건강·피트니스 코칭 애플리케이션입니�
 
 | Document | Audience | Purpose |
 |----------|----------|---------|
-| `AGENTS.md` | AI 작업자 | Codex/AI가 작업할 때 지킬 실행 규칙 |
+| `AGENTS.md` | AI 작업자 | Claude Code·Codex가 작업할 때 지킬 실행 규칙. `CLAUDE.md`가 `@AGENTS.md`로 불러온다 |
+| `docs/DEVELOPMENT_WORKFLOW.md` | 개발자/AI 작업자 | 개발 하네스(역할·검증 게이트·커밋 절차) 사용법 |
 | `docs/OWNER_GUIDE.md` | 개발자/설계자/운영자인 사용자 | 제품 방향, 구현 현황, 개발/운영 기준 |
 | `docs/*` 상세 설계 문서 | 개발자/설계자 | 기능별 상세 설계와 과거 구현 근거. 최신 상태 판단은 `OWNER_GUIDE.md` 우선 |
 
 현재 상태:
 
 - Phase 1~6 완료
-- Backend tests: 187 PASS
-- Flutter widget tests: 36 PASS
+- Backend tests: 211 PASS
+- Flutter widget tests: 45 PASS
 - Flutter analyze: 0 issues
 
 로컬 실행:
@@ -27,6 +28,24 @@ docker compose exec backend alembic upgrade head
 백엔드 API 문서:
 
 - `http://localhost:8000/docs`
+
+## 개발 하네스
+
+AI 코딩 에이전트(Claude Code, Codex)가 이 저장소에서 일하는 방식을 역할·절차·검증으로 정해 두고, 그 설정을 코드와 함께 버전 관리합니다. 두 도구는 같은 규칙 파일(`AGENTS.md`)과 역할 정의(`harness/`)를 쓰고, 도구별 설정 파일은 `scripts/harness.py`가 생성합니다. 검증 게이트 `scripts/verify.py`는 backend 컨테이너의 ruff·기동·마이그레이션·pytest와 Flutter analyze/test를 한 번에 돌리고 증거를 `.harness/runs/`에 남깁니다. 편집 전 영향 분석과 커밋 전 변경 점검에는 GitNexus 코드 그래프(Python·Dart)를 쓰고, 그래프가 놓치는 Riverpod provider 경유 호출과 API 경계는 텍스트 검색으로 교차 확인합니다. 자세한 사용법은 [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md)에 있습니다.
+
+| 역할 | 모델 (Claude / Codex) | 추론 | 권한 | 맡는 일 |
+| :--- | :--- | :--- | :--- | :--- |
+| lead | Opus 5.5 / GPT-6 Sol | xhigh | 쓰기 | 사람과 대화하며 범위 판단, 작업 분배, 통합 |
+| scout | Sonnet 5 / GPT-6 Luna | low | 읽기 전용 | 코드 경로와 영향 범위 조사 |
+| backend | Opus 5.5 / GPT-5.6 Terra | high | 쓰기 | FastAPI·DB·AI/RAG 서비스와 테스트 |
+| frontend | Opus 5.5 / GPT-5.6 Terra | high | 쓰기 | Flutter 화면과 위젯 테스트 |
+| qa | Opus 5.5 / GPT-6 Sol | high | 쓰기 | 인증·AI 쿼터·프롬프트·RAG 운영·마이그레이션·개인정보 변경의 테스트를 구현과 따로 작성 (테스트만 수정) |
+| reviewer | Fable 5.1 / GPT-6 Sol | xhigh | 읽기 전용 | 위험 경로 변경 독립 검토 |
+
+```bash
+python scripts/verify.py            # 전체 게이트 (backend 컨테이너 필요)
+python scripts/verify.py --frontend # Flutter analyze/test 포함
+```
 
 ## Portfolio Focus
 
