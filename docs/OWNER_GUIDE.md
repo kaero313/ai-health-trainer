@@ -3,7 +3,7 @@
 > **Audience:** 사용자 본인(개발자, 설계자, 운영자)
 > **Purpose:** 제품 방향, 구현 현황, 개발/운영 방법을 한 문서에서 관리한다.
 > **AI worker guide:** `AGENTS.md`
-> **Last updated:** 2026-07-11
+> **Last updated:** 2026-09-25
 
 ---
 
@@ -31,6 +31,7 @@
 | `docs/UI_MOBILE_ACCEPTANCE_REPORT.md` | 16개 Flutter route와 모바일 3개 viewport 수용 검증 결과 |
 | `docs/DEPLOYMENT.md` | Docker/Nginx/배포 상세 |
 | `docs/DEVELOPMENT_GUIDE.md` | 개발 컨벤션과 구현 순서 기록 |
+| `docs/DEVELOPMENT_WORKFLOW.md` | Claude Code·Codex 개발 하네스: 역할·검증 게이트·커밋 절차 |
 | `docs/PROJECT_OVERVIEW.md` | 초기 프로젝트 개요와 역할 분담 |
 
 세부 설계 문서는 기능 구현 근거로 유지한다. 최신 Phase 상태와 다음 의사결정은 이 문서를 우선한다.
@@ -61,8 +62,8 @@ AI Health Trainer는 사진 한 장과 운동/체중 기록을 바탕으로 현�
 
 검증 기준:
 
-- Backend tests: 187 PASS
-- Flutter widget tests: 36 PASS
+- Backend tests: 211 PASS
+- Flutter widget tests: 45 PASS
 - Flutter: `flutter analyze` 0 issues
 
 다음 작업은 Phase 7 또는 릴리스 후보 작업으로 새로 정의한다.
@@ -192,6 +193,7 @@ Base URL:
 - Local backend: `http://localhost:8000/api/v1`
 - Flutter web local: configured to call `http://localhost:8000/api/v1`
 - Android emulator: configured to call `http://10.0.2.2:8000/api/v1`
+- Android physical device: `adb reverse tcp:8000 tcp:8000` and `flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8000/api/v1` (USB or wireless debugging). Dev compose publishes ports on `127.0.0.1` only, so the PC's LAN IP does not work.
 
 Endpoints:
 
@@ -209,6 +211,7 @@ Endpoints:
 | GET | `/diet/logs` | Yes | 식단 기록 조회 |
 | PUT | `/diet/logs/{id}` | Yes | 식단 기록 수정 |
 | DELETE | `/diet/logs/{id}` | Yes | 식단 기록 삭제 |
+| GET | `/diet/foods` | Yes | 음식 DB 검색(`query`, `limit` 최대 20) |
 | POST | `/diet/analyze-image` | Yes | 음식 사진 AI 분석 |
 | GET | `/diet/recommend` | Yes | AI 식단 추천 |
 | POST | `/exercise/logs` | Yes | 운동 기록 추가 |
@@ -278,29 +281,31 @@ Known AI maintenance item:
 
 ## 7. Design Standard
 
+Detailed standard: `docs/FLUTTER_UI_DESIGN.md` (tokens, Neo widgets, screen patterns, known inconsistencies).
+
 Design direction:
 
 - Mobile-first
-- Dark mode default
-- Material 3 tone
-- Primary accent: vibrant green
-- Secondary accents: blue/teal/yellow/orange for nutrition and state
+- Dark mode only, Material 3 tone
+- Stitch `Kinetic Cybernetics` reference applied in 2026-07
 - Dense but readable health dashboard, not a marketing landing page
 
 Important UI rules:
 
 - On-screen text is Korean.
-- Components should match current theme files in `frontend/lib/core/theme/`.
+- Colors, type, and spacing come from `frontend/lib/core/theme/`; shared widgets come from `frontend/lib/shared/widgets/neo_widgets.dart`.
 - Dashboard and tools should be information-first.
-- Use Browser Use side panel after UI changes.
+- Do not fake health data; show `-- / 기록 없음` when a value is missing.
+- After UI changes, check the screen in the agent's browser tool (Codex Browser Use side panel or Claude Code browser tool).
 - Avoid adding explanatory in-app text about features unless the screen naturally needs it.
 
 Current visual language:
 
-- Background: deep navy
-- Surface cards: dark blue-gray
-- Main action color: green
-- Rounded cards/buttons consistent with existing Flutter theme
+- Background: black `#050505`, surfaces `#131313`–`#353534`
+- Primary accent: electric cyan `#00F0FF`; lime `#C3F400` and orange `#FF5C00` for carbs/fat and state
+- Glass cards with thin neon borders, glow only on emphasized cards and primary buttons
+- Fonts: Sora headlines, Hanken Grotesk body, Geist labels/numbers, Noto Sans KR fallback
+- Floating 5-tab bottom bar: 홈 / 통계 / 플랜 / 식단 / 스캔
 
 ---
 
@@ -336,24 +341,35 @@ cd frontend
 flutter analyze
 ```
 
-Auditable API/AI/RAG validation:
+Verification gate (harness):
+
+```bash
+python scripts/verify.py                 # render 검사 → 하네스 테스트 → ruff → 기동 → alembic heads → pytest (+ frontend/ 변경 시 flutter)
+python scripts/verify.py --fast          # render 검사·ruff·기동·alembic heads만
+python scripts/verify.py --frontend      # flutter analyze/test 강제
+python scripts/verify.py --frontend-only # Docker 없이 flutter만
+```
+
+백엔드 단계는 backend 컨테이너 안에서 돌고, 결과는 `.harness/runs/<id>/result.json`에 남는다. 역할·스킬·CI 구성은 `docs/DEVELOPMENT_WORKFLOW.md`를 따른다.
+
+Auditable API/AI/RAG validation (calls the real Gemini API and costs quota; run only when explicitly needed):
 
 ```bash
 docker compose exec -e DEBUG=false backend python -m app.cli.ai validate-integration \
   --report-path /workspace/docs/UI_AI_INTEGRATION_VALIDATION_REPORT.md
 ```
 
-Commit convention:
+Commit convention (full rule: `AGENTS.md` §7, checked by `.githooks/commit-msg`):
 
 ```text
-<type>(<scope>): <description>
+<type>(<scope>): <한국어 설명>
 ```
 
 Examples:
 
-- `feat(dashboard): add monthly report card`
-- `fix(auth): remove local login defaults`
-- `docs(project): update phase status`
+- `feat(dashboard): 월간 리포트 카드 추가`
+- `fix(auth): 로컬 로그인 기본값 제거`
+- `docs(project): 단계 현황 갱신`
 
 ---
 
@@ -370,7 +386,7 @@ docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
 
 GitHub Actions:
 
-- `ci.yml`: backend pytest + Flutter analyze
+- `ci.yml`: harness check (render drift, harness tests), backend ruff/import/alembic head/pytest, Flutter analyze/test, Android debug APK build
 - `cd.yml`: manual SSH deploy only. Current project operation is local-only, so CD must not run automatically on every push.
 
 Current deployment posture:
