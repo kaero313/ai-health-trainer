@@ -1,20 +1,19 @@
 #!/bin/sh
 #
-# commit-msg hook: Conventional Commits 형식 검증
-# 형식: <type>(<scope>): <description>
+# commit-msg hook: 커밋 메시지 규칙 검증 (AGENTS.md §7)
+# 형식: <type>(<scope>): <설명>   제목 한 줄 100자 이내, 트레일러 없음
 # 예시: feat(auth): JWT 로그인 API 구현
 #
 # 허용 type: feat, fix, docs, style, refactor, test, chore, perf, ci, build
 #
 
 commit_msg_file=$1
-commit_msg=$(cat "$commit_msg_file")
 
 # Conventional Commits 패턴
-pattern="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build)(\(.+\))?: .{1,100}$"
+pattern="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build)(\(.+\))?: .+$"
 
 # 첫 번째 줄만 검사
-first_line=$(echo "$commit_msg" | head -1)
+first_line=$(head -n 1 "$commit_msg_file")
 
 if ! echo "$first_line" | grep -qE "$pattern"; then
   echo ""
@@ -41,6 +40,26 @@ if ! echo "$first_line" | grep -qE "$pattern"; then
   echo "  test(auth): 회원가입 테스트 추가"
   echo ""
   echo "현재 메시지: $first_line"
+  echo ""
+  exit 1
+fi
+
+# 제목 길이. UTF-8 연속 바이트(0x80-0xBF)를 빼고 세면 로캘과 무관하게 글자 수가 된다
+length=$(printf '%s' "$first_line" | LC_ALL=C tr -d '\200-\277' | wc -c)
+if [ "$length" -gt 100 ]; then
+  echo ""
+  echo "❌ 커밋 제목이 100자를 넘습니다(${length}자)."
+  echo ""
+  exit 1
+fi
+
+# 트레일러(Co-Authored-By, Signed-off-by 등)는 붙이지 않는다
+trailers=$(git interpret-trailers --parse < "$commit_msg_file")
+if [ -n "$trailers" ]; then
+  echo ""
+  echo "❌ 커밋 메시지에 트레일러가 있습니다. 이 저장소는 트레일러를 붙이지 않습니다."
+  echo ""
+  echo "$trailers"
   echo ""
   exit 1
 fi
