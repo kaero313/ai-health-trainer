@@ -499,13 +499,36 @@ class RAGService:
             chunk.opensearch_index = self.settings.RAG_OPENSEARCH_INDEX
             chunk.opensearch_document_id = str(chunk.id)
             indexed += 1
+
+        # archive 때 OpenSearch 삭제에 실패한 chunk는 source 상태와 관계없이 삭제를 다시 시도한다.
+        retry_stmt = (
+            select(RagChunk)
+            .where(RagChunk.status == "archived", RagChunk.index_status == "failed")
+            .order_by(RagChunk.id.asc())
+        )
+        if source_id is not None:
+            retry_stmt = retry_stmt.where(RagChunk.source_id == source_id)
+        deleted = 0
+        delete_failed = 0
+        for chunk in (await self.db.execute(retry_stmt)).scalars().all():
+            if await self._archive_chunk(chunk):
+                deleted += 1
+            else:
+                delete_failed += 1
+
         await self.db.commit()
-        return {"indexed": indexed, "failed": failed, "skipped": skipped}
+        return {
+            "indexed": indexed,
+            "failed": failed,
+            "skipped": skipped,
+            "deleted": deleted,
+            "delete_failed": delete_failed,
+        }
 
     async def archive_source(self, source_id: int) -> dict[str, int]:
         source = await self.db.get(RagSource, source_id)
         if source is None:
-            return {"sources": 0, "chunks": 0}
+            return {"sources": 0, "chunks": 0, "delete_failed": 0}
 
         source.status = "archived"
         source.last_refresh_status = "archived"
@@ -514,11 +537,13 @@ class RAGService:
         ).scalars().all()
 
         archived_chunks = 0
+        delete_failed = 0
         for chunk in chunks:
-            await self._archive_chunk(chunk)
+            if not await self._archive_chunk(chunk):
+                delete_failed += 1
             archived_chunks += 1
         await self.db.commit()
-        return {"sources": 1, "chunks": archived_chunks}
+        return {"sources": 1, "chunks": archived_chunks, "delete_failed": delete_failed}
 
     async def mark_traces_request_id(self, trace_group_id: str | None, request_id: int | None) -> None:
         if not trace_group_id or request_id is None:
@@ -941,13 +966,16 @@ class RAGService:
         await self.db.flush()
         return embedding, False, cache.id
 
-    async def _archive_chunk(self, chunk: RagChunk) -> None:
+    async def _archive_chunk(self, chunk: RagChunk) -> bool:
+        """chunk를 archive하고 OpenSearch 삭제 성공 여부를 돌려준다. 삭제 실패는 index_status=failed로 남긴다."""
         chunk.status = "archived"
-        chunk.index_status = "deleted"
         try:
             await self.index_service.delete_chunk(chunk.id)
         except RAGIndexError:
-            pass
+            chunk.index_status = "failed"
+            return False
+        chunk.index_status = "deleted"
+        return True
 
     def _apply_source_metadata(
         self,

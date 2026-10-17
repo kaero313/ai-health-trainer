@@ -254,7 +254,7 @@ RAG 데이터는 답변 품질과 안전성에 직접 영향을 준다. 출처�
 | `opensearch_index` | 색인 대상 index 이름 |
 | `opensearch_document_id` | 일반적으로 `rag_chunks.id` 문자열 |
 | `indexed_at` | OpenSearch 마지막 색인 시각 |
-| `index_status` | `pending`, `indexed`, `failed`, `deleted` |
+| `index_status` | `pending`, `indexed`, `failed`, `deleted`. `status=archived` chunk의 `failed`는 OpenSearch 삭제 실패를 뜻한다 |
 | `token_count` | 추정 token 수 |
 | `status` | `active`, `archived`, `deleted` |
 | `version` | chunk version |
@@ -578,6 +578,9 @@ embedding model 변경 절차:
 - retrieval trace가 참조하는 chunk는 FK 무결성을 깨지 않는다.
 - 본문 삭제가 필요한 경우 chunk content는 비우고 hash/source metadata만 남긴다.
 - OpenSearch에서는 삭제된 chunk가 검색되지 않도록 즉시 delete 또는 `status=deleted` 업데이트를 수행한다.
+- archive(`archive_source`, refresh의 옛 chunk 교체) 중 OpenSearch 삭제가 실패해도 chunk는 `status=archived`로 commit하고 `index_status=failed`로 남긴다. 성공하면 `deleted`다. 검색은 PostgreSQL에서 `status=active`로 다시 거르므로 남은 문서는 노출되지 않는다.
+- `reindex`는 source 상태와 관계없이 `archived`/`failed` chunk의 삭제를 다시 시도한다(`--source-id`를 주면 그 source만). 성공하면 `deleted`, 실패하면 `failed`로 남는다.
+- `archive` 결과에는 `delete_failed`(삭제 실패 수)가, `reindex` 결과에는 `deleted`(재시도 성공 수)와 `delete_failed`(재시도 실패 수)가 나온다.
 
 ### 10-4. 동기화와 장애 처리
 
@@ -595,7 +598,8 @@ PostgreSQL commit과 OpenSearch 색인은 서로 다른 저장소에 대한 작�
    - 실패 시 index_status=failed, job error 기록
 
 3. Retry worker
-   - failed/pending chunk를 재색인
+   - status=active인 failed/pending chunk를 재색인
+   - status=archived인 failed chunk는 재색인하지 않고 OpenSearch 삭제를 다시 시도(`reindex`)
 ```
 
 중요 원칙:

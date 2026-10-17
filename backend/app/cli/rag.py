@@ -389,14 +389,20 @@ async def _reindex(args: argparse.Namespace) -> None:
     settings = get_settings()
     async with AsyncSessionLocal() as db:
         result = await RAGService(db, settings).reindex(source_id=args.source_id)
-    print(f"Reindex finished: indexed={result['indexed']} failed={result['failed']}")
+    print(
+        f"Reindex finished: indexed={result['indexed']} failed={result['failed']} "
+        f"deleted={result['deleted']} delete_failed={result['delete_failed']}"
+    )
 
 
 async def _archive(args: argparse.Namespace) -> None:
     settings = get_settings()
     async with AsyncSessionLocal() as db:
         result = await RAGService(db, settings).archive_source(args.source_id)
-    print(f"Archived sources={result['sources']} chunks={result['chunks']}")
+    print(
+        f"Archived sources={result['sources']} chunks={result['chunks']} "
+        f"delete_failed={result['delete_failed']}"
+    )
 
 
 async def _evaluate(args: argparse.Namespace) -> None:
