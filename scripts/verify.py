@@ -23,7 +23,8 @@ flutter는 PATH에서 찾고, 없으면 FLUTTER_ROOT/bin/flutter를 쓴다.
 결과는 .harness/runs/<id>/의 result.json·harness-junit.xml·junit.xml·flutter-tests.json에 남기고
 마지막 줄에 요약을 출력한다. 테스트 명령이 성공해도 결과 파일이 없거나, 0건이거나, 실패·오류가
 기록돼 있으면 실패로 처리한다. 실행 전후의 워킹트리 해시가 다르면 증거가 어느 상태를 말하는지
-알 수 없으므로 실패(workspace_mutated)로 기록한다. 로컬 하위 명령은 이 스크립트를 실행한
+알 수 없으므로 실패(workspace_mutated)로 기록하고, 바뀐 경로를 workspace_changed_paths와
+요약 줄에 남긴다. 로컬 하위 명령은 이 스크립트를 실행한
 인터프리터(sys.executable)로 돌린다.
 """
 
@@ -107,17 +108,35 @@ def git(*args: str) -> str:
     return proc.stdout if proc.returncode == 0 else ""
 
 
-def workspace_sha256() -> str:
-    """추적+미추적(ignore 제외) 파일 내용 해시. 증거가 어느 트리 상태를 말하는지 고정한다."""
+def workspace_snapshot() -> dict[str, str]:
+    """추적+미추적(ignore 제외) 파일의 {경로: 내용 해시}."""
     listing = git("ls-files", "-z", "--cached", "--others", "--exclude-standard")
-    lines = []
-    for rel in sorted({p for p in listing.split("\0") if p}):
+    snapshot: dict[str, str] = {}
+    for rel in {p for p in listing.split("\0") if p}:
         if rel in SNAPSHOT_EXCLUDE_FILES or rel.startswith(SNAPSHOT_EXCLUDE_PREFIXES):
             continue
         path = ROOT / rel
         if path.is_file():
-            lines.append(f"{rel} {hashlib.sha256(path.read_bytes()).hexdigest()}")
+            snapshot[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return snapshot
+
+
+def workspace_sha256(snapshot: dict[str, str]) -> str:
+    """스냅숏을 한 해시로 묶는다. 증거가 어느 트리 상태를 말하는지 고정한다."""
+    lines = [f"{rel} {digest}" for rel, digest in sorted(snapshot.items())]
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def changed_paths(before: dict[str, str], after: dict[str, str]) -> list[str]:
+    """실행 중 내용이 바뀌거나 생기거나 사라진 경로."""
+    return sorted(rel for rel in before.keys() | after.keys() if before.get(rel) != after.get(rel))
+
+
+def mutation_note(paths: list[str], limit: int = 5) -> str:
+    """요약 줄에 붙일 워킹트리 변경 안내. 다른 세션이 동시에 고친 파일을 바로 찾게 한다."""
+    shown = ", ".join(paths[:limit])
+    rest = f" 외 {len(paths) - limit}개" if len(paths) > limit else ""
+    return f"실행 중 워킹트리 변경됨: {shown}{rest}"
 
 
 def frontend_changed() -> bool:
@@ -334,7 +353,8 @@ def main(argv: list[str] | None = None) -> int:
     evidence = evidence_paths(report_dir)
     run_frontend = args.frontend or args.frontend_only or (not args.fast and frontend_changed())
     steps = build_steps(args.fast, run_frontend, args.frontend_only, report_dir)
-    before = workspace_sha256()
+    before_snapshot = workspace_snapshot()
+    before = workspace_sha256(before_snapshot)
     results: list[dict] = []
     failed_step: str | None = None
     for step in steps:
@@ -353,7 +373,9 @@ def main(argv: list[str] | None = None) -> int:
         if result["exit_code"] != 0 or result.get("evidence_error") or result.get("check_error"):
             failed_step = step.name
             break
-    after = workspace_sha256()
+    after_snapshot = workspace_snapshot()
+    after = workspace_sha256(after_snapshot)
+    mutated = changed_paths(before_snapshot, after_snapshot)
     reason = failed_step or "passed"
     if failed_step is None and before != after:
         reason = "workspace_mutated"
@@ -368,6 +390,7 @@ def main(argv: list[str] | None = None) -> int:
         "base_commit": git("rev-parse", "HEAD").strip(),
         "workspace_sha256": before,
         "workspace_sha256_after": after,
+        "workspace_changed_paths": mutated,
         "python": sys.version.split()[0],
         "interpreter": sys.executable,
         "backend_service": BACKEND_SERVICE,
@@ -390,8 +413,8 @@ def main(argv: list[str] | None = None) -> int:
         failed = results[-1]
         sys.stderr.write((failed["stdout_tail"] + failed["stderr_tail"]).rstrip() + "\n")
     summary = " | ".join(describe(step) for step in results)
-    if reason == "workspace_mutated":
-        summary += " | 실행 중 워킹트리 변경됨"
+    if mutated:
+        summary += " | " + mutation_note(mutated)
     print(f"verify: {report['status']} | {summary} | report {report_path.relative_to(ROOT).as_posix()}")
     return report["exit_code"]
 

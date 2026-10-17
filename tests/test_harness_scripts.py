@@ -5,9 +5,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -296,6 +299,22 @@ def test_describe_marks_failures_and_counts() -> None:
     }) == "flutter_test 39 tests, 0 skipped"
 
 
+def test_workspace_hash_is_stable_and_changed_paths_cover_edit_add_remove() -> None:
+    before = {"b.txt": "2", "a.txt": "1", "gone.txt": "3"}
+    after = {"a.txt": "1", "b.txt": "9", "new.txt": "4"}
+    # 기존 결과 파일과 비교할 수 있도록 해시 형식(경로순 "경로 해시" 줄)을 유지한다
+    expected = hashlib.sha256("a.txt 1\nb.txt 2\ngone.txt 3".encode("utf-8")).hexdigest()
+    assert verify.workspace_sha256(before) == expected
+    assert verify.changed_paths(before, after) == ["b.txt", "gone.txt", "new.txt"]
+    assert verify.changed_paths(before, dict(before)) == []
+
+
+def test_mutation_note_names_changed_paths() -> None:
+    assert verify.mutation_note(["docs/a.md"]) == "실행 중 워킹트리 변경됨: docs/a.md"
+    many = [f"f{i}.dart" for i in range(7)]
+    assert verify.mutation_note(many) == "실행 중 워킹트리 변경됨: f0.dart, f1.dart, f2.dart, f3.dart, f4.dart 외 2개"
+
+
 def test_role_files_point_to_agents_md_instead_of_copying_it(harness_copy: Path) -> None:
     outputs = _role_outputs(harness.generated())
     agents_md = (harness_copy / "AGENTS.md").read_text(encoding="utf-8")
@@ -387,6 +406,44 @@ def test_claude_settings_block_env_files_and_gate_destructive_git() -> None:
         assert f"Read(./{env_file})" in permissions["deny"], env_file
     for command in ("git push", "git reset --hard"):
         assert f"Bash({command})" in permissions["ask"] and f"Bash({command} *)" in permissions["ask"]
+
+
+def test_claude_settings_disable_commit_attribution() -> None:
+    """AGENTS.md §7은 트레일러를 금지한다. Claude Code가 Co-Authored-By·Claude-Session을 넣지 않게 한다."""
+    settings = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    attribution = settings["attribution"]
+    assert attribution["commit"] == ""
+    assert attribution["sessionUrl"] is False
+
+
+@pytest.mark.parametrize(
+    ("message", "accepted"),
+    [
+        ("feat(ui): 운동 저장소 정리\n", True),
+        ("chore: 설정 정리\n", True),
+        ("feat(ui): 운동 저장소 정리\n\n제목만으로 설명할 수 없는 결정.\n", True),
+        ("update(ui): 운동 저장소 정리\n", False),
+        ("feat(ui): 운동 저장소 정리\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n", False),
+        ("fix(api): 응답 수정\n\n본문.\n\nSigned-off-by: dev <dev@example.com>\n", False),
+        # 제목 전체 100자는 통과, 101자는 거부. 한글을 바이트로 세면 100자도 거부된다
+        ("feat(ui): " + "가" * 90 + "\n", True),
+        ("feat(ui): " + "가" * 91 + "\n", False),
+    ],
+)
+def test_commit_msg_hook_checks_subject_and_rejects_trailers(
+    tmp_path: Path, message: str, accepted: bool
+) -> None:
+    message_file = tmp_path / "COMMIT_EDITMSG"
+    message_file.write_bytes(message.encode("utf-8"))
+    # 사용자 터미널에는 UTF-8 로캘 변수가 없을 수 있으므로 지우고 돌린다
+    env = {k: v for k, v in os.environ.items() if k not in {"LANG", "LC_ALL", "LC_CTYPE"}}
+    result = subprocess.run(
+        ["git", "-c", "core.hooksPath=.githooks", "hook", "run", "commit-msg", "--", str(message_file)],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+    )
+    assert (result.returncode == 0) is accepted, result.stdout.decode("utf-8", "replace")
 
 
 def test_codex_skill_directory_mirrors_claude_skills() -> None:
