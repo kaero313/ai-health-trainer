@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend/core/design_system/app_shad_theme.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 import 'package:frontend/features/dashboard/domain/dashboard_controller.dart';
 import 'package:frontend/features/dashboard/presentation/dashboard_screen.dart';
 import 'package:frontend/features/dashboard/presentation/monthly_report_screen.dart';
 import 'package:frontend/features/profile/data/profile_repository.dart';
 import 'package:frontend/features/profile/presentation/profile_screen.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'support/fake_repositories.dart';
 
@@ -22,14 +24,15 @@ void main() {
       await tester.binding.setSurfaceSize(viewport);
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      final FakeProfileRepository profileRepository =
-          FakeProfileRepository()..profile = _profile;
+      final FakeProfileRepository profileRepository = FakeProfileRepository()
+        ..profile = _profile;
       final List<Override> overrides = <Override>[
         profileRepositoryProvider.overrideWithValue(profileRepository),
         todayDashboardProvider.overrideWith((ref) async => _today),
         weeklyDashboardProvider.overrideWith((ref) async => _weekly),
         monthlyDashboardProvider.overrideWith((ref, month) async => const {}),
         weightHistoryProvider.overrideWith((ref, month) async => const []),
+        recentWeightHistoryProvider.overrideWith((ref) async => const []),
       ];
 
       await _pumpScreen(tester, const DashboardScreen(), overrides);
@@ -91,16 +94,19 @@ Future<void> _pumpScreen(
     ProviderScope(
       key: UniqueKey(),
       overrides: overrides,
-      child: MaterialApp(
-        theme: AppTheme.darkTheme,
-        builder:
-            (BuildContext context, Widget? child) => MediaQuery(
-              data: MediaQuery.of(
-                context,
-              ).copyWith(textScaler: const TextScaler.linear(1.3)),
-              child: child!,
-            ),
-        home: screen,
+      // 새 디자인 시스템 화면(홈)은 ShadTheme을 읽는다. 앱 루트(main.dart)와 같다.
+      child: ShadTheme(
+        data: AppShadTheme.dark(),
+        child: MaterialApp(
+          theme: AppTheme.darkTheme,
+          builder: (BuildContext context, Widget? child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.3)),
+            child: child!,
+          ),
+          home: screen,
+        ),
       ),
     ),
   );
