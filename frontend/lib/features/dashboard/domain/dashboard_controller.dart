@@ -13,6 +13,13 @@ final weeklyDashboardProvider =
       return ref.read(dashboardRepositoryProvider).getWeekly();
     });
 
+/// 홈 체중 카드용 기록. 지난 30일을 항상 덮도록 이전 두 달의 1일부터 받고(3개월),
+/// 화면에서 30일로 자른다.
+final recentWeightHistoryProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((Ref ref) {
+      return ref.read(dashboardRepositoryProvider).getWeightHistory(months: 3);
+    });
+
 final monthlyDashboardProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, String>((Ref ref, String monthKey) {
       final ({int year, int month}) resolvedMonth = _parseMonthKey(monthKey);
