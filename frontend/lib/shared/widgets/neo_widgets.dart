@@ -512,6 +512,52 @@ class NeoOutlineButton extends StatelessWidget {
   }
 }
 
+/// 입력 화면 하단에 고정되는 저장 바. `Scaffold(resizeToAvoidBottomInset: true)`
+/// 본문 `Column`의 마지막 자식으로 두면 키보드 위에 붙는다.
+class NeoBottomActionBar extends StatelessWidget {
+  final Widget child;
+  final String? errorText;
+
+  const NeoBottomActionBar({super.key, required this.child, this.errorText});
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        border: Border(
+          top: BorderSide(color: AppColors.divider.withValues(alpha: 0.7)),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.pageHorizontal,
+            vertical: AppSpacing.sm + AppSpacing.xs,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (errorText != null) ...[
+                Text(
+                  errorText!,
+                  style: AppTypography.caption.copyWith(color: AppColors.error),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+              ],
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class NeoProgressBar extends StatelessWidget {
   final double value;
   final Color color;
