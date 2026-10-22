@@ -4,9 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_decorations.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/neo_widgets.dart';
 import '../data/exercise_repository.dart';
 import '../domain/exercise_controller.dart';
 
@@ -80,39 +80,6 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
     super.dispose();
   }
 
-  InputDecoration _inputDecoration({
-    required String hintText,
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      hintText: hintText,
-      hintStyle: AppTypography.body2.copyWith(color: AppColors.textSecondary),
-      filled: true,
-      fillColor: AppColors.surfaceLight,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.md,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.divider),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.error),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.error, width: 1.2),
-      ),
-      suffixIcon: suffixIcon,
-    );
-  }
-
   String? _validateExerciseName(String value) {
     if (value.trim().isEmpty) {
       return '운동명을 입력해주세요.';
@@ -151,7 +118,7 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
   void _addSetInput() {
     final String repsText =
         _setInputs.isEmpty || _setInputs.last.repsController.text.trim().isEmpty
-            ? '10'
+            ? ''
             : _setInputs.last.repsController.text.trim();
     final String weightText =
         _setInputs.isEmpty ? '' : _setInputs.last.weightController.text.trim();
@@ -277,174 +244,181 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('운동 추가')),
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('운동명', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              TextField(
-                controller: _nameController,
-                style: AppTypography.body1,
-                decoration: _inputDecoration(hintText: '예: 벤치프레스'),
-                onChanged: (String value) {
-                  setState(() {
-                    _nameError = _validateExerciseName(value);
-                    _submitError = null;
-                  });
-                },
-              ),
-              if (_nameError != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _nameError!,
-                  style: AppTypography.caption.copyWith(color: AppColors.error),
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              Text('근육군', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              DropdownButtonFormField<String>(
-                value: _selectedMuscleGroup,
-                decoration: _inputDecoration(hintText: '근육군 선택'),
-                dropdownColor: AppColors.surface,
-                style: AppTypography.body1,
-                items:
-                    kExerciseMuscleGroupOrder.map((String muscleGroup) {
-                      return DropdownMenuItem<String>(
-                        value: muscleGroup,
-                        child: Text(
-                          kExerciseMuscleGroupLabels[muscleGroup] ??
-                              muscleGroup,
-                        ),
-                      );
-                    }).toList(),
-                onChanged: (String? value) {
-                  if (value == null) {
-                    return;
-                  }
-                  setState(() {
-                    _selectedMuscleGroup = value;
-                  });
-                },
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text('날짜', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              InkWell(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                onTap: _pickDate,
-                child: InputDecorator(
-                  decoration: _inputDecoration(
-                    hintText: '날짜 선택',
-                    suffixIcon: const Icon(
-                      Icons.calendar_today,
-                      color: AppColors.textSecondary,
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: NeoTopBar(title: '운동 추가', showBack: true),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '운동 기록',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.primary,
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    DateFormat('yyyy-MM-dd').format(_selectedDate),
-                    style: AppTypography.body1,
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Expanded(child: Text('세트별 기록', style: AppTypography.body2)),
-                  TextButton.icon(
-                    onPressed: _addSetInput,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('세트 추가'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              for (int index = 0; index < _setInputs.length; index += 1) ...[
-                _SetInputRow(
-                  setNumber: index + 1,
-                  input: _setInputs[index],
-                  canRemove: _setInputs.length > 1,
-                  onRemove: () => _removeSetInput(index),
-                  onRepsChanged: (String value) {
-                    setState(() {
-                      _setInputs[index].repsError = _validatePositiveInt(
-                        value,
-                        '${index + 1}세트 횟수',
-                      );
-                      _submitError = null;
-                    });
-                  },
-                  onWeightChanged: (String value) {
-                    setState(() {
-                      _setInputs[index].weightError = _validateWeight(
-                        value,
-                        label: '${index + 1}세트 무게',
-                      );
-                      _submitError = null;
-                    });
-                  },
-                ),
-                if (index != _setInputs.length - 1)
-                  const SizedBox(height: AppSpacing.sm),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              Text('메모 (선택)', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              TextField(
-                controller: _memoController,
-                maxLines: 3,
-                style: AppTypography.body1,
-                decoration: _inputDecoration(hintText: '예: 마지막 세트가 힘들었음'),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              if (_submitError != null) ...[
-                Text(
-                  _submitError!,
-                  style: AppTypography.body2.copyWith(color: AppColors.error),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-              Opacity(
-                opacity: _isSaving ? 0.7 : 1,
-                child: SizedBox(
-                  height: 52,
-                  child: DecoratedBox(
-                    decoration: primaryButtonDecoration,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                        onTap: _isSaving ? null : _submit,
-                        child: Center(
-                          child:
-                              _isSaving
-                                  ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: AppColors.background,
-                                    ),
-                                  )
-                                  : Text(
-                                    '저장하기',
-                                    style: AppTypography.body1.copyWith(
-                                      color: AppColors.background,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text('세트별 운동 기록을 입력하세요', style: AppTypography.h2),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      '세트 기록은 통계와 AI 추천에 반영됩니다.',
+                      style: AppTypography.body2.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    Text('기본 정보', style: AppTypography.h3),
+                    const SizedBox(height: AppSpacing.md),
+                    Text('운동명', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    TextField(
+                      controller: _nameController,
+                      style: AppTypography.body1,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(hintText: '예: 벤치프레스'),
+                      onChanged: (String value) {
+                        setState(() {
+                          _nameError = _validateExerciseName(value);
+                          _submitError = null;
+                        });
+                      },
+                    ),
+                    if (_nameError != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        _nameError!,
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.md),
+                    Text('근육군', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedMuscleGroup,
+                      decoration: const InputDecoration(hintText: '근육군 선택'),
+                      dropdownColor: AppColors.surface,
+                      style: AppTypography.body1,
+                      items:
+                          kExerciseMuscleGroupOrder.map((String muscleGroup) {
+                            return DropdownMenuItem<String>(
+                              value: muscleGroup,
+                              child: Text(
+                                kExerciseMuscleGroupLabels[muscleGroup] ??
+                                    muscleGroup,
+                              ),
+                            );
+                          }).toList(),
+                      onChanged: (String? value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setState(() {
+                          _selectedMuscleGroup = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text('날짜', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      onTap: _pickDate,
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          hintText: '날짜 선택',
+                          suffixIcon: Icon(
+                            Icons.calendar_today,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        child: Text(
+                          DateFormat('yyyy-MM-dd').format(_selectedDate),
+                          style: AppTypography.body1,
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('세트별 기록', style: AppTypography.h3),
+                        ),
+                        TextButton.icon(
+                          onPressed: _addSetInput,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('세트 추가'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    for (
+                      int index = 0;
+                      index < _setInputs.length;
+                      index += 1
+                    ) ...[
+                      _SetInputRow(
+                        setNumber: index + 1,
+                        input: _setInputs[index],
+                        canRemove: _setInputs.length > 1,
+                        onRemove: () => _removeSetInput(index),
+                        onRepsChanged: (String value) {
+                          setState(() {
+                            _setInputs[index].repsError = _validatePositiveInt(
+                              value,
+                              '${index + 1}세트 횟수',
+                            );
+                            _submitError = null;
+                          });
+                        },
+                        onWeightChanged: (String value) {
+                          setState(() {
+                            _setInputs[index].weightError = _validateWeight(
+                              value,
+                              label: '${index + 1}세트 무게',
+                            );
+                            _submitError = null;
+                          });
+                        },
+                      ),
+                      if (index != _setInputs.length - 1)
+                        const SizedBox(height: AppSpacing.sm),
+                    ],
+                    const SizedBox(height: AppSpacing.md),
+                    Text('메모 (선택)', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    TextField(
+                      controller: _memoController,
+                      maxLines: 3,
+                      style: AppTypography.body1,
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(
+                        hintText: '예: 마지막 세트가 힘들었음',
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+            NeoBottomActionBar(
+              errorText: _submitError,
+              child: NeoPrimaryButton(
+                label: _isSaving ? '저장 중...' : '저장하기',
+                icon: _isSaving ? null : Icons.check,
+                onPressed: _isSaving ? null : _submit,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -464,15 +438,15 @@ class _ExerciseAddScreenState extends ConsumerState<ExerciseAddScreen> {
 
     final int setCount =
         widget.sets != null && widget.sets! > 0 ? widget.sets! : 1;
-    final int repsCount =
-        widget.reps != null && widget.reps! > 0 ? widget.reps! : 10;
+    final String repsText =
+        widget.reps != null && widget.reps! > 0 ? widget.reps!.toString() : '';
     final double? weightKg =
         widget.weightKg != null && widget.weightKg! >= 0
             ? widget.weightKg
             : null;
     _replaceSetInputs(
       setCount: setCount,
-      repsText: repsCount.toString(),
+      repsText: repsText,
       weightText: weightKg == null ? '' : _formatWeight(weightKg),
     );
   }
@@ -536,53 +510,58 @@ class _SetInputRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surfaceLow.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('$setNumber세트', style: AppTypography.caption),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(
-              child: _SetNumberField(
-                label: '횟수',
-                hint: '10',
-                controller: input.repsController,
-                errorText: input.repsError,
-                keyboardType: TextInputType.number,
-                onChanged: onRepsChanged,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(
-              child: _SetNumberField(
-                label: '무게(kg)',
-                hint: '60',
-                controller: input.weightController,
-                errorText: input.weightError,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+            Row(
+              children: [
+                Expanded(
+                  child: Text('$setNumber세트', style: AppTypography.label),
                 ),
-                onChanged: onWeightChanged,
-              ),
+                IconButton(
+                  tooltip: '세트 삭제',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: canRemove ? onRemove : null,
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  color: AppColors.textSecondary,
+                  disabledColor: AppColors.textDisabled,
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: '세트 삭제',
-              onPressed: canRemove ? onRemove : null,
-              icon: const Icon(Icons.delete_outline),
-              color: AppColors.textSecondary,
-              disabledColor: AppColors.textDisabled,
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _SetNumberField(
+                    label: '횟수',
+                    hint: '예: 10',
+                    controller: input.repsController,
+                    errorText: input.repsError,
+                    keyboardType: TextInputType.number,
+                    onChanged: onRepsChanged,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: _SetNumberField(
+                    label: '중량 (kg)',
+                    hint: '선택',
+                    controller: input.weightController,
+                    errorText: input.weightError,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: onWeightChanged,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -620,31 +599,13 @@ class _SetNumberField extends StatelessWidget {
         hintText: hint,
         errorText: errorText,
         errorMaxLines: 2,
+        // 세트 행은 두 칸이 한 줄에 들어가므로 라벨과 여백을 줄인다.
         labelStyle: AppTypography.caption.copyWith(
           color: AppColors.textSecondary,
         ),
-        hintStyle: AppTypography.body2.copyWith(color: AppColors.textSecondary),
-        filled: true,
-        fillColor: AppColors.surfaceLight,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm,
           vertical: AppSpacing.sm,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: const BorderSide(color: AppColors.divider),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: const BorderSide(color: AppColors.error),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: const BorderSide(color: AppColors.error, width: 1.2),
         ),
       ),
     );

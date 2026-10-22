@@ -4,9 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_decorations.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/neo_widgets.dart';
 import '../data/diet_repository.dart';
 import '../domain/diet_controller.dart';
 
@@ -77,39 +77,6 @@ class _DietAddScreenState extends ConsumerState<DietAddScreen> {
     _saturatedFatController.dispose();
     _unsaturatedFatController.dispose();
     super.dispose();
-  }
-
-  InputDecoration _inputDecoration({
-    required String hintText,
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      hintText: hintText,
-      hintStyle: AppTypography.body2.copyWith(color: AppColors.textSecondary),
-      filled: true,
-      fillColor: AppColors.surfaceLight,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.md,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.divider),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.error),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.error, width: 1.2),
-      ),
-      suffixIcon: suffixIcon,
-    );
   }
 
   String? _validateFoodName(String value) {
@@ -414,277 +381,318 @@ class _DietAddScreenState extends ConsumerState<DietAddScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('식단 수동 추가')),
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('음식명', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              TextField(
-                controller: _foodNameController,
-                style: AppTypography.body1,
-                decoration: _inputDecoration(hintText: '예: 닭가슴살 샐러드'),
-                onChanged: _onFoodNameChanged,
-              ),
-              if (_foodNameError != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _foodNameError!,
-                  style: AppTypography.caption.copyWith(color: AppColors.error),
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: NeoTopBar(title: '식단 추가', showBack: true),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.pageHorizontal,
+                  AppSpacing.sm,
+                  AppSpacing.pageHorizontal,
+                  AppSpacing.lg,
                 ),
-              ],
-              if (_isSearchingFoods || _foodSuggestions.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.xs),
-                _FoodSuggestionList(
-                  isLoading: _isSearchingFoods,
-                  suggestions: _foodSuggestions,
-                  onSelected: _selectFood,
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              Text('식사시간', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              DropdownButtonFormField<String>(
-                value: _selectedMealType,
-                decoration: _inputDecoration(hintText: '식사시간 선택'),
-                dropdownColor: AppColors.surface,
-                style: AppTypography.body1,
-                items:
-                    _mealTypes.map((String mealType) {
-                      return DropdownMenuItem<String>(
-                        value: mealType,
-                        child: Text(_mealTypeLabel(mealType)),
-                      );
-                    }).toList(),
-                onChanged: (String? value) {
-                  if (value == null) {
-                    return;
-                  }
-                  setState(() {
-                    _selectedMealType = value;
-                  });
-                },
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text('날짜', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              InkWell(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                onTap: _pickDate,
-                child: InputDecorator(
-                  decoration: _inputDecoration(
-                    hintText: '날짜 선택',
-                    suffixIcon: const Icon(
-                      Icons.calendar_today,
-                      color: AppColors.textSecondary,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    NeoGlassCard(
+                      highlighted: true,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('직접 식단 기록', style: AppTypography.h2),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            '음식 검색 결과를 불러오거나 직접 영양 정보를 입력하세요.',
+                            style: AppTypography.body2.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: NeoInfoChip(
+                              label: '음식 DB 검색 지원',
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    DateFormat('yyyy-MM-dd').format(_selectedDate),
-                    style: AppTypography.body1,
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text('섭취량 (g)', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              TextField(
-                controller: _servingGramsController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                style: AppTypography.body1,
-                decoration: _inputDecoration(hintText: '예: 100'),
-                onChanged: _onServingGramsChanged,
-              ),
-              if (_servingGramsError != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _servingGramsError!,
-                  style: AppTypography.caption.copyWith(color: AppColors.error),
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              Text('칼로리 (kcal)', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              TextField(
-                controller: _caloriesController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                style: AppTypography.body1,
-                decoration: _inputDecoration(hintText: '예: 350'),
-                onChanged: (String value) {
-                  setState(() {
-                    _autoCalculateFromCatalog = false;
-                    _caloriesError = _validateCalories(value);
-                    _submitError = null;
-                  });
-                },
-              ),
-              if (_caloriesError != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _caloriesError!,
-                  style: AppTypography.caption.copyWith(color: AppColors.error),
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              Text('기본 영양소', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              Row(
-                children: [
-                  Expanded(
-                    child: _MacroInput(
-                      label: '단백질 (g)',
-                      controller: _proteinController,
-                      errorText: _proteinError,
-                      onChanged: (String value) {
-                        _onManualNutritionChanged(
-                          _proteinController,
-                          (String input) =>
-                              _validateOptionalNumber(input, label: '단백질'),
-                          (String? error) => _proteinError = error,
-                        );
+                    const SizedBox(height: AppSpacing.lg),
+                    Text('기본 정보', style: AppTypography.h3),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      '음식명, 식사 구분과 날짜를 입력하세요.',
+                      style: AppTypography.body2.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text('음식명', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    TextField(
+                      controller: _foodNameController,
+                      style: AppTypography.body1,
+                      decoration: const InputDecoration(
+                        hintText: '예: 닭가슴살 샐러드',
+                      ),
+                      onChanged: _onFoodNameChanged,
+                    ),
+                    if (_foodNameError != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        _foodNameError!,
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ],
+                    if (_isSearchingFoods || _foodSuggestions.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      _FoodSuggestionList(
+                        isLoading: _isSearchingFoods,
+                        suggestions: _foodSuggestions,
+                        onSelected: _selectFood,
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.md),
+                    Text('식사 구분', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedMealType,
+                      decoration: const InputDecoration(hintText: '식사 구분 선택'),
+                      dropdownColor: AppColors.surface,
+                      style: AppTypography.body1,
+                      items:
+                          _mealTypes.map((String mealType) {
+                            return DropdownMenuItem<String>(
+                              value: mealType,
+                              child: Text(_mealTypeLabel(mealType)),
+                            );
+                          }).toList(),
+                      onChanged: (String? value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setState(() {
+                          _selectedMealType = value;
+                        });
                       },
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _MacroInput(
-                      label: '탄수화물 (g)',
-                      controller: _carbsController,
-                      errorText: _carbsError,
-                      onChanged: (String value) {
-                        _onManualNutritionChanged(
-                          _carbsController,
-                          (String input) =>
-                              _validateOptionalNumber(input, label: '탄수화물'),
-                          (String? error) => _carbsError = error,
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _MacroInput(
-                      label: '지방 (g)',
-                      controller: _fatController,
-                      errorText: _fatError,
-                      onChanged: (String value) {
-                        _onManualNutritionChanged(
-                          _fatController,
-                          (String input) =>
-                              _validateOptionalNumber(input, label: '지방'),
-                          (String? error) => _fatError = error,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text('선택 영양소', style: AppTypography.body2),
-              const SizedBox(height: AppSpacing.xs),
-              Row(
-                children: [
-                  Expanded(
-                    child: _MacroInput(
-                      label: '당분 (g)',
-                      controller: _sugarController,
-                      errorText: _sugarError,
-                      onChanged: (String value) {
-                        _onManualNutritionChanged(
-                          _sugarController,
-                          (String input) =>
-                              _validateOptionalNumber(input, label: '당분'),
-                          (String? error) => _sugarError = error,
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _MacroInput(
-                      label: '포화 (g)',
-                      controller: _saturatedFatController,
-                      errorText: _saturatedFatError,
-                      onChanged: (String value) {
-                        _onManualNutritionChanged(
-                          _saturatedFatController,
-                          (String input) =>
-                              _validateOptionalNumber(input, label: '포화지방'),
-                          (String? error) => _saturatedFatError = error,
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _MacroInput(
-                      label: '불포화 (g)',
-                      controller: _unsaturatedFatController,
-                      errorText: _unsaturatedFatError,
-                      onChanged: (String value) {
-                        _onManualNutritionChanged(
-                          _unsaturatedFatController,
-                          (String input) =>
-                              _validateOptionalNumber(input, label: '불포화지방'),
-                          (String? error) => _unsaturatedFatError = error,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              if (_submitError != null) ...[
-                Text(
-                  _submitError!,
-                  style: AppTypography.body2.copyWith(color: AppColors.error),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-              Opacity(
-                opacity: _isSaving ? 0.7 : 1,
-                child: SizedBox(
-                  height: 52,
-                  child: DecoratedBox(
-                    decoration: primaryButtonDecoration,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                        onTap: _isSaving ? null : _submit,
-                        child: Center(
-                          child:
-                              _isSaving
-                                  ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: AppColors.background,
-                                    ),
-                                  )
-                                  : Text(
-                                    '저장하기',
-                                    style: AppTypography.body1.copyWith(
-                                      color: AppColors.background,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text('날짜', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      onTap: _pickDate,
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          hintText: '날짜 선택',
+                          suffixIcon: Icon(
+                            Icons.calendar_today,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        child: Text(
+                          DateFormat('yyyy-MM-dd').format(_selectedDate),
+                          style: AppTypography.body1,
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text('섭취량 (g)', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    TextField(
+                      controller: _servingGramsController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      style: AppTypography.body1,
+                      decoration: const InputDecoration(hintText: '예: 100'),
+                      onChanged: _onServingGramsChanged,
+                    ),
+                    if (_servingGramsError != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        _servingGramsError!,
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.md),
+                    Text('칼로리 (kcal)', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    TextField(
+                      controller: _caloriesController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      style: AppTypography.body1,
+                      decoration: const InputDecoration(hintText: '예: 350'),
+                      onChanged: (String value) {
+                        setState(() {
+                          _autoCalculateFromCatalog = false;
+                          _caloriesError = _validateCalories(value);
+                          _submitError = null;
+                        });
+                      },
+                    ),
+                    if (_caloriesError != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        _caloriesError!,
+                        style: AppTypography.caption.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.lg),
+                    Text('영양 정보', style: AppTypography.h3),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      '직접 수정하면 음식 DB 자동 계산이 해제됩니다.',
+                      style: AppTypography.body2.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text('필수 매크로', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _MacroInput(
+                            label: '단백질 (g)',
+                            controller: _proteinController,
+                            errorText: _proteinError,
+                            onChanged: (String value) {
+                              _onManualNutritionChanged(
+                                _proteinController,
+                                (String input) => _validateOptionalNumber(
+                                  input,
+                                  label: '단백질',
+                                ),
+                                (String? error) => _proteinError = error,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _MacroInput(
+                            label: '탄수화물 (g)',
+                            controller: _carbsController,
+                            errorText: _carbsError,
+                            onChanged: (String value) {
+                              _onManualNutritionChanged(
+                                _carbsController,
+                                (String input) => _validateOptionalNumber(
+                                  input,
+                                  label: '탄수화물',
+                                ),
+                                (String? error) => _carbsError = error,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _MacroInput(
+                            label: '지방 (g)',
+                            controller: _fatController,
+                            errorText: _fatError,
+                            onChanged: (String value) {
+                              _onManualNutritionChanged(
+                                _fatController,
+                                (String input) =>
+                                    _validateOptionalNumber(input, label: '지방'),
+                                (String? error) => _fatError = error,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text('선택 영양소', style: AppTypography.body2),
+                    const SizedBox(height: AppSpacing.xs),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _MacroInput(
+                            label: '당분 (g)',
+                            controller: _sugarController,
+                            errorText: _sugarError,
+                            onChanged: (String value) {
+                              _onManualNutritionChanged(
+                                _sugarController,
+                                (String input) =>
+                                    _validateOptionalNumber(input, label: '당분'),
+                                (String? error) => _sugarError = error,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _MacroInput(
+                            label: '포화 (g)',
+                            controller: _saturatedFatController,
+                            errorText: _saturatedFatError,
+                            onChanged: (String value) {
+                              _onManualNutritionChanged(
+                                _saturatedFatController,
+                                (String input) => _validateOptionalNumber(
+                                  input,
+                                  label: '포화지방',
+                                ),
+                                (String? error) => _saturatedFatError = error,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _MacroInput(
+                            label: '불포화 (g)',
+                            controller: _unsaturatedFatController,
+                            errorText: _unsaturatedFatError,
+                            onChanged: (String value) {
+                              _onManualNutritionChanged(
+                                _unsaturatedFatController,
+                                (String input) => _validateOptionalNumber(
+                                  input,
+                                  label: '불포화지방',
+                                ),
+                                (String? error) => _unsaturatedFatError = error,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+            NeoBottomActionBar(
+              errorText: _submitError,
+              child: NeoPrimaryButton(
+                label: _isSaving ? '저장 중...' : '저장하기',
+                icon: Icons.check_circle_outline,
+                onPressed: _isSaving ? null : _submit,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -800,37 +808,7 @@ class _MacroInput extends StatelessWidget {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           style: AppTypography.body1,
           onChanged: onChanged,
-          decoration: InputDecoration(
-            hintText: '0',
-            hintStyle: AppTypography.body2.copyWith(
-              color: AppColors.textSecondary,
-            ),
-            filled: true,
-            fillColor: AppColors.surfaceLight,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.md,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: const BorderSide(color: AppColors.divider),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: const BorderSide(
-                color: AppColors.primary,
-                width: 1.2,
-              ),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: const BorderSide(color: AppColors.error),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: const BorderSide(color: AppColors.error, width: 1.2),
-            ),
-          ),
+          decoration: const InputDecoration(hintText: '0'),
         ),
         if (errorText != null) ...[
           const SizedBox(height: AppSpacing.xs),

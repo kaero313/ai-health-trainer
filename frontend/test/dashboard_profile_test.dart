@@ -3,13 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend/core/design_system/app_shad_theme.dart';
 import 'package:frontend/features/dashboard/data/dashboard_repository.dart';
 import 'package:frontend/features/dashboard/domain/dashboard_controller.dart';
 import 'package:frontend/features/dashboard/presentation/dashboard_screen.dart';
 import 'package:frontend/features/profile/data/profile_repository.dart';
 import 'package:frontend/features/profile/presentation/profile_edit_screen.dart';
 import 'package:frontend/features/profile/presentation/profile_screen.dart';
+import 'package:frontend/shared/design_system/design_system.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'support/fake_repositories.dart';
 
@@ -17,8 +20,8 @@ void main() {
   testWidgets('Dashboard renders loading, error, and data states', (
     WidgetTester tester,
   ) async {
-    final FakeProfileRepository profileRepository =
-        FakeProfileRepository()..profile = _profileData;
+    final FakeProfileRepository profileRepository = FakeProfileRepository()
+      ..profile = _profileData;
     final Completer<Map<String, dynamic>> pendingToday =
         Completer<Map<String, dynamic>>();
 
@@ -33,7 +36,7 @@ void main() {
         ),
       ],
     );
-    expect(find.text('데이터를 동기화하는 중'), findsOneWidget);
+    expect(find.byType(SkeletonBlock), findsNWidgets(5));
 
     await _pumpScreen(
       tester,
@@ -41,11 +44,10 @@ void main() {
       overrides: <Override>[
         profileRepositoryProvider.overrideWithValue(profileRepository),
         todayDashboardProvider.overrideWith(
-          (ref) async =>
-              throw const DashboardRepositoryException(
-                '대시보드 연결 오류',
-                statusCode: 500,
-              ),
+          (ref) async => throw const DashboardRepositoryException(
+            '대시보드 연결 오류',
+            statusCode: 500,
+          ),
         ),
         weeklyDashboardProvider.overrideWith(
           (ref) async => <String, dynamic>{},
@@ -75,12 +77,8 @@ void main() {
   testWidgets('Profile renders error and biometric data states', (
     WidgetTester tester,
   ) async {
-    final FakeProfileRepository errorRepository =
-        FakeProfileRepository()
-          ..error = const ProfileRepositoryException(
-            '프로필 연결 오류',
-            statusCode: 500,
-          );
+    final FakeProfileRepository errorRepository = FakeProfileRepository()
+      ..error = const ProfileRepositoryException('프로필 연결 오류', statusCode: 500);
     await _pumpScreen(
       tester,
       const ProfileScreen(),
@@ -92,8 +90,8 @@ void main() {
     expect(find.text('프로필을 불러오지 못했습니다'), findsOneWidget);
     expect(find.text('프로필 연결 오류'), findsOneWidget);
 
-    final FakeProfileRepository dataRepository =
-        FakeProfileRepository()..profile = _profileData;
+    final FakeProfileRepository dataRepository = FakeProfileRepository()
+      ..profile = _profileData;
     await _pumpScreen(
       tester,
       const ProfileScreen(),
@@ -110,16 +108,15 @@ void main() {
   testWidgets('Profile edit deep link returns to profile after save', (
     WidgetTester tester,
   ) async {
-    final FakeProfileRepository repository =
-        FakeProfileRepository()
-          ..profile = <String, dynamic>{
-            ..._profileData,
-            'age': 32,
-            'gender': 'male',
-            'activity_level': 'active',
-            'allergies': <String>['유당 민감'],
-            'food_preferences': <String>['고단백'],
-          };
+    final FakeProfileRepository repository = FakeProfileRepository()
+      ..profile = <String, dynamic>{
+        ..._profileData,
+        'age': 32,
+        'gender': 'male',
+        'activity_level': 'active',
+        'allergies': <String>['유당 민감'],
+        'food_preferences': <String>['고단백'],
+      };
     final GoRouter router = GoRouter(
       initialLocation: '/profile/edit',
       routes: <RouteBase>[
@@ -177,9 +174,16 @@ Future<void> _pumpScreen(
         weightHistoryProvider.overrideWith(
           (ref, month) async => <Map<String, dynamic>>[],
         ),
+        recentWeightHistoryProvider.overrideWith(
+          (ref) async => <Map<String, dynamic>>[],
+        ),
         ...overrides,
       ],
-      child: MaterialApp(home: screen),
+      // 새 디자인 시스템 화면(홈)은 ShadTheme을 읽는다. 앱 루트(main.dart)와 같다.
+      child: ShadTheme(
+        data: AppShadTheme.dark(),
+        child: MaterialApp(home: screen),
+      ),
     ),
   );
   await tester.pump();

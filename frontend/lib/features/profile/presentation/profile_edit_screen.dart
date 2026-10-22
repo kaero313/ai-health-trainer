@@ -136,6 +136,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Column(
           children: [
@@ -158,9 +159,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            isInitialSetupMode
-                                ? 'Start Profile'
-                                : 'Profile Settings',
+                            isInitialSetupMode ? '프로필 시작하기' : '프로필 설정',
                             style: AppTypography.h2,
                           ),
                           const SizedBox(height: AppSpacing.xs),
@@ -265,53 +264,16 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                       onAdd: _addPreference,
                       onRemove: _removePreference,
                     ),
-                    const SizedBox(height: AppSpacing.lg),
-                    if (_submitError != null) ...[
-                      Text(
-                        _submitError!,
-                        style: AppTypography.body2.copyWith(
-                          color: AppColors.error,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                    ],
-                    Opacity(
-                      opacity: _isSubmitting ? 0.7 : 1,
-                      child: SizedBox(
-                        height: 52,
-                        child: DecoratedBox(
-                          decoration: primaryButtonDecoration,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(AppRadius.md),
-                              onTap: _isSubmitting ? null : _submit,
-                              child: Center(
-                                child:
-                                    _isSubmitting
-                                        ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: AppColors.background,
-                                          ),
-                                        )
-                                        : Text(
-                                          '저장하기',
-                                          style: AppTypography.body1.copyWith(
-                                            color: AppColors.background,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
+              ),
+            ),
+            NeoBottomActionBar(
+              errorText: _submitError,
+              child: NeoPrimaryButton(
+                label: _isSubmitting ? '저장 중' : '저장하기',
+                icon: Icons.check,
+                onPressed: _isSubmitting ? null : _submit,
               ),
             ),
           ],
@@ -365,7 +327,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
               _submitError = null;
             });
           },
-          decoration: _inputDecoration(hintText: hintText),
+          decoration: InputDecoration(hintText: hintText),
         ),
         if (errorText != null) ...[
           const SizedBox(height: AppSpacing.xs),
@@ -442,7 +404,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                   child: TextField(
                     controller: inputController,
                     style: AppTypography.body1,
-                    decoration: _inputDecoration(hintText: '$title 추가'),
+                    decoration: InputDecoration(hintText: '$title 추가'),
                     onSubmitted: (_) => onAdd(),
                   ),
                 ),
@@ -489,27 +451,6 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
               ),
           ],
         ),
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration({required String hintText}) {
-    return InputDecoration(
-      hintText: hintText,
-      hintStyle: AppTypography.body2.copyWith(color: AppColors.textSecondary),
-      filled: true,
-      fillColor: AppColors.surfaceLight,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.md,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.divider),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
       ),
     );
   }
@@ -641,8 +582,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       ).showSnackBar(const SnackBar(content: Text('프로필이 저장되었습니다.')));
       if (wasInitialSetupMode) {
         context.go('/dashboard');
-      } else {
+      } else if (context.canPop()) {
         context.pop();
+      } else {
+        context.go('/profile');
       }
     } catch (e) {
       setState(() {
