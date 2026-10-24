@@ -68,10 +68,9 @@ class _NutrientBarState extends State<NutrientBar>
 
   @override
   Widget build(BuildContext context) {
-    final double baseProgress =
-        widget.target <= 0
-            ? 0
-            : (widget.current / widget.target).clamp(0.0, 1.0);
+    final double baseProgress = widget.target <= 0
+        ? 0
+        : (widget.current / widget.target).clamp(0.0, 1.0);
 
     return AnimatedBuilder(
       animation: _curve,

@@ -1,30 +1,25 @@
-import 'dart:math';
+import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:shimmer/shimmer.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/neo_widgets.dart';
 import '../data/dashboard_repository.dart';
 import '../domain/dashboard_controller.dart';
 
 const double _chartHeight = 200;
 
-final BoxDecoration _reportCardDecoration = BoxDecoration(
-  color: AppColors.surface,
-  borderRadius: BorderRadius.circular(AppRadius.lg),
-  border: Border.all(color: AppColors.divider, width: 0.5),
-);
-
 class MonthlyReportScreen extends ConsumerStatefulWidget {
   const MonthlyReportScreen({super.key});
 
   @override
-  ConsumerState<MonthlyReportScreen> createState() => _MonthlyReportScreenState();
+  ConsumerState<MonthlyReportScreen> createState() =>
+      _MonthlyReportScreenState();
 }
 
 class _MonthlyReportScreenState extends ConsumerState<MonthlyReportScreen> {
@@ -48,8 +43,7 @@ class _MonthlyReportScreenState extends ConsumerState<MonthlyReportScreen> {
       DateFormat('yyyy년 M월').format(DateTime(_selectedYear, _selectedMonth));
 
   bool get _canMoveNext {
-    final DateTime selectedMonth = DateTime(_selectedYear, _selectedMonth);
-    return selectedMonth.isBefore(_currentMonth);
+    return DateTime(_selectedYear, _selectedMonth).isBefore(_currentMonth);
   }
 
   void _changeMonth(int offset) {
@@ -58,7 +52,6 @@ class _MonthlyReportScreenState extends ConsumerState<MonthlyReportScreen> {
     if (normalizedMonth.isAfter(_currentMonth)) {
       return;
     }
-
     setState(() {
       _selectedYear = normalizedMonth.year;
       _selectedMonth = normalizedMonth.month;
@@ -81,103 +74,140 @@ class _MonthlyReportScreenState extends ConsumerState<MonthlyReportScreen> {
     final AsyncValue<List<Map<String, dynamic>>> weightAsync = ref.watch(
       weightHistoryProvider(monthKey),
     );
+    final NeoTopBar header = NeoTopBar(
+      title: _monthLabel,
+      showBack: true,
+      actions: [
+        IconButton(
+          onPressed: () => _changeMonth(-1),
+          icon: const Icon(Icons.chevron_left),
+          color: AppColors.textPrimary,
+          tooltip: '이전 달',
+        ),
+        IconButton(
+          onPressed: _canMoveNext ? () => _changeMonth(1) : null,
+          icon: const Icon(Icons.chevron_right),
+          color: _canMoveNext ? AppColors.textPrimary : AppColors.textDisabled,
+          tooltip: '다음 달',
+        ),
+      ],
+    );
 
     final bool isLoading = monthlyAsync.isLoading || weightAsync.isLoading;
-    final Object? firstError = monthlyAsync.asError?.error ?? weightAsync.asError?.error;
-
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        titleSpacing: AppSpacing.sm,
-        title: Text(_monthLabel, style: AppTypography.h3),
-        actions: [
-          IconButton(
-            onPressed: () => _changeMonth(-1),
-            icon: const Icon(Icons.chevron_left),
-            color: AppColors.textPrimary,
-            tooltip: '이전 달',
-          ),
-          IconButton(
-            onPressed: _canMoveNext ? () => _changeMonth(1) : null,
-            icon: const Icon(Icons.chevron_right),
-            color: _canMoveNext ? AppColors.textPrimary : AppColors.textDisabled,
-            tooltip: '다음 달',
+    if (isLoading) {
+      return NeoPage(
+        header: header,
+        onRefresh: _refreshSelectedMonth,
+        children: const [
+          NeoStateCard(
+            icon: Icons.hourglass_top,
+            title: '월간 기록을 불러오는 중',
+            message: '식단, 운동, 체중 기록을 집계하고 있습니다.',
           ),
         ],
-      ),
-      body: Builder(
-        builder: (BuildContext context) {
-          if (isLoading) {
-            return const _MonthlyReportLoadingView();
-          }
+      );
+    }
 
-          if (firstError != null) {
-            return _MonthlyReportErrorView(
-              message: _extractErrorMessage(firstError),
-              onRetry: _refreshSelectedMonth,
-            );
-          }
+    final Object? firstError =
+        monthlyAsync.asError?.error ?? weightAsync.asError?.error;
+    if (firstError != null) {
+      return NeoPage(
+        header: header,
+        onRefresh: _refreshSelectedMonth,
+        children: [
+          NeoStateCard(
+            icon: Icons.error_outline,
+            title: '월간 리포트를 불러오지 못했습니다',
+            message: _extractErrorMessage(firstError),
+            actionLabel: '다시 시도',
+            onAction: _refreshSelectedMonth,
+          ),
+        ],
+      );
+    }
 
-          final Map<String, dynamic> monthlyData = monthlyAsync.requireValue;
-          final List<Map<String, dynamic>> nutritionDays = _asMapList(
-            monthlyData['nutrition_days'],
-          );
-          final int totalDays = max(
-            _toRoundedInt(monthlyData['total_days']),
-            nutritionDays.length,
-          );
-          final List<Map<String, dynamic>> selectedMonthWeightHistory =
-              weightAsync.requireValue.where((Map<String, dynamic> item) {
-                final DateTime logDate = _toDateTime(item['log_date']);
-                return logDate.year == _selectedYear && logDate.month == _selectedMonth;
-              }).toList();
+    final Map<String, dynamic> monthlyData = monthlyAsync.requireValue;
+    final List<Map<String, dynamic>> nutritionDays = _asMapList(
+      monthlyData['nutrition_days'],
+    );
+    final List<Map<String, dynamic>> recordedNutritionDays = nutritionDays
+        .where(_hasNutritionRecord)
+        .toList();
+    final List<Map<String, dynamic>> exerciseDays = _asMapList(
+      monthlyData['exercise_days'],
+    );
+    final int apiTotalDays = _toRoundedInt(monthlyData['total_days']);
+    final int totalDays = apiTotalDays > 0
+        ? apiTotalDays
+        : DateUtils.getDaysInMonth(_selectedYear, _selectedMonth);
+    final List<Map<String, dynamic>> selectedMonthWeightHistory = weightAsync
+        .requireValue
+        .where((Map<String, dynamic> item) {
+          final DateTime? logDate = _tryDateTime(item['log_date']);
+          return logDate != null &&
+              logDate.year == _selectedYear &&
+              logDate.month == _selectedMonth;
+        })
+        .toList();
 
-          return RefreshIndicator(
-            color: AppColors.primary,
-            onRefresh: _refreshSelectedMonth,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _AverageNutritionSummaryCard(data: monthlyData),
-                  const SizedBox(height: AppSpacing.md),
-                  _ChartCard(
-                    title: '일별 칼로리 라인 차트',
-                    child: _DailyCaloriesChart(
-                      totalDays: totalDays,
-                      nutritionDays: nutritionDays,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _ChartCard(
-                    title: '영양소 트렌드 차트',
-                    footer: const _NutrientLegend(),
-                    child: _NutrientTrendChart(
-                      totalDays: totalDays,
-                      nutritionDays: nutritionDays,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _ChartCard(
-                    title: '체중 변화 차트',
-                    child: _WeightTrendChart(
-                      totalDays: totalDays,
-                      weightHistory: selectedMonthWeightHistory,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+    return NeoPage(
+      header: header,
+      onRefresh: _refreshSelectedMonth,
+      children: [
+        Text('월간 리포트', style: AppTypography.h1),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          '선택한 달에 저장된 실제 기록만 집계합니다.',
+          style: AppTypography.body2.copyWith(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _MonthlyActivityCard(
+          nutritionDays: recordedNutritionDays,
+          exerciseDays: exerciseDays,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _AverageNutritionCard(
+          data: monthlyData,
+          hasRecords: recordedNutritionDays.isNotEmpty,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _ChartCard(
+          title: '일별 섭취 열량',
+          child: recordedNutritionDays.isEmpty
+              ? const _ChartEmptyState(label: '식단 기록 없음')
+              : _DailyCaloriesChart(
+                  totalDays: totalDays,
+                  nutritionDays: recordedNutritionDays,
+                ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _ChartCard(
+          title: '영양소 추이',
+          footer: recordedNutritionDays.isEmpty
+              ? null
+              : const _NutrientLegend(),
+          child: recordedNutritionDays.isEmpty
+              ? const _ChartEmptyState(label: '영양소 기록 없음')
+              : _NutrientTrendChart(
+                  totalDays: totalDays,
+                  nutritionDays: recordedNutritionDays,
+                ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _ChartCard(
+          title: '체중 변화',
+          child: selectedMonthWeightHistory.isEmpty
+              ? const _ChartEmptyState(label: '체중 기록 없음')
+              : _WeightTrendChart(
+                  totalDays: totalDays,
+                  weightHistory: selectedMonthWeightHistory,
+                ),
+        ),
+      ],
     );
   }
 
-  String _extractErrorMessage(Object error) {
+  static String _extractErrorMessage(Object error) {
     if (error is DashboardRepositoryException) {
       return error.message;
     }
@@ -185,62 +215,128 @@ class _MonthlyReportScreenState extends ConsumerState<MonthlyReportScreen> {
   }
 }
 
-class _AverageNutritionSummaryCard extends StatelessWidget {
-  final Map<String, dynamic> data;
+class _MonthlyActivityCard extends StatelessWidget {
+  final List<Map<String, dynamic>> nutritionDays;
+  final List<Map<String, dynamic>> exerciseDays;
 
-  const _AverageNutritionSummaryCard({required this.data});
+  const _MonthlyActivityCard({
+    required this.nutritionDays,
+    required this.exerciseDays,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: _reportCardDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '평균 영양소 요약',
-              style: AppTypography.body1.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Expanded(
-                  child: _SummaryMetric(
-                    label: '칼로리',
-                    value: '${_formatMetric(_toDouble(data['avg_calories']))}kcal',
-                    color: AppColors.calories,
-                  ),
+    final List<Map<String, dynamic>> recordedExerciseDays = exerciseDays
+        .where((day) => day['exercised'] == true)
+        .toList();
+    final int totalSets = recordedExerciseDays.fold<int>(
+      0,
+      (int total, Map<String, dynamic> day) =>
+          total + _toRoundedInt(day['total_sets']),
+    );
+
+    return NeoGlassCard(
+      highlighted: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('이번 달 기록', style: AppTypography.h2),
+          const SizedBox(height: AppSpacing.lg),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryMetric(
+                  label: '식단 기록',
+                  value: '${nutritionDays.length}일',
+                  color: AppColors.secondary,
                 ),
-                const _MetricDivider(),
-                Expanded(
-                  child: _SummaryMetric(
-                    label: '단백질',
-                    value: '${_formatMetric(_toDouble(data['avg_protein_g']))}g',
-                    color: AppColors.protein,
-                  ),
+              ),
+              const _MetricDivider(),
+              Expanded(
+                child: _SummaryMetric(
+                  label: '운동 기록',
+                  value: '${recordedExerciseDays.length}일',
+                  color: AppColors.primary,
                 ),
-                const _MetricDivider(),
-                Expanded(
-                  child: _SummaryMetric(
-                    label: '탄수화물',
-                    value: '${_formatMetric(_toDouble(data['avg_carbs_g']))}g',
-                    color: AppColors.carbs,
-                  ),
+              ),
+              const _MetricDivider(),
+              Expanded(
+                child: _SummaryMetric(
+                  label: '총 세트',
+                  value: '$totalSets세트',
+                  color: AppColors.tertiary,
                 ),
-                const _MetricDivider(),
-                Expanded(
-                  child: _SummaryMetric(
-                    label: '지방',
-                    value: '${_formatMetric(_toDouble(data['avg_fat_g']))}g',
-                    color: AppColors.fat,
-                  ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AverageNutritionCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final bool hasRecords;
+
+  const _AverageNutritionCard({required this.data, required this.hasRecords});
+
+  @override
+  Widget build(BuildContext context) {
+    return NeoGlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('평균 영양 섭취', style: AppTypography.h2),
+          const SizedBox(height: AppSpacing.lg),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryMetric(
+                  label: '칼로리',
+                  value: hasRecords
+                      ? '${_formatMetric(_toDouble(data['avg_calories']))} kcal'
+                      : '--',
+                  color: AppColors.calories,
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+              const _MetricDivider(),
+              Expanded(
+                child: _SummaryMetric(
+                  label: '단백질',
+                  value: hasRecords
+                      ? '${_formatMetric(_toDouble(data['avg_protein_g']))} g'
+                      : '--',
+                  color: AppColors.protein,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryMetric(
+                  label: '탄수화물',
+                  value: hasRecords
+                      ? '${_formatMetric(_toDouble(data['avg_carbs_g']))} g'
+                      : '--',
+                  color: AppColors.carbs,
+                ),
+              ),
+              const _MetricDivider(),
+              Expanded(
+                child: _SummaryMetric(
+                  label: '지방',
+                  value: hasRecords
+                      ? '${_formatMetric(_toDouble(data['avg_fat_g']))} g'
+                      : '--',
+                  color: AppColors.fat,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -262,19 +358,18 @@ class _SummaryMetric extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          label,
-          style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
-          textAlign: TextAlign.center,
-        ),
+        Text(label, style: AppTypography.caption, textAlign: TextAlign.center),
         const SizedBox(height: AppSpacing.xs),
-        Text(
-          value,
-          style: AppTypography.body1.copyWith(
-            color: color,
-            fontWeight: FontWeight.w700,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            value,
+            style: AppTypography.body1.copyWith(
+              color: color,
+              fontWeight: FontWeight.w800,
+            ),
+            textAlign: TextAlign.center,
           ),
-          textAlign: TextAlign.center,
         ),
       ],
     );
@@ -288,7 +383,7 @@ class _MetricDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 1,
-      height: AppSpacing.xxl,
+      height: 48,
       margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       color: AppColors.divider,
     );
@@ -300,33 +395,49 @@ class _ChartCard extends StatelessWidget {
   final Widget child;
   final Widget? footer;
 
-  const _ChartCard({
-    required this.title,
-    required this.child,
-    this.footer,
-  });
+  const _ChartCard({required this.title, required this.child, this.footer});
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: _reportCardDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: AppTypography.body1.copyWith(fontWeight: FontWeight.w700),
-            ),
+    return NeoGlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppTypography.h2),
+          const SizedBox(height: AppSpacing.lg),
+          SizedBox(height: _chartHeight, child: child),
+          if (footer != null) ...[
             const SizedBox(height: AppSpacing.md),
-            SizedBox(height: _chartHeight, child: child),
-            if (footer != null) ...[
-              const SizedBox(height: AppSpacing.md),
-              footer!,
-            ],
+            footer!,
           ],
-        ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChartEmptyState extends StatelessWidget {
+  final String label;
+
+  const _ChartEmptyState({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.query_stats,
+            color: AppColors.textDisabled,
+            size: 30,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            label,
+            style: AppTypography.body2.copyWith(color: AppColors.textDisabled),
+          ),
+        ],
       ),
     );
   }
@@ -343,16 +454,13 @@ class _DailyCaloriesChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<FlSpot> spots = nutritionDays
-        .map(
-          (Map<String, dynamic> item) => FlSpot(
-            _toDateTime(item['date']).day.toDouble(),
-            _toDouble(item['calories']),
-          ),
-        )
-        .toList();
+    final List<FlSpot> spots = _buildDateSpots(
+      nutritionDays,
+      dateKey: 'date',
+      valueKey: 'calories',
+    );
     final ({double minY, double maxY}) range = _resolveChartRange(
-      spots.map((FlSpot spot) => spot.y).toList(),
+      spots.map((spot) => spot.y).toList(),
       startAtZero: true,
     );
 
@@ -362,15 +470,16 @@ class _DailyCaloriesChart extends StatelessWidget {
         maxX: totalDays.toDouble(),
         minY: range.minY,
         maxY: range.maxY,
-        gridData: const FlGridData(show: false),
+        gridData: _gridData,
         borderData: FlBorderData(show: false),
         titlesData: _buildTitlesData(
           totalDays: totalDays,
           leftInterval: _resolveLeftInterval(range.maxY - range.minY),
-          leftLabelBuilder: (double value) => _formatAxisValue(value),
+          leftLabelBuilder: _formatAxisValue,
         ),
         lineTouchData: _buildTouchData(
-          valueBuilder: (LineBarSpot spot) => '${spot.x.toInt()}일\n${spot.y.round()} kcal',
+          valueBuilder: (LineBarSpot spot) =>
+              '${spot.x.toInt()}일\n${spot.y.round()} kcal',
         ),
         lineBarsData: [
           _buildLineBarData(
@@ -395,22 +504,25 @@ class _NutrientTrendChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<FlSpot> proteinSpots = _buildNutritionSpots(
+    final List<FlSpot> proteinSpots = _buildDateSpots(
       nutritionDays,
-      'protein_g',
+      dateKey: 'date',
+      valueKey: 'protein_g',
     );
-    final List<FlSpot> carbsSpots = _buildNutritionSpots(
+    final List<FlSpot> carbsSpots = _buildDateSpots(
       nutritionDays,
-      'carbs_g',
+      dateKey: 'date',
+      valueKey: 'carbs_g',
     );
-    final List<FlSpot> fatSpots = _buildNutritionSpots(
+    final List<FlSpot> fatSpots = _buildDateSpots(
       nutritionDays,
-      'fat_g',
+      dateKey: 'date',
+      valueKey: 'fat_g',
     );
     final List<double> allValues = [
-      ...proteinSpots.map((FlSpot spot) => spot.y),
-      ...carbsSpots.map((FlSpot spot) => spot.y),
-      ...fatSpots.map((FlSpot spot) => spot.y),
+      ...proteinSpots.map((spot) => spot.y),
+      ...carbsSpots.map((spot) => spot.y),
+      ...fatSpots.map((spot) => spot.y),
     ];
     final ({double minY, double maxY}) range = _resolveChartRange(
       allValues,
@@ -423,15 +535,16 @@ class _NutrientTrendChart extends StatelessWidget {
         maxX: totalDays.toDouble(),
         minY: range.minY,
         maxY: range.maxY,
-        gridData: const FlGridData(show: false),
+        gridData: _gridData,
         borderData: FlBorderData(show: false),
         titlesData: _buildTitlesData(
           totalDays: totalDays,
           leftInterval: _resolveLeftInterval(range.maxY - range.minY),
-          leftLabelBuilder: (double value) => _formatAxisValue(value),
+          leftLabelBuilder: _formatAxisValue,
         ),
         lineTouchData: _buildTouchData(
-          valueBuilder: (LineBarSpot spot) => '${spot.x.toInt()}일\n${_formatMetric(spot.y)}g',
+          valueBuilder: (LineBarSpot spot) =>
+              '${spot.x.toInt()}일\n${_formatMetric(spot.y)} g',
         ),
         lineBarsData: [
           _buildLineBarData(spots: proteinSpots, color: AppColors.protein),
@@ -454,25 +567,13 @@ class _WeightTrendChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (weightHistory.isEmpty) {
-      return Center(
-        child: Text(
-          '체중 기록이 없습니다',
-          style: AppTypography.body2.copyWith(color: AppColors.textSecondary),
-        ),
-      );
-    }
-
-    final List<FlSpot> spots = weightHistory
-        .map(
-          (Map<String, dynamic> item) => FlSpot(
-            _toDateTime(item['log_date']).day.toDouble(),
-            _toDouble(item['weight_kg']),
-          ),
-        )
-        .toList();
+    final List<FlSpot> spots = _buildDateSpots(
+      weightHistory,
+      dateKey: 'log_date',
+      valueKey: 'weight_kg',
+    );
     final ({double minY, double maxY}) range = _resolveChartRange(
-      spots.map((FlSpot spot) => spot.y).toList(),
+      spots.map((spot) => spot.y).toList(),
       startAtZero: false,
     );
 
@@ -482,22 +583,22 @@ class _WeightTrendChart extends StatelessWidget {
         maxX: totalDays.toDouble(),
         minY: range.minY,
         maxY: range.maxY,
-        gridData: const FlGridData(show: false),
+        gridData: _gridData,
         borderData: FlBorderData(show: false),
         titlesData: _buildTitlesData(
           totalDays: totalDays,
           leftInterval: _resolveLeftInterval(range.maxY - range.minY),
-          leftLabelBuilder: (double value) => _formatMetric(value),
+          leftLabelBuilder: _formatMetric,
         ),
         lineTouchData: _buildTouchData(
-          valueBuilder: (LineBarSpot spot) => '${spot.x.toInt()}일\n${_formatMetric(spot.y)}kg',
+          valueBuilder: (LineBarSpot spot) =>
+              '${spot.x.toInt()}일\n${_formatMetric(spot.y)} kg',
         ),
         lineBarsData: [
           _buildLineBarData(
             spots: spots,
             color: AppColors.primary,
             showArea: true,
-            showDots: spots.length == 1,
           ),
         ],
       ),
@@ -526,10 +627,7 @@ class _LegendItem extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _LegendItem({
-    required this.label,
-    required this.color,
-  });
+  const _LegendItem({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -554,113 +652,40 @@ class _LegendItem extends StatelessWidget {
   }
 }
 
-class _MonthlyReportLoadingView extends StatelessWidget {
-  const _MonthlyReportLoadingView();
+const FlGridData _gridData = FlGridData(show: false);
 
-  @override
-  Widget build(BuildContext context) {
-    return Shimmer.fromColors(
-      baseColor: AppColors.surface,
-      highlightColor: AppColors.surfaceLight,
-      child: ColoredBox(
-        color: AppColors.background,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          children: [
-            _buildSkeletonCard(height: AppSpacing.xxl * 2 + AppSpacing.sm),
-            const SizedBox(height: AppSpacing.md),
-            _buildSkeletonCard(height: _chartHeight + AppSpacing.xxl),
-            const SizedBox(height: AppSpacing.md),
-            _buildSkeletonCard(
-              height: _chartHeight + AppSpacing.xxl + AppSpacing.md,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _buildSkeletonCard(height: _chartHeight + AppSpacing.xxl),
-          ],
-        ),
-      ),
-    );
+List<FlSpot> _buildDateSpots(
+  List<Map<String, dynamic>> items, {
+  required String dateKey,
+  required String valueKey,
+}) {
+  final List<FlSpot> spots = [];
+  for (final Map<String, dynamic> item in items) {
+    final DateTime? date = _tryDateTime(item[dateKey]);
+    final double? value = _toNullableDouble(item[valueKey]);
+    if (date != null && value != null) {
+      spots.add(FlSpot(date.day.toDouble(), value));
+    }
   }
-
-  Widget _buildSkeletonCard({required double height}) {
-    return DecoratedBox(
-      decoration: _reportCardDecoration.copyWith(color: AppColors.surface),
-      child: SizedBox(height: height),
-    );
-  }
-}
-
-class _MonthlyReportErrorView extends StatelessWidget {
-  final String message;
-  final Future<void> Function() onRetry;
-
-  const _MonthlyReportErrorView({
-    required this.message,
-    required this.onRetry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              message,
-              style: AppTypography.body2.copyWith(color: AppColors.error),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextButton(
-              onPressed: () => onRetry(),
-              child: Text(
-                '다시 시도',
-                style: AppTypography.body2.copyWith(color: AppColors.primary),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-List<FlSpot> _buildNutritionSpots(
-  List<Map<String, dynamic>> nutritionDays,
-  String key,
-) {
-  return nutritionDays
-      .map(
-        (Map<String, dynamic> item) => FlSpot(
-          _toDateTime(item['date']).day.toDouble(),
-          _toDouble(item[key]),
-        ),
-      )
-      .toList();
+  spots.sort((a, b) => a.x.compareTo(b.x));
+  return spots;
 }
 
 LineChartBarData _buildLineBarData({
   required List<FlSpot> spots,
   required Color color,
   bool showArea = false,
-  bool showDots = false,
 }) {
   return LineChartBarData(
     spots: spots,
     color: color,
-    barWidth: AppSpacing.xs - 1,
-    isCurved: true,
+    barWidth: 3,
+    isCurved: spots.length > 2,
     isStrokeCapRound: true,
     dotData: FlDotData(
-      show: showDots,
-      getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
-        radius: AppSpacing.xs - 1,
-        color: color,
-        strokeWidth: 0,
-      ),
+      show: spots.length <= 8,
+      getDotPainter: (_, __, ___, ____) =>
+          FlDotCirclePainter(radius: 3, color: color, strokeWidth: 0),
     ),
     belowBarData: BarAreaData(
       show: showArea,
@@ -675,28 +700,29 @@ FlTitlesData _buildTitlesData({
   required String Function(double value) leftLabelBuilder,
 }) {
   final double bottomInterval = totalDays <= 10 ? 1 : 5;
-
   return FlTitlesData(
     topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
     rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
     bottomTitles: AxisTitles(
       sideTitles: SideTitles(
         showTitles: true,
-        reservedSize: AppSpacing.lg,
+        reservedSize: 24,
         interval: bottomInterval,
         getTitlesWidget: (double value, TitleMeta meta) {
           final int day = value.round();
-          final bool shouldShow = day == 1 || day == totalDays || day % bottomInterval == 0;
+          final bool shouldShow =
+              day == 1 || day == totalDays || day % bottomInterval == 0;
           if (!shouldShow || day < 1 || day > totalDays) {
             return const SizedBox.shrink();
           }
-
           return SideTitleWidget(
             axisSide: meta.axisSide,
             space: AppSpacing.sm,
             child: Text(
               '$day',
-              style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
           );
         },
@@ -705,18 +731,18 @@ FlTitlesData _buildTitlesData({
     leftTitles: AxisTitles(
       sideTitles: SideTitles(
         showTitles: true,
-        reservedSize: AppSpacing.xxl,
+        reservedSize: 42,
         interval: leftInterval,
-        getTitlesWidget: (double value, TitleMeta meta) {
-          return SideTitleWidget(
-            axisSide: meta.axisSide,
-            space: AppSpacing.sm,
-            child: Text(
-              leftLabelBuilder(value),
-              style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+        getTitlesWidget: (double value, TitleMeta meta) => SideTitleWidget(
+          axisSide: meta.axisSide,
+          space: AppSpacing.xs,
+          child: Text(
+            leftLabelBuilder(value),
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textSecondary,
             ),
-          );
-        },
+          ),
+        ),
       ),
     ),
   );
@@ -730,25 +756,24 @@ LineTouchData _buildTouchData({
     touchTooltipData: LineTouchTooltipData(
       fitInsideHorizontally: true,
       fitInsideVertically: true,
-      tooltipRoundedRadius: AppRadius.md,
+      tooltipRoundedRadius: AppRadius.sm,
       tooltipPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
         vertical: AppSpacing.xs,
       ),
-      tooltipMargin: AppSpacing.md,
-      getTooltipColor: (_) => AppColors.surfaceLight,
-      getTooltipItems: (List<LineBarSpot> touchedSpots) {
-        return touchedSpots.map((LineBarSpot spot) {
-          final Color labelColor = spot.bar.color ?? AppColors.textPrimary;
-          return LineTooltipItem(
-            valueBuilder(spot),
-            AppTypography.caption.copyWith(
-              color: labelColor,
-              fontWeight: FontWeight.w700,
+      tooltipMargin: AppSpacing.sm,
+      getTooltipColor: (_) => AppColors.surfaceHigh,
+      getTooltipItems: (List<LineBarSpot> spots) => spots
+          .map(
+            (spot) => LineTooltipItem(
+              valueBuilder(spot),
+              AppTypography.caption.copyWith(
+                color: spot.bar.color ?? AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          );
-        }).toList();
-      },
+          )
+          .toList(),
     ),
   );
 }
@@ -760,119 +785,78 @@ LineTouchData _buildTouchData({
   if (values.isEmpty) {
     return (minY: 0, maxY: 1);
   }
-
-  final double minValue = values.reduce(min);
-  final double maxValue = values.reduce(max);
-
+  final double minValue = values.reduce(math.min);
+  final double maxValue = values.reduce(math.max);
   if (startAtZero) {
-    return (minY: 0, maxY: max(maxValue * 1.2, 1));
+    return (minY: 0, maxY: math.max(maxValue * 1.2, 1));
   }
-
   final double span = maxValue - minValue;
-  final double padding = max(span * 0.2, 1);
-
-  if (span == 0) {
-    return (
-      minY: max(minValue - padding, 0),
-      maxY: maxValue + padding,
-    );
-  }
-
-  return (
-    minY: max(minValue - padding, 0),
-    maxY: maxValue + padding,
-  );
+  final double padding = math.max(span * 0.2, 1);
+  return (minY: math.max(minValue - padding, 0), maxY: maxValue + padding);
 }
 
 double _resolveLeftInterval(double span) {
-  if (span <= 1) {
-    return 0.2;
-  }
-  if (span <= 2) {
-    return 0.5;
-  }
-  if (span <= 5) {
-    return 1;
-  }
-  if (span <= 10) {
-    return 2;
-  }
-  if (span <= 25) {
-    return 5;
-  }
-  if (span <= 50) {
-    return 10;
-  }
-  if (span <= 100) {
-    return 20;
-  }
-  if (span <= 250) {
-    return 50;
-  }
-  if (span <= 500) {
-    return 100;
-  }
-  return max((span / 4).roundToDouble(), 1);
+  if (span <= 1) return 0.2;
+  if (span <= 2) return 0.5;
+  if (span <= 5) return 1;
+  if (span <= 10) return 2;
+  if (span <= 25) return 5;
+  if (span <= 50) return 10;
+  if (span <= 100) return 20;
+  if (span <= 250) return 50;
+  if (span <= 500) return 100;
+  return math.max((span / 4).roundToDouble(), 1);
 }
 
-List<Map<String, dynamic>> _asMapList(dynamic value) {
-  if (value is! List<dynamic>) {
+List<Map<String, dynamic>> _asMapList(Object? value) {
+  if (value is! List) {
     return <Map<String, dynamic>>[];
   }
-
   return value
-      .whereType<Map<dynamic, dynamic>>()
+      .whereType<Map>()
       .map(
-        (Map<dynamic, dynamic> item) => item.map<String, dynamic>(
-          (dynamic key, dynamic value) => MapEntry<String, dynamic>(
-            key.toString(),
-            value,
-          ),
+        (item) => item.map<String, dynamic>(
+          (key, value) => MapEntry<String, dynamic>(key.toString(), value),
         ),
       )
       .toList();
 }
 
-String _formatAxisValue(double value) {
-  if (value >= 1000) {
-    return value.round().toString();
-  }
-  if (value % 1 == 0) {
-    return value.toStringAsFixed(0);
-  }
-  return value.toStringAsFixed(1);
+bool _hasNutritionRecord(Map<String, dynamic> day) {
+  return _toDouble(day['calories']) > 0 ||
+      _toDouble(day['protein_g']) > 0 ||
+      _toDouble(day['carbs_g']) > 0 ||
+      _toDouble(day['fat_g']) > 0;
 }
 
-String _formatMetric(double value) {
-  if (value % 1 == 0) {
-    return value.toStringAsFixed(0);
-  }
-  return value.toStringAsFixed(1);
-}
+double _toDouble(Object? value) => _toNullableDouble(value) ?? 0;
 
-double _toDouble(dynamic value) {
-  if (value == null) {
-    return 0;
-  }
+double? _toNullableDouble(Object? value) {
   if (value is num) {
     return value.toDouble();
   }
-  return double.tryParse(value.toString()) ?? 0;
+  if (value is String) {
+    return double.tryParse(value);
+  }
+  return null;
 }
 
-int _toRoundedInt(dynamic value) {
-  return _toDouble(value).round();
-}
+int _toRoundedInt(Object? value) => _toDouble(value).round();
 
-DateTime _toDateTime(dynamic value) {
+DateTime? _tryDateTime(Object? value) {
   if (value is DateTime) {
     return value;
   }
+  return DateTime.tryParse(value?.toString() ?? '');
+}
 
-  final String raw = value?.toString() ?? '';
-  final DateTime? parsed = DateTime.tryParse(raw);
-  if (parsed != null) {
-    return parsed;
+String _formatAxisValue(double value) {
+  if (value >= 1000) {
+    return '${(value / 1000).toStringAsFixed(value >= 10000 ? 0 : 1)}k';
   }
-  return DateTime.now();
+  return _formatMetric(value);
+}
+
+String _formatMetric(double value) {
+  return value % 1 == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
 }

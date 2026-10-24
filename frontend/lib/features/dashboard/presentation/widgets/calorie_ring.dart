@@ -71,8 +71,8 @@ class _CalorieRingState extends State<CalorieRing>
         animation: _progressAnimation,
         builder: (BuildContext context, Widget? child) {
           final double animatedProgress = _progressAnimation.value;
-          final int animatedConsumed =
-              (animatedProgress * widget.consumed).round();
+          final int animatedConsumed = (animatedProgress * widget.consumed)
+              .round();
 
           return Stack(
             alignment: Alignment.center,
@@ -112,19 +112,17 @@ class _CalorieRingPainter extends CustomPainter {
     final double radius = (size.width / 2) - strokeWidth / 2;
     final Rect rect = Rect.fromCircle(center: center, radius: radius);
 
-    final Paint backgroundPaint =
-        Paint()
-          ..color = AppColors.surfaceLight
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeWidth
-          ..strokeCap = StrokeCap.round;
+    final Paint backgroundPaint = Paint()
+      ..color = AppColors.surfaceLight
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
 
-    final Paint progressPaint =
-        Paint()
-          ..color = AppColors.calories
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeWidth
-          ..strokeCap = StrokeCap.round;
+    final Paint progressPaint = Paint()
+      ..color = AppColors.calories
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
 
     canvas.drawArc(rect, 0, pi * 2, false, backgroundPaint);
     canvas.drawArc(rect, -pi / 2, (pi * 2) * progress, false, progressPaint);
