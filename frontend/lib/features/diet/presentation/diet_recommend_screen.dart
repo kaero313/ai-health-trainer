@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_decorations.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/neo_widgets.dart';
@@ -190,20 +189,13 @@ class _DietRecommendScreenState extends ConsumerState<DietRecommendScreen> {
             const SizedBox(height: AppSpacing.md),
             _RemainingNutrientsCard(remaining: remaining),
             const SizedBox(height: AppSpacing.md),
-            Text('추천 음식', style: AppTypography.h3),
+            const NeoSectionHeader(title: '추천 음식'),
             const SizedBox(height: AppSpacing.sm),
             if (suggestedFoods.isEmpty)
-              DecoratedBox(
-                decoration: cardDecoration,
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Text(
-                    '추천할 음식이 없습니다.',
-                    style: AppTypography.body2.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ),
+              const NeoStateCard(
+                icon: Icons.no_food_outlined,
+                title: '추천 음식이 없습니다',
+                message: '현재 남은 영양소 기준으로 추가할 음식이 없습니다.',
               )
             else
               Column(
@@ -262,18 +254,24 @@ class _AICoachMessageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: glassCardDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('🤖', style: TextStyle(fontSize: 24)),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(child: Text(message, style: AppTypography.body1)),
-          ],
-        ),
+    return NeoGlassCard(
+      highlighted: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: AppColors.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                'AI 코치 분석',
+                style: AppTypography.h3.copyWith(color: AppColors.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(message, style: AppTypography.body1),
+        ],
       ),
     );
   }
@@ -291,37 +289,33 @@ class _RemainingNutrientsCard extends StatelessWidget {
     final double carbs = _toDouble(remaining['carbs_g']);
     final double fat = _toDouble(remaining['fat_g']);
 
-    return DecoratedBox(
-      decoration: cardDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('남은 영양소', style: AppTypography.h3),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              '${_formatNumber(calories)} kcal',
-              style: AppTypography.numberSmall.copyWith(
-                color: AppColors.calories,
+    return NeoGlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('남은 영양소', style: AppTypography.h3),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '${_formatNumber(calories)} kcal',
+            style: AppTypography.numberSmall.copyWith(
+              color: AppColors.calories,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: [
+              _MacroText(
+                label: '단백질',
+                value: protein,
+                color: AppColors.protein,
               ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Row(
-              children: [
-                _MacroText(
-                  label: '단백질',
-                  value: protein,
-                  color: AppColors.protein,
-                ),
-                const SizedBox(width: AppSpacing.md),
-                _MacroText(label: '탄수화물', value: carbs, color: AppColors.carbs),
-                const SizedBox(width: AppSpacing.md),
-                _MacroText(label: '지방', value: fat, color: AppColors.fat),
-              ],
-            ),
-          ],
-        ),
+              _MacroText(label: '탄수화물', value: carbs, color: AppColors.carbs),
+              _MacroText(label: '지방', value: fat, color: AppColors.fat),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -365,69 +359,61 @@ class _SuggestedFoodCard extends StatelessWidget {
     final String foodName = food['food_name']?.toString() ?? '추천 음식';
     final String servingSize = _nullableString(food['serving_size']) ?? '1회분';
     final double calories = _toDouble(food['calories']);
+    final double protein = _toDouble(food['protein_g']);
+    final double carbs = _toDouble(food['carbs_g']);
+    final double fat = _toDouble(food['fat_g']);
     final String reason = _nullableString(food['reason']) ?? '추천 이유가 없습니다.';
 
-    return DecoratedBox(
-      decoration: cardDecoration,
-      child: Container(
-        decoration: const BoxDecoration(
-          border: Border(left: BorderSide(color: AppColors.primary, width: 4)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return NeoGlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(foodName, style: AppTypography.h3),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            servingSize,
+            style: AppTypography.body2.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
             children: [
-              Text(
-                foodName,
-                style: AppTypography.body1.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+              NeoInfoChip(
+                label: '${_formatNumber(calories)} kcal',
+                color: AppColors.primary,
               ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                '$servingSize · ${_formatNumber(calories)} kcal',
-                style: AppTypography.body2.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+              NeoInfoChip(
+                label: 'P ${_formatNumber(protein)}g',
+                color: AppColors.textSecondary,
               ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                '💡 $reason',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+              NeoInfoChip(
+                label: 'C ${_formatNumber(carbs)}g',
+                color: AppColors.secondary,
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: (isAdded || isSaving) ? null : onAdd,
-                  child:
-                      isSaving
-                          ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.primary,
-                            ),
-                          )
-                          : Text(
-                            isAdded ? '추가됨 ✅' : '이 음식 추가하기',
-                            style: AppTypography.body2.copyWith(
-                              color:
-                                  isAdded
-                                      ? AppColors.textDisabled
-                                      : AppColors.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                ),
+              NeoInfoChip(
+                label: 'F ${_formatNumber(fat)}g',
+                color: AppColors.tertiary,
               ),
             ],
           ),
-        ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            reason,
+            style: AppTypography.body2.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          NeoOutlineButton(
+            label:
+                isSaving
+                    ? '추가 중...'
+                    : isAdded
+                    ? '간식으로 추가됨'
+                    : '간식으로 추가',
+            icon: isAdded ? Icons.check : Icons.add,
+            onPressed: (isAdded || isSaving) ? null : onAdd,
+          ),
+        ],
       ),
     );
   }
@@ -442,16 +428,31 @@ class _SourcesView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children:
-          sources.map((String source) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: Text(
-                '📚 $source',
-                style: AppTypography.caption.copyWith(color: AppColors.info),
-              ),
-            );
-          }).toList(),
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.verified_outlined,
+              color: AppColors.primary,
+              size: 18,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text('검증된 출처', style: AppTypography.h3),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children:
+              sources
+                  .map(
+                    (String source) =>
+                        NeoInfoChip(label: source, color: AppColors.primary),
+                  )
+                  .toList(),
+        ),
+      ],
     );
   }
 }

@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_decorations.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/neo_widgets.dart';
@@ -45,7 +44,6 @@ class _ExerciseRecommendScreenState
       final Map<String, dynamic> data = await ref
           .read(exerciseRepositoryProvider)
           .getRecommendation(muscleGroup: _selectedMuscleGroup);
-
       if (!mounted) {
         return;
       }
@@ -53,12 +51,12 @@ class _ExerciseRecommendScreenState
         _recommendationData = data;
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
-        _errorMessage = _extractErrorMessage(e);
+        _errorMessage = _extractErrorMessage(error);
         _isLoading = false;
       });
     }
@@ -79,13 +77,8 @@ class _ExerciseRecommendScreenState
       return;
     }
 
-    final Map<String, dynamic> data =
-        _recommendationData ?? <String, dynamic>{};
     final List<Map<String, dynamic>> suggestedExercises =
-        (data['suggested_exercises'] as List<dynamic>? ?? <dynamic>[])
-            .whereType<Map<String, dynamic>>()
-            .toList();
-
+        _readSuggestedExercises(_recommendationData);
     if (suggestedExercises.isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -99,59 +92,44 @@ class _ExerciseRecommendScreenState
 
     final DateTime selectedDate = ref.read(exerciseDateProvider);
     final String dateText = DateFormat('yyyy-MM-dd').format(selectedDate);
-
     int successCount = 0;
     int failCount = 0;
 
-    for (final Map<String, dynamic> exercise in suggestedExercises) {
-      final String exerciseName =
-          exercise['exercise_name']?.toString().trim() ?? '알 수 없는 운동';
-
-      try {
+    try {
+      for (final Map<String, dynamic> exercise in suggestedExercises) {
         final Map<String, dynamic>? payload = _buildCreatePayload(
           exercise: exercise,
           dateText: dateText,
         );
-
         if (payload == null) {
           failCount += 1;
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('$exerciseName 저장에 필요한 데이터가 부족합니다.')),
-            );
-          }
           continue;
         }
 
-        await ref.read(exerciseRepositoryProvider).createExerciseLog(payload);
-        successCount += 1;
-      } catch (e) {
-        failCount += 1;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('$exerciseName 실패: ${_extractErrorMessage(e)}'),
-            ),
-          );
+        try {
+          await ref.read(exerciseRepositoryProvider).createExerciseLog(payload);
+          successCount += 1;
+        } catch (_) {
+          failCount += 1;
         }
       }
+
+      if (!mounted) {
+        return;
+      }
+      if (successCount > 0) {
+        ref.invalidate(exerciseLogsProvider);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('기록 완료 · 성공 $successCount개 · 실패 $failCount개')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingAll = false;
+        });
+      }
     }
-
-    if (!mounted) {
-      return;
-    }
-
-    if (successCount > 0) {
-      ref.invalidate(exerciseLogsProvider);
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('저장 완료: 성공 $successCount건, 실패 $failCount건')),
-    );
-
-    setState(() {
-      _isSavingAll = false;
-    });
   }
 
   Map<String, dynamic>? _buildCreatePayload({
@@ -173,22 +151,19 @@ class _ExerciseRecommendScreenState
       return null;
     }
 
-    final List<Map<String, dynamic>> setsPayload =
-        List<Map<String, dynamic>>.generate(sets, (int index) {
-          return <String, dynamic>{
-            'set_number': index + 1,
-            'reps': reps,
-            'weight_kg': weightKg,
-            'is_completed': true,
-          };
-        });
-
     return <String, dynamic>{
       'exercise_date': dateText,
       'exercise_name': exerciseName,
       'muscle_group': muscleGroup,
       'memo': null,
-      'sets': setsPayload,
+      'sets': List<Map<String, dynamic>>.generate(sets, (int index) {
+        return <String, dynamic>{
+          'set_number': index + 1,
+          'reps': reps,
+          'weight_kg': weightKg,
+          'is_completed': true,
+        };
+      }),
     };
   }
 
@@ -196,11 +171,12 @@ class _ExerciseRecommendScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Column(
           children: [
             const Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              padding: EdgeInsets.fromLTRB(20, 8, 20, 8),
               child: NeoTopBar(title: 'AI 운동 추천', showBack: true),
             ),
             Expanded(
@@ -223,100 +199,87 @@ class _ExerciseRecommendScreenState
   Widget _buildSuccessBody() {
     final Map<String, dynamic> data =
         _recommendationData ?? <String, dynamic>{};
-    final String recommendation = data['recommendation']?.toString() ?? '';
-    final List<Map<String, dynamic>> exercises =
-        (data['suggested_exercises'] as List<dynamic>? ?? <dynamic>[])
-            .whereType<Map<String, dynamic>>()
-            .toList();
-    final List<String> sources =
-        (data['sources'] as List<dynamic>? ?? <dynamic>[])
-            .map((dynamic value) => value.toString())
-            .where((String value) => value.isNotEmpty)
-            .toList();
+    final String recommendation =
+        data['recommendation']?.toString().trim() ?? '';
+    final List<Map<String, dynamic>> exercises = _readSuggestedExercises(data);
+    final List<String> sources = _readVerifiedSources(data);
 
-    return RefreshIndicator(
-      color: AppColors.primary,
-      onRefresh: _loadRecommendation,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _MuscleFilterRow(
-              selectedMuscleGroup: _selectedMuscleGroup,
-              onSelected: _onSelectMuscleGroup,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _AIMessageCard(
-              message:
-                  recommendation.isEmpty ? '추천 메시지가 없습니다.' : recommendation,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text('추천 운동', style: AppTypography.h3),
-            const SizedBox(height: AppSpacing.sm),
-            if (exercises.isEmpty)
-              DecoratedBox(
-                decoration: cardDecoration,
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Text(
-                    '추천할 운동이 없습니다',
-                    style: AppTypography.body2.copyWith(
-                      color: AppColors.textSecondary,
+    return Column(
+      children: [
+        Expanded(
+          child: RefreshIndicator(
+            color: AppColors.primary,
+            backgroundColor: AppColors.surfaceLow,
+            onRefresh: _loadRecommendation,
+            child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '추천 범위',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.primary,
                     ),
                   ),
-                ),
-              )
-            else
-              Column(
-                children: [
-                  for (int i = 0; i < exercises.length; i++) ...[
-                    _SuggestedExerciseCard(exercise: exercises[i]),
-                    if (i != exercises.length - 1)
-                      const SizedBox(height: AppSpacing.sm),
-                  ],
+                  const SizedBox(height: AppSpacing.sm),
+                  _MuscleFilterRow(
+                    selectedMuscleGroup: _selectedMuscleGroup,
+                    onSelected: _onSelectMuscleGroup,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  _AIMessageCard(
+                    message:
+                        recommendation.isEmpty
+                            ? '추천 요약을 표시할 수 없습니다.'
+                            : recommendation,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  NeoSectionHeader(title: '추천 운동 ${exercises.length}개'),
+                  const SizedBox(height: AppSpacing.xs),
+                  if (exercises.isEmpty)
+                    const NeoStateCard(
+                      icon: Icons.fitness_center,
+                      title: '추천 운동이 없습니다',
+                      message: '다른 근육군을 선택하거나 추천을 다시 요청해 보세요.',
+                    )
+                  else
+                    for (final Map<String, dynamic> exercise in exercises) ...[
+                      _SuggestedExerciseCard(exercise: exercise),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+                  _SourcesView(sources: sources),
                 ],
               ),
-            const SizedBox(height: AppSpacing.lg),
-            if (sources.isNotEmpty) _SourcesView(sources: sources),
-            const SizedBox(height: AppSpacing.md),
-            SizedBox(
-              height: 52,
-              child: DecoratedBox(
-                decoration: primaryButtonDecoration,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    onTap: _isSavingAll ? null : _saveAllSuggestedExercises,
-                    child: Center(
-                      child:
-                          _isSavingAll
-                              ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.background,
-                                ),
-                              )
-                              : Text(
-                                '전체 추천 기록하기',
-                                style: AppTypography.body1.copyWith(
-                                  color: AppColors.background,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                    ),
-                  ),
+            ),
+          ),
+        ),
+        if (exercises.isNotEmpty)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              border: Border(
+                top: BorderSide(
+                  color: AppColors.divider.withValues(alpha: 0.7),
                 ),
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-          ],
-        ),
-      ),
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                child: NeoPrimaryButton(
+                  label:
+                      _isSavingAll ? '기록 중...' : '추천 ${exercises.length}개 기록하기',
+                  icon: _isSavingAll ? null : Icons.playlist_add_check,
+                  onPressed: _isSavingAll ? null : _saveAllSuggestedExercises,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -369,17 +332,14 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      selectedColor: AppColors.primary,
-      backgroundColor: AppColors.surface,
-      side: BorderSide(color: selected ? AppColors.primary : AppColors.divider),
-      labelStyle: AppTypography.caption.copyWith(
-        color: selected ? AppColors.background : AppColors.textSecondary,
-        fontWeight: FontWeight.w700,
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.full),
+      onTap: onTap,
+      child: NeoInfoChip(
+        label: label,
+        filled: selected,
+        color: selected ? AppColors.primary : AppColors.textSecondary,
       ),
-      onSelected: (_) => onTap(),
     );
   }
 }
@@ -391,18 +351,32 @@ class _AIMessageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: glassCardDecoration,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('🤖', style: TextStyle(fontSize: 24)),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(child: Text(message, style: AppTypography.body1)),
-          ],
-        ),
+    return NeoGlassCard(
+      highlighted: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: const Icon(
+                  Icons.psychology_alt_outlined,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(child: Text('AI 코치 분석', style: AppTypography.h3)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(message, style: AppTypography.body1),
+        ],
       ),
     );
   }
@@ -416,96 +390,113 @@ class _SuggestedExerciseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String exerciseName =
-        exercise['exercise_name']?.toString() ?? '추천 운동';
+        exercise['exercise_name']?.toString().trim().isNotEmpty == true
+            ? exercise['exercise_name'].toString().trim()
+            : '추천 운동';
     final String muscleGroup = exercise['muscle_group']?.toString() ?? '';
     final String muscleLabel = kMuscleGroupLabels[muscleGroup] ?? muscleGroup;
     final int sets = _toInt(exercise['sets']);
     final int reps = _toInt(exercise['reps']);
     final double? weightKg = _toDoubleOrNull(exercise['weight_kg']);
-    final String reason =
-        exercise['reason']?.toString().trim().isNotEmpty == true
-            ? exercise['reason'].toString().trim()
-            : '추천 이유가 없습니다.';
-    final String weightText =
-        weightKg == null ? '맨몸' : '${_formatNumber(weightKg)}kg';
+    final String reason = exercise['reason']?.toString().trim() ?? '';
+    final String? assetPath = _recommendationAsset(exerciseName);
 
-    return DecoratedBox(
-      decoration: cardDecoration,
-      child: Container(
-        decoration: const BoxDecoration(
-          border: Border(left: BorderSide(color: AppColors.primary, width: 4)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
+    return NeoGlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                exerciseName,
-                style: AppTypography.body1.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                '$sets세트 · $reps회 · $weightText',
-                style: AppTypography.body2.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm,
-                  vertical: AppSpacing.xs,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(AppRadius.full),
-                ),
-                child: Text(
-                  muscleLabel,
-                  style: AppTypography.caption.copyWith(
+              if (assetPath != null)
+                NeoAssetImage(path: assetPath, width: 68, height: 68)
+              else
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceHigh,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(color: AppColors.glassBorder),
+                  ),
+                  child: const Icon(
+                    Icons.fitness_center,
                     color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                '💡 $reason',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () {
-                    context.push(
-                      '/exercise/add',
-                      extra: <String, dynamic>{
-                        'exercise_name': exerciseName,
-                        'muscle_group': muscleGroup,
-                        'sets': sets,
-                        'reps': reps,
-                        'weight_kg': weightKg,
-                      },
-                    );
-                  },
-                  child: Text(
-                    '이 운동 기록하기',
-                    style: AppTypography.body2.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(exerciseName, style: AppTypography.h3),
+                    const SizedBox(height: AppSpacing.sm),
+                    if (muscleLabel.isNotEmpty)
+                      NeoInfoChip(
+                        label: muscleLabel,
+                        color: AppColors.secondary,
+                      ),
+                  ],
                 ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              NeoInfoChip(label: '$sets세트', color: AppColors.primary),
+              NeoInfoChip(label: '$reps회', color: AppColors.primary),
+              NeoInfoChip(
+                label:
+                    weightKg == null
+                        ? '중량 미지정'
+                        : '${_formatNumber(weightKg)}kg',
+                color: AppColors.primary,
+              ),
+            ],
+          ),
+          if (reason.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.lightbulb_outline,
+                  color: AppColors.secondary,
+                  size: 18,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    reason,
+                    style: AppTypography.body2.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          NeoOutlineButton(
+            label: '이 운동 기록하기',
+            icon: Icons.add,
+            onPressed: () {
+              context.push(
+                '/exercise/add',
+                extra: <String, dynamic>{
+                  'exercise_name': exerciseName,
+                  'muscle_group': muscleGroup,
+                  'sets': sets,
+                  'reps': reps,
+                  'weight_kg': weightKg,
+                },
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -520,16 +511,76 @@ class _SourcesView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children:
-          sources.map((String source) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: Text(
-                '📚 $source',
-                style: AppTypography.caption.copyWith(color: AppColors.info),
+      children: [
+        Text('검증된 출처', style: AppTypography.h3),
+        const SizedBox(height: AppSpacing.sm),
+        if (sources.isEmpty)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.info_outline,
+                color: AppColors.warning,
+                size: 18,
               ),
-            );
-          }).toList(),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  '표시할 수 있는 출처 정보가 없습니다.',
+                  style: AppTypography.body2.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          )
+        else
+          for (final String source in sources) ...[
+            _VerifiedSourceChip(source: source),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+      ],
+    );
+  }
+}
+
+class _VerifiedSourceChip extends StatelessWidget {
+  final String source;
+
+  const _VerifiedSourceChip({required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.secondarySoft,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.secondary.withValues(alpha: 0.42)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.verified_outlined,
+            color: AppColors.secondary,
+            size: 18,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              source,
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -543,18 +594,16 @@ class _RecommendLoadingView extends StatelessWidget {
       baseColor: AppColors.surface,
       highlightColor: AppColors.surfaceLight,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         child: Column(
           children: [
-            _skeleton(height: 56),
+            _skeleton(height: 44),
+            const SizedBox(height: AppSpacing.lg),
+            _skeleton(height: 148),
             const SizedBox(height: AppSpacing.md),
-            _skeleton(height: 132),
+            _skeleton(height: 220),
             const SizedBox(height: AppSpacing.md),
-            _skeleton(height: 156),
-            const SizedBox(height: AppSpacing.sm),
-            _skeleton(height: 156),
-            const SizedBox(height: AppSpacing.sm),
-            _skeleton(height: 156),
+            _skeleton(height: 220),
           ],
         ),
       ),
@@ -580,26 +629,56 @@ class _RecommendErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Center(
-        child: NeoStateCard(
-          icon: Icons.psychology_alt_outlined,
-          title: '추천을 불러오지 못했습니다',
-          message: _cleanRecommendationError(message),
-          actionLabel: '다시 시도',
-          onAction: onRetry,
-        ),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: NeoStateCard(
+        icon: Icons.psychology_alt_outlined,
+        title: '추천을 불러오지 못했습니다',
+        message: _cleanRecommendationError(message),
+        actionLabel: '다시 시도',
+        onAction: onRetry,
       ),
     );
   }
+}
+
+List<Map<String, dynamic>> _readSuggestedExercises(Map<String, dynamic>? data) {
+  final List<dynamic> raw =
+      data?['suggested_exercises'] as List<dynamic>? ?? <dynamic>[];
+  return raw.whereType<Map<String, dynamic>>().toList();
+}
+
+List<String> _readVerifiedSources(Map<String, dynamic> data) {
+  final Set<String> sources = <String>{};
+  for (final dynamic value
+      in data['sources'] as List<dynamic>? ?? <dynamic>[]) {
+    final String source = value.toString().trim();
+    if (source.isNotEmpty) {
+      sources.add(source);
+    }
+  }
+  return sources.toList();
+}
+
+String? _recommendationAsset(String exerciseName) {
+  final String normalized = exerciseName.toLowerCase();
+  if (normalized.contains('스쿼트') || normalized.contains('squat')) {
+    return 'assets/stitch/workout_squat.jpg';
+  }
+  if (normalized.contains('레그 익스텐션') || normalized.contains('leg extension')) {
+    return 'assets/stitch/workout_leg_extension.jpg';
+  }
+  if (normalized.contains('로우') || normalized.contains('row')) {
+    return 'assets/stitch/workout_row.jpg';
+  }
+  return null;
 }
 
 String _extractErrorMessage(Object error) {
   if (error is ExerciseRepositoryException) {
     return error.message;
   }
-  return error.toString();
+  return '운동 추천을 처리하는 중 오류가 발생했습니다.';
 }
 
 String _cleanRecommendationError(String message) {
@@ -611,32 +690,35 @@ String _cleanRecommendationError(String message) {
   return normalized.isEmpty ? '요청 처리 중 오류가 발생했습니다.' : normalized;
 }
 
-int _toInt(dynamic value) {
+int _toInt(Object? value) {
   if (value is int) {
     return value;
   }
   if (value is num) {
     return value.toInt();
   }
-  return int.tryParse(value?.toString() ?? '') ?? 0;
+  if (value is String) {
+    return int.tryParse(value) ?? 0;
+  }
+  return 0;
 }
 
-double? _toDoubleOrNull(dynamic value) {
+double? _toDoubleOrNull(Object? value) {
   if (value == null) {
     return null;
-  }
-  if (value is double) {
-    return value;
   }
   if (value is num) {
     return value.toDouble();
   }
-  return double.tryParse(value.toString());
+  if (value is String) {
+    return double.tryParse(value);
+  }
+  return null;
 }
 
 String _formatNumber(double value) {
   if (value == value.roundToDouble()) {
-    return value.toInt().toString();
+    return value.toStringAsFixed(0);
   }
   return value.toStringAsFixed(1);
 }

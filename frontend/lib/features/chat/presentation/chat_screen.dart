@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_decorations.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/neo_widgets.dart';
 import '../data/chat_repository.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -32,8 +32,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   static const Map<String, String> _contextLabels = <String, String>{
     'general': '전체',
-    'diet': '🍽 식단',
-    'exercise': '💪 운동',
+    'diet': '식단',
+    'exercise': '운동',
   };
 
   @override
@@ -42,13 +42,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _typingController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
-    )..repeat();
-
+    );
     _messages.add(
-      _buildMessage(
-        role: 'assistant',
-        text: '안녕하세요! AI 코칭 도우미입니다. 식단, 운동, 건강에 대해 무엇이든 물어보세요. 🤖',
-      ),
+      _buildMessage(role: 'assistant', text: '안녕하세요. 오늘 무엇을 조정할까요?'),
     );
   }
 
@@ -61,27 +57,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   bool get _canSend => _textController.text.trim().isNotEmpty && !_isLoading;
-
-  InputDecoration _inputDecoration() {
-    return InputDecoration(
-      hintText: '질문을 입력하세요',
-      hintStyle: AppTypography.body2.copyWith(color: AppColors.textSecondary),
-      filled: true,
-      fillColor: AppColors.surfaceLight,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.md,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.divider),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
-      ),
-    );
-  }
 
   Map<String, Object?> _buildMessage({
     required String role,
@@ -107,13 +82,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       _textController.clear();
       _isLoading = true;
     });
+    _typingController.repeat();
     _scrollToBottom();
 
     try {
       final Map<String, dynamic> data = await ref
           .read(chatRepositoryProvider)
           .sendMessage(userText, _contextType);
-
       final String answer = (data['answer']?.toString() ?? '').trim();
       final List<String> sources =
           (data['sources'] as List<dynamic>? ?? <dynamic>[])
@@ -125,22 +100,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         _messages.add(
           _buildMessage(
             role: 'assistant',
-            text: answer.isEmpty ? '응답을 받지 못했습니다' : answer,
+            text: answer.isEmpty ? '응답을 생성하지 못했습니다.' : answer,
             sources: sources.isEmpty ? null : sources,
           ),
         );
       });
-    } catch (e) {
+    } catch (error) {
       setState(() {
         _messages.add(
           _buildMessage(
             role: 'assistant',
-            text: '죄송합니다. ${_extractErrorMessage(e)}',
+            text: '요청 처리 중 문제가 발생했습니다. ${_extractErrorMessage(error)}',
           ),
         );
       });
     } finally {
       if (mounted) {
+        _typingController
+          ..stop()
+          ..reset();
         setState(() {
           _isLoading = false;
         });
@@ -166,10 +144,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('AI 코칭')),
       body: SafeArea(
         child: Column(
           children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 10),
+              child: NeoTopBar(title: 'AI 코치', showBack: true),
+            ),
             _ContextTypeChips(
               selectedContext: _contextType,
               contextOrder: _contextOrder,
@@ -183,55 +164,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             Expanded(
               child: ListView.builder(
                 controller: _scrollController,
-                padding: const EdgeInsets.all(AppSpacing.md),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                 itemCount: _messages.length + (_isLoading ? 1 : 0),
                 itemBuilder: (BuildContext context, int index) {
                   if (_isLoading && index == _messages.length) {
                     return _TypingMessage(animation: _typingController);
                   }
-                  final Map<String, Object?> message = _messages[index];
-                  return _ChatMessageItem(message: message);
+                  return _ChatMessageItem(message: _messages[index]);
                 },
               ),
             ),
-            Container(
-              color: AppColors.surface,
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: SafeArea(
-                top: false,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _textController,
-                        minLines: 1,
-                        maxLines: 4,
-                        style: AppTypography.body1,
-                        decoration: _inputDecoration(),
-                        onChanged: (_) => setState(() {}),
-                        onSubmitted: (_) => _sendMessage(),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor:
-                          _canSend ? AppColors.primary : AppColors.divider,
-                      child: IconButton(
-                        onPressed: _canSend ? _sendMessage : null,
-                        icon: Icon(
-                          Icons.send,
-                          color:
-                              _canSend
-                                  ? AppColors.background
-                                  : AppColors.textSecondary,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            _ChatInput(
+              controller: _textController,
+              canSend: _canSend,
+              onChanged: () => setState(() {}),
+              onSend: _sendMessage,
             ),
           ],
         ),
@@ -255,39 +202,47 @@ class _ContextTypeChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 52,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm,
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.pageHorizontal,
+      ),
+      child: Container(
+        height: 42,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceHigh.withValues(alpha: 0.62),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: Row(
           children: [
-            for (final String contextType in contextOrder) ...[
-              ChoiceChip(
-                label: Text(contextLabels[contextType] ?? contextType),
-                selected: selectedContext == contextType,
-                selectedColor: AppColors.primary,
-                backgroundColor: AppColors.surface,
-                side: BorderSide(
-                  color:
-                      selectedContext == contextType
-                          ? AppColors.primary
-                          : AppColors.divider,
+            for (final String contextType in contextOrder)
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  onTap: () => onSelected(contextType),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color:
+                          selectedContext == contextType
+                              ? AppColors.primary
+                              : Colors.transparent,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                    child: Text(
+                      contextLabels[contextType] ?? contextType,
+                      style: AppTypography.label.copyWith(
+                        color:
+                            selectedContext == contextType
+                                ? AppColors.background
+                                : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
                 ),
-                labelStyle: AppTypography.caption.copyWith(
-                  color:
-                      selectedContext == contextType
-                          ? AppColors.background
-                          : AppColors.textSecondary,
-                  fontWeight: FontWeight.w700,
-                ),
-                onSelected: (_) => onSelected(contextType),
               ),
-              const SizedBox(width: AppSpacing.xs),
-            ],
           ],
         ),
       ),
@@ -302,141 +257,141 @@ class _ChatMessageItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String role = message['role']?.toString() ?? 'assistant';
+    final bool isUser = message['role'] == 'user';
     final String text = message['text']?.toString() ?? '';
     final List<String> sources =
-        (message['sources'] as List<dynamic>? ?? <dynamic>[])
-            .map((dynamic item) => item.toString())
-            .where((String item) => item.isNotEmpty)
-            .toList();
+        (message['sources'] as List<String>?) ?? <String>[];
 
-    if (role == 'user') {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.82,
+        ),
+        margin: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: NeoGlassCard(
+          highlighted: !isUser,
           padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: AppColors.primary,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          child: Text(
-            text,
-            style: AppTypography.body2.copyWith(color: AppColors.textPrimary),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isUser
+                        ? Icons.person_outline
+                        : Icons.psychology_alt_outlined,
+                    color: isUser ? AppColors.secondary : AppColors.primary,
+                    size: 18,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    isUser ? '나' : 'AI 코치',
+                    style: AppTypography.caption.copyWith(
+                      color: isUser ? AppColors.secondary : AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(text, style: AppTypography.body2),
+              if (sources.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    for (final String source in sources.take(3))
+                      NeoInfoChip(label: source, color: AppColors.primary),
+                  ],
+                ),
+              ],
+            ],
           ),
         ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const CircleAvatar(
-            radius: 14,
-            backgroundColor: AppColors.surfaceLight,
-            child: Text('🤖', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DecoratedBox(
-                  decoration: glassCardDecoration,
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: Text(text, style: AppTypography.body2),
-                  ),
-                ),
-                if (sources.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  for (final String source in sources)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                      child: Text(
-                        '📚 $source',
-                        style: AppTypography.caption.copyWith(
-                          color: AppColors.info,
-                        ),
-                      ),
-                    ),
-                ],
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
 }
 
 class _TypingMessage extends StatelessWidget {
-  final AnimationController animation;
+  final Animation<double> animation;
 
   const _TypingMessage({required this.animation});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: NeoGlassCard(
+        highlighted: true,
+        child: AnimatedBuilder(
+          animation: animation,
+          builder: (BuildContext context, Widget? child) {
+            return Text(
+              'AI 코치가 근거를 검색하고 있습니다${List<String>.filled((animation.value * 3).floor() + 1, '.').join()}',
+              style: AppTypography.body2.copyWith(color: AppColors.primary),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatInput extends StatelessWidget {
+  final TextEditingController controller;
+  final bool canSend;
+  final VoidCallback onChanged;
+  final VoidCallback onSend;
+
+  const _ChatInput({
+    required this.controller,
+    required this.canSend,
+    required this.onChanged,
+    required this.onSend,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.96),
+        border: Border(
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+        ),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const CircleAvatar(
-            radius: 14,
-            backgroundColor: AppColors.surfaceLight,
-            child: Text('🤖', style: TextStyle(fontSize: 12)),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              minLines: 1,
+              maxLines: 4,
+              style: AppTypography.body1,
+              decoration: const InputDecoration(hintText: 'AI 코치에게 질문하세요'),
+              onChanged: (_) => onChanged(),
+              onSubmitted: (_) => onSend(),
+            ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          DecoratedBox(
-            decoration: glassCardDecoration,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.sm,
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: canSend ? AppColors.primary : AppColors.divider,
+            child: IconButton(
+              icon: const Icon(
+                Icons.send,
+                color: AppColors.background,
+                size: 19,
               ),
-              child: AnimatedBuilder(
-                animation: animation,
-                builder: (BuildContext context, Widget? child) {
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: List<Widget>.generate(3, (int index) {
-                      return Container(
-                        margin: EdgeInsets.only(
-                          right: index == 2 ? 0 : AppSpacing.xs,
-                        ),
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: AppColors.textSecondary.withValues(
-                            alpha: _dotOpacity(animation.value, index),
-                          ),
-                          shape: BoxShape.circle,
-                        ),
-                      );
-                    }),
-                  );
-                },
-              ),
+              onPressed: canSend ? onSend : null,
             ),
           ),
         ],
       ),
     );
-  }
-
-  double _dotOpacity(double progress, int index) {
-    const double segment = 1 / 3;
-    final double start = index * segment;
-    final double end = start + segment;
-    if (progress < start || progress > end) {
-      return 0.3;
-    }
-    final double local = (progress - start) / segment;
-    final double wave = 1 - (2 * local - 1).abs();
-    return 0.3 + (0.7 * wave);
   }
 }
 
