@@ -452,7 +452,7 @@ class _AnalyzeResult extends StatelessWidget {
         ],
         const SizedBox(height: AppSpacing.sm),
         DropdownButtonFormField<String>(
-          value: mealType,
+          initialValue: mealType,
           dropdownColor: AppColors.surfaceLow,
           style: AppTypography.body1,
           decoration: const InputDecoration(labelText: '식사 시간'),
