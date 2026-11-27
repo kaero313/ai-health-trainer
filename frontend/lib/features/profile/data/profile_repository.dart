@@ -47,18 +47,25 @@ class ProfileRepository {
     }
   }
 
+  /// 서버가 `has_profile`을 bool로 돌려줄 때만 값을 반환한다.
+  /// 401·네트워크 오류·5xx·형식 오류는 "프로필 없음"이 아니므로 예외로 올린다.
   Future<bool> checkProfile() async {
     try {
       final Response<dynamic> response = await dio.get<dynamic>(
         '/profile/check',
       );
       final dynamic data = response.data;
-      if (data is Map<String, dynamic>) {
-        return data['has_profile'] == true;
+      final dynamic hasProfile =
+          data is Map<String, dynamic> ? data['has_profile'] : null;
+      if (hasProfile is bool) {
+        return hasProfile;
       }
-      return false;
-    } on DioException {
-      return false;
+      throw const ProfileRepositoryException('서버 응답 형식이 올바르지 않습니다.');
+    } on DioException catch (e) {
+      throw ProfileRepositoryException(
+        _extractDioErrorMessage(e),
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 

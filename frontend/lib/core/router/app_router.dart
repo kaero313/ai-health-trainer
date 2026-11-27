@@ -65,7 +65,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             final AsyncValue<bool> profileAsync = ref.read(
               profileCheckProvider,
             );
+            // 다시 계산되는 중에는 이전 값(로그인 전 false 등)으로 판단하지 않는다.
+            // 오류(네트워크·5xx)도 프로필 없음이 아니므로 현재 화면에 머문다.
             return profileAsync.when(
+              skipLoadingOnRefresh: false,
               loading: () => null,
               error: (_, __) => null,
               data: (bool hasProfile) {
