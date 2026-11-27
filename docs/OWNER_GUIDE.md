@@ -63,7 +63,7 @@ AI Health Trainer는 사진 한 장과 운동/체중 기록을 바탕으로 현�
 검증 기준:
 
 - Backend tests: 211 PASS
-- Flutter widget tests: 45 PASS
+- Flutter widget tests: 130 PASS
 - Flutter: `flutter analyze` 0 issues
 
 다음 작업은 Phase 7 또는 릴리스 후보 작업으로 새로 정의한다.
