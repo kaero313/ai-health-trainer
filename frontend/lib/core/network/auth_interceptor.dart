@@ -10,6 +10,8 @@ class AuthInterceptor extends Interceptor {
   final SecureStorageService storage;
   final Dio dio;
   Future<String?>? _refreshFuture;
+  // 진행 중인 갱신이 쓴 refresh token. 같은 세션의 요청만 그 갱신에 합류시킨다.
+  String? _refreshFutureToken;
 
   AuthInterceptor({required this.storage, required this.dio});
 
@@ -82,28 +84,37 @@ class AuthInterceptor extends Interceptor {
     return options.data;
   }
 
-  Future<String?> _refreshAccessToken() {
-    final Future<String?>? activeRefresh = _refreshFuture;
-    if (activeRefresh != null) {
-      return activeRefresh;
-    }
-
-    final Future<String?> refresh = _performRefresh();
-    _refreshFuture = refresh;
-    refresh.whenComplete(() {
-      if (identical(_refreshFuture, refresh)) {
-        _refreshFuture = null;
-      }
-    });
-    return refresh;
-  }
-
-  Future<String?> _performRefresh() async {
+  Future<String?> _refreshAccessToken() async {
     final String? refreshToken = await storage.getRefreshToken();
     if (refreshToken == null || refreshToken.isEmpty) {
       return null;
     }
 
+    // 로그아웃·재로그인으로 refresh token이 바뀌었으면 이전 갱신에 합류하지 않는다.
+    final Future<String?>? activeRefresh = _refreshFuture;
+    if (activeRefresh != null && _refreshFutureToken == refreshToken) {
+      return activeRefresh;
+    }
+
+    final Future<String?> refresh = _performRefresh(refreshToken);
+    _refreshFuture = refresh;
+    _refreshFutureToken = refreshToken;
+    refresh.whenComplete(() {
+      if (identical(_refreshFuture, refresh)) {
+        _refreshFuture = null;
+        _refreshFutureToken = null;
+      }
+    });
+    return refresh;
+  }
+
+  /// 갱신이 끝났을 때 저장소의 refresh token이 시작할 때와 같은지 본다.
+  /// 다르면 그사이 세션이 바뀐 것이므로 저장·삭제하지 않는다.
+  Future<bool> _isSameSession(String refreshToken) async {
+    return await storage.getRefreshToken() == refreshToken;
+  }
+
+  Future<String?> _performRefresh(String refreshToken) async {
     try {
       final Response<dynamic> refreshResp = await dio.post<dynamic>(
         '/auth/refresh',
@@ -117,14 +128,21 @@ class AuthInterceptor extends Interceptor {
       final dynamic tokenValue =
           innerData is Map<String, dynamic> ? innerData['access_token'] : null;
       if (tokenValue is! String || tokenValue.isEmpty) {
-        await storage.clearTokens();
+        if (await _isSameSession(refreshToken)) {
+          await storage.clearTokens();
+        }
         return null;
       }
 
+      if (!await _isSameSession(refreshToken)) {
+        return null;
+      }
       await storage.saveAccessToken(tokenValue);
       return tokenValue;
     } catch (_) {
-      await storage.clearTokens();
+      if (await _isSameSession(refreshToken)) {
+        await storage.clearTokens();
+      }
       return null;
     }
   }
