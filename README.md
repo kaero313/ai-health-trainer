@@ -15,7 +15,7 @@ AI 기반 개인 맞춤형 건강·피트니스 코칭 애플리케이션입니�
 
 - Phase 1~6 완료
 - Backend tests: 211 PASS
-- Flutter widget tests: 130 PASS
+- Flutter widget tests: 151 PASS
 - Flutter analyze: 0 issues
 
 로컬 실행:
