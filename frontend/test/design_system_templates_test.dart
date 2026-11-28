@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/core/design_system/app_shad_theme.dart';
+import 'package:frontend/core/design_system/app_text_styles.dart';
+import 'package:frontend/core/design_system/keep_all.dart';
 import 'package:frontend/shared/design_system/design_system.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -313,6 +315,351 @@ void main() {
       expect(_textColor(tester, '기록 없음'), cs.mutedForeground);
       // 값이 없으면 단위를 보이지 않는다.
       expect(find.text('%'), findsNothing);
+    });
+  });
+
+  group('AppTextField', () {
+    testWidgetsInBothModes('label stays visible and the field is 48 tall', (
+      WidgetTester tester,
+      Brightness b,
+    ) async {
+      useViewport(tester, const Size(390, 600));
+      await pumpHost(
+        tester,
+        designSystemHost(
+          _page(
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AppTextField(label: '키', placeholder: '175', unit: 'cm'),
+              ],
+            ),
+          ),
+          brightness: b,
+        ),
+      );
+      final ShadColorScheme cs = colorsFor(b);
+      expect(find.text('키'), findsOneWidget);
+      expect(_textColor(tester, 'cm'), cs.mutedForeground);
+      expect(tester.getSize(find.byType(ShadInput)).height, 48);
+    });
+
+    testWidgetsInBothModes('an action button keeps the height at 48', (
+      WidgetTester tester,
+      Brightness b,
+    ) async {
+      useViewport(tester, const Size(390, 600));
+      int taps = 0;
+      await pumpHost(
+        tester,
+        designSystemHost(
+          _page(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AppTextField(
+                  label: '비밀번호',
+                  obscureText: true,
+                  action: AppTextFieldAction(
+                    icon: LucideIcons.eye,
+                    semanticLabel: '비밀번호 표시',
+                    onPressed: () => taps++,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          brightness: b,
+        ),
+      );
+      expect(tester.getSize(find.byType(ShadInput)).height, 48);
+      final Finder action = find.bySemanticsLabel('비밀번호 표시');
+      expect(action, findsOneWidget);
+      // 아이콘(20)에서 떨어진 46 칸 가장자리도 눌린다.
+      final Offset icon = tester.getCenter(find.byIcon(LucideIcons.eye));
+      await tester.tapAt(icon + const Offset(-20, 0));
+      expect(taps, 1);
+      await tester.tap(find.byIcon(LucideIcons.eye));
+      expect(taps, 2);
+    });
+
+    testWidgetsInBothModes('error shows border, message and icon', (
+      WidgetTester tester,
+      Brightness b,
+    ) async {
+      useViewport(tester, const Size(390, 600));
+      await pumpHost(
+        tester,
+        designSystemHost(
+          _page(
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AppTextField(
+                  label: '이메일',
+                  description: '로그인에 쓰는 주소',
+                  errorText: '올바른 이메일 형식을 입력해 주세요.',
+                ),
+              ],
+            ),
+          ),
+          brightness: b,
+        ),
+      );
+      final ShadColorScheme cs = colorsFor(b);
+      expect(_textColor(tester, '올바른 이메일 형식을 입력해 주세요.'), cs.error);
+      expect(find.byIcon(LucideIcons.circleX), findsOneWidget);
+      // 오류가 있으면 도움말 대신 오류가 보인다.
+      expect(find.text('로그인에 쓰는 주소'), findsNothing);
+    });
+  });
+
+  group('DateStepper', () {
+    testWidgetsInBothModes('arrows are 48 buttons and null disables one side', (
+      WidgetTester tester,
+      Brightness b,
+    ) async {
+      useViewport(tester, const Size(390, 400));
+      final SemanticsHandle handle = tester.ensureSemantics();
+      int prev = 0;
+      int picks = 0;
+      await pumpHost(
+        tester,
+        designSystemHost(
+          _page(
+            DateStepper(
+              label: '2026년 11월',
+              caption: '이번 달',
+              onPrevious: () => prev++,
+              onNext: null,
+              onTapLabel: () => picks++,
+              previousLabel: '이전 달',
+              nextLabel: '다음 달',
+            ),
+          ),
+          brightness: b,
+        ),
+      );
+      final ShadColorScheme cs = colorsFor(b);
+      expect(_textColor(tester, '2026년 11월'), cs.foreground);
+      final Finder buttons = find.byType(ShadIconButton);
+      expect(buttons, findsNWidgets(2));
+      for (final Element e in buttons.evaluate()) {
+        expect(
+          tester.getSize(find.byElementPredicate((Element x) => x == e)),
+          const Size(48, 48),
+        );
+      }
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('다음 달')),
+        matchesSemantics(label: '다음 달', isButton: true, hasEnabledState: true),
+      );
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('이번 달 2026년 11월')),
+        matchesSemantics(
+          label: '이번 달 2026년 11월',
+          hint: '날짜 선택',
+          isButton: true,
+          hasTapAction: true,
+        ),
+      );
+      await tester.tap(find.bySemanticsLabel('이전 달'));
+      await tester.tap(find.text('2026년 11월'));
+      expect(prev, 1);
+      expect(picks, 1);
+      handle.dispose();
+    });
+  });
+
+  group('FilterChipBar', () {
+    testWidgetsInBothModes(
+      'selected chip uses primaryMuted and reports value',
+      (WidgetTester tester, Brightness b) async {
+        useViewport(tester, const Size(390, 400));
+        String? chosen = 'chest';
+        await pumpHost(
+          tester,
+          designSystemHost(
+            _page(
+              StatefulBuilder(
+                builder: (BuildContext context, StateSetter setState) =>
+                    FilterChipBar<String>(
+                      items: const <FilterChipItem<String>>[
+                        FilterChipItem<String>(value: null, label: '전체'),
+                        FilterChipItem<String>(value: 'chest', label: '가슴'),
+                        FilterChipItem<String>(value: 'back', label: '등'),
+                      ],
+                      selected: chosen,
+                      onSelected: (String? v) => setState(() => chosen = v),
+                    ),
+              ),
+            ),
+            brightness: b,
+          ),
+        );
+        final ShadColorScheme cs = colorsFor(b);
+        expect(_textColor(tester, '가슴'), cs.primary);
+        expect(_textColor(tester, '등'), cs.foreground);
+        expect(
+          tester.getSize(find.byType(FilterChipBar<String>)).height,
+          FilterChipBar.hitHeight,
+        );
+        final SemanticsHandle handle = tester.ensureSemantics();
+        expect(
+          tester.getSemantics(find.bySemanticsLabel('등')),
+          matchesSemantics(
+            label: '등',
+            isButton: true,
+            hasSelectedState: true,
+            hasTapAction: true,
+          ),
+        );
+        handle.dispose();
+        await tester.tap(find.text('전체'));
+        await tester.pump();
+        expect(chosen, isNull);
+        expect(_textColor(tester, '전체'), cs.primary);
+      },
+    );
+  });
+
+  group('SourceList', () {
+    testWidgetsInBothModes('shows sources, folds extras and says when empty', (
+      WidgetTester tester,
+      Brightness b,
+    ) async {
+      useViewport(tester, const Size(390, 500));
+      final SemanticsHandle handle = tester.ensureSemantics();
+      await pumpHost(
+        tester,
+        designSystemHost(
+          _page(
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SourceList(
+                  sources: <String>['영양 가이드', '근력 운동 지침', '수면 연구', '단백질 권장량'],
+                  maxVisible: 3,
+                ),
+                SizedBox(height: 24),
+                SourceList(sources: <String>[]),
+              ],
+            ),
+          ),
+          brightness: b,
+        ),
+      );
+      expect(find.text('영양 가이드'), findsOneWidget);
+      expect(find.text('단백질 권장량'), findsNothing);
+      expect(find.bySemanticsLabel('출처 1개 더 있음'), findsOneWidget);
+      expect(find.text('확인된 출처가 없습니다'), findsOneWidget);
+      // 출처는 정보라 강조색을 쓰지 않는다.
+      for (final Text t in tester.widgetList<Text>(find.text('검증된 출처'))) {
+        expect(t.style?.color, isNot(colorsFor(b).primary));
+      }
+      handle.dispose();
+    });
+  });
+
+  testWidgets('EmptyState reads keepAll text as the plain sentence', (
+    WidgetTester tester,
+  ) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    const String description = '체중을 입력하면 통계를 볼 수 있습니다.';
+    await pumpHost(
+      tester,
+      designSystemHost(
+        _page(
+          EmptyState(
+            icon: LucideIcons.userRound,
+            title: '프로필 설정이 필요합니다',
+            description: keepAll(description),
+          ),
+        ),
+      ),
+    );
+    expect(find.bySemanticsLabel(description), findsOneWidget);
+    expect(find.text(keepAll(description)), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgetsInBothModes('null callbacks render disabled buttons', (
+    WidgetTester tester,
+    Brightness b,
+  ) async {
+    useViewport(tester, const Size(390, 700));
+    await pumpHost(
+      tester,
+      designSystemHost(
+        _page(
+          const Column(
+            children: <Widget>[
+              DateStepper(label: '2026년 11월', onPrevious: null, onNext: null),
+              ErrorState(title: '불러오지 못했습니다'),
+            ],
+          ),
+          bottom: const AppBottomActionBar(label: '저장하기', onPressed: null),
+        ),
+        brightness: b,
+      ),
+    );
+    for (final ShadIconButton button in tester.widgetList<ShadIconButton>(
+      find.byType(ShadIconButton),
+    )) {
+      expect(button.enabled, isFalse);
+    }
+    for (final ShadButton button in tester.widgetList<ShadButton>(
+      find.byType(ShadButton),
+    )) {
+      expect(button.enabled, isFalse);
+    }
+  });
+
+  group('keepAll', () {
+    test('joins letters inside words and keeps the spaces', () {
+      const String joiner = '⁠';
+      expect(keepAll('됐습니다'), '됐$joiner습$joiner니$joiner다');
+      expect(keepAll('준비가 됐습니다').split(' ').length, 2);
+      expect(keepAll('준비가  됐습니다').replaceAll(joiner, ''), '준비가  됐습니다');
+      expect(keepAll(''), '');
+    });
+
+    test('a long heading breaks only at spaces', () {
+      const String title = '코칭을 시작할 준비가 됐습니다';
+      List<int> lineEnds(String text) {
+        final TextPainter tp = TextPainter(
+          text: TextSpan(text: text, style: AppTextStyles.display),
+          textDirection: TextDirection.ltr,
+          // 테스트 글꼴은 글자마다 1em(28)이다. 370이면 마지막 단어의 첫 음절까지 첫 줄에 들어간다.
+        )..layout(maxWidth: 370);
+        final List<int> ends = <int>[];
+        int offset = 0;
+        while (true) {
+          final TextRange line = tp.getLineBoundary(
+            TextPosition(offset: offset),
+          );
+          if (line.end >= text.length || line.end <= offset) break;
+          ends.add(line.end);
+          offset = line.end;
+        }
+        tp.dispose();
+        return ends;
+      }
+
+      bool atSpace(String text, int end) =>
+          text[end - 1] == ' ' || text[end] == ' ';
+
+      // 그냥 두면 음절 사이에서 줄이 바뀐다(이 검사가 의미 있다는 확인).
+      final List<int> plain = lineEnds(title);
+      expect(plain, isNotEmpty);
+      expect(plain.any((int e) => !atSpace(title, e)), isTrue);
+      // keepAll이면 줄은 공백에서만 바뀐다.
+      final String kept = keepAll(title);
+      final List<int> ends = lineEnds(kept);
+      expect(ends, isNotEmpty);
+      for (final int e in ends) {
+        expect(atSpace(kept, e), isTrue);
+      }
     });
   });
 
