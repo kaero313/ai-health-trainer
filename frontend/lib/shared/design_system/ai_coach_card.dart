@@ -61,6 +61,8 @@ class AiCoachCard extends StatelessWidget {
         ShadButton(
           width: double.infinity,
           onPressed: onPressed,
+          // shadcn 버튼은 onPressed가 null이어도 enabled로만 흐린 모양을 정한다.
+          enabled: onPressed != null,
           child: Text(buttonLabel),
         ),
       ],

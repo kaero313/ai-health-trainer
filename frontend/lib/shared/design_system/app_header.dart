@@ -95,6 +95,7 @@ class AppHeader extends StatelessWidget {
             excludeSemantics: true,
             child: ShadIconButton.ghost(
               onPressed: onBack,
+              enabled: onBack != null,
               iconSize: 20,
               icon: const Icon(LucideIcons.arrowLeft),
             ),

@@ -47,6 +47,8 @@ class AppBottomActionBar extends StatelessWidget {
       width: double.infinity,
       // 저장 중에는 비활성처럼 흐려지지 않게 누름만 무시한다.
       onPressed: loading ? () {} : onPressed,
+      // shadcn 버튼은 onPressed가 null이어도 enabled로만 흐린 모양을 정한다.
+      enabled: loading || onPressed != null,
       leading: loading || icon == null ? null : Icon(icon, size: 18),
       child: loading
           ? SizedBox.square(
