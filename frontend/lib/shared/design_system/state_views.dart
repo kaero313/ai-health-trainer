@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../core/design_system/app_motion.dart';
 import '../../core/design_system/app_text_styles.dart';
 import '../../core/design_system/app_tokens.dart';
+import '../../core/design_system/keep_all.dart';
 
 /// 가운데 정렬 아이콘 24 + heading + bodySmall + Outline 버튼 1개.
 class EmptyState extends StatelessWidget {
@@ -40,8 +41,10 @@ class EmptyState extends StatelessWidget {
         children: <Widget>[
           Icon(icon, size: 24, color: cs.mutedForeground),
           const SizedBox(height: AppSpace.s12),
+          // 호출부가 keepAll()로 넘긴 문장도 스크린리더는 원문으로 읽는다.
           Text(
             title,
+            semanticsLabel: withoutJoiners(title),
             textAlign: TextAlign.center,
             style: AppTextStyles.heading.copyWith(color: cs.cardForeground),
           ),
@@ -49,6 +52,7 @@ class EmptyState extends StatelessWidget {
             const SizedBox(height: AppSpace.s4),
             Text(
               description!,
+              semanticsLabel: withoutJoiners(description!),
               textAlign: TextAlign.center,
               style: AppTextStyles.bodySmall.copyWith(
                 color: cs.mutedForeground,
@@ -61,6 +65,7 @@ class EmptyState extends StatelessWidget {
               size: compact ? ShadButtonSize.sm : null,
               textStyle: compact ? AppTextStyles.buttonCompact : null,
               onPressed: onAction,
+              enabled: onAction != null,
               child: Text(actionLabel!),
             ),
           ],
@@ -96,13 +101,20 @@ class ErrorState extends StatelessWidget {
             icon: const Icon(LucideIcons.circleX),
             iconSize: 20,
             title: Text(title),
-            description: description == null ? null : Text(description!),
+            description: description == null
+                ? null
+                : Text(
+                    description!,
+                    semanticsLabel: withoutJoiners(description!),
+                  ),
           ),
         ),
         const SizedBox(height: AppSpace.s12),
         ShadButton.outline(
           width: double.infinity,
           onPressed: onRetry,
+          // shadcn 버튼은 onPressed가 null이어도 enabled로만 흐린 모양을 정한다.
+          enabled: onRetry != null,
           leading: const Icon(LucideIcons.rotateCw, size: 18),
           child: Text(retryLabel),
         ),
